@@ -1,0 +1,113 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<!-- 게시판 매퍼: 현장에서 흔한 작성 패턴 모음 -->
+<mapper namespace="com.field.board.mapper.BoardMapper">
+
+    <resultMap id="boardMap" type="com.field.board.vo.BoardVO">
+        <id     property="boardId"  column="BOARD_ID"/>
+        <result property="title"    column="TITLE"/>
+        <result property="writerId" column="WRITER_ID"/>
+    </resultMap>
+
+    <sql id="boardColumns">
+        B.BOARD_ID, B.TITLE, B.WRITER_ID, U.USER_NM, B.REG_DT
+    </sql>
+
+    <!-- 검색 조건 묶음 -->
+    <sql id="searchCondition">
+        <if test="searchTitle != null and searchTitle != ''">
+           AND B.TITLE LIKE '%' || #{searchTitle} || '%'
+        </if>
+        <if test="writerId != null and writerId != ''">
+           AND B.WRITER_ID = #{writerId}
+        </if>
+        <if test="fromDt != null and toDt != null">
+           AND B.REG_DT BETWEEN TO_DATE(#{fromDt}, 'YYYYMMDD') AND TO_DATE(#{toDt}, 'YYYYMMDD') + 1
+        </if>
+        <if test="categoryList != null and categoryList.size() > 0">
+           AND B.CATEGORY_CD IN
+            <foreach collection="categoryList" item="cd" open="(" separator="," close=")">
+                #{cd}
+            </foreach>
+        </if>
+        <if test="hasFile == 'Y'.toString()">
+           AND EXISTS (SELECT 1 FROM TB_BOARD_FILE F WHERE F.BOARD_ID = B.BOARD_ID)
+        </if>
+    </sql>
+
+    <!--
+        예전 목록 쿼리. 주석이므로 분석 대상이 아니다.
+        SELECT * FROM TB_BOARD_OLD
+    -->
+    <select id="selectBoardList" parameterType="map" resultMap="boardMap">
+        <include refid="field.common.pagingHeader"/>
+        SELECT <include refid="boardColumns"/>
+          FROM TB_BOARD B
+          LEFT OUTER JOIN TB_USER U
+            ON U.USER_ID = B.WRITER_ID
+         WHERE B.DEL_YN = 'N'
+        <include refid="searchCondition"/>
+         ORDER BY
+        <choose>
+            <when test="sortType == 'date'">B.REG_DT DESC</when>
+            <when test="sortType == 'view'">B.VIEW_CNT DESC, B.BOARD_ID DESC</when>
+            <otherwise>B.BOARD_ID DESC</otherwise>
+        </choose>
+        <include refid="field.common.pagingFooter"/>
+    </select>
+
+    <select id="selectBoardCount" parameterType="map" resultType="int">
+        SELECT COUNT(*)
+          FROM TB_BOARD B
+         WHERE B.DEL_YN = 'N'
+        <include refid="searchCondition"/>
+    </select>
+
+    <!-- trim 으로 만든 INSERT 컬럼 목록 + selectKey 시퀀스 -->
+    <insert id="insertBoard" parameterType="com.field.board.vo.BoardVO">
+        <selectKey keyProperty="boardId" resultType="long" order="BEFORE">
+            SELECT SEQ_BOARD_ID.NEXTVAL FROM DUAL
+        </selectKey>
+        INSERT INTO TB_BOARD
+        <trim prefix="(" suffix=")" suffixOverrides=",">
+            BOARD_ID,
+            TITLE,
+            <if test="content != null">CONTENT,</if>
+            <if test="categoryCd != null">CATEGORY_CD,</if>
+            WRITER_ID,
+            REG_DT,
+        </trim>
+        <trim prefix="VALUES (" suffix=")" suffixOverrides=",">
+            #{boardId},
+            #{title},
+            <if test="content != null">#{content, jdbcType=CLOB},</if>
+            <if test="categoryCd != null">#{categoryCd},</if>
+            #{writerId},
+            SYSDATE,
+        </trim>
+    </insert>
+
+    <update id="updateBoard" parameterType="com.field.board.vo.BoardVO">
+        UPDATE TB_BOARD
+        <set>
+            <if test="title != null">TITLE = #{title},</if>
+            <if test="content != null">CONTENT = #{content},</if>
+            <if test="categoryCd != null">CATEGORY_CD = #{categoryCd},</if>
+            UPD_ID = #{updId},
+            UPD_DT = SYSDATE,
+        </set>
+         WHERE BOARD_ID = #{boardId}
+    </update>
+
+    <!-- 조회수 증가: MERGE -->
+    <update id="mergeViewCount" parameterType="long">
+        MERGE INTO TB_BOARD_STAT S
+        USING (SELECT #{boardId} AS BOARD_ID FROM DUAL) D
+           ON (S.BOARD_ID = D.BOARD_ID)
+         WHEN MATCHED THEN
+              UPDATE SET S.VIEW_CNT = S.VIEW_CNT + 1
+         WHEN NOT MATCHED THEN
+              INSERT (BOARD_ID, VIEW_CNT) VALUES (D.BOARD_ID, 1)
+    </update>
+
+</mapper>
