@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xmlns:context="http://www.springframework.org/schema/context"
+       xmlns:tx="http://www.springframework.org/schema/tx"
+       xsi:schemaLocation="
+           http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans.xsd
+           http://www.springframework.org/schema/context http://www.springframework.org/schema/context/spring-context.xsd
+           http://www.springframework.org/schema/tx http://www.springframework.org/schema/tx/spring-tx.xsd">
+
+    <!-- 애너테이션 빈 스캔 -->
+    <context:component-scan base-package="com.example.shop"/>
+    <tx:annotation-driven transaction-manager="transactionManager"/>
+
+    <!-- 데이터소스 (JNDI) -->
+    <bean id="dataSource" class="org.springframework.jndi.JndiObjectFactoryBean">
+        <property name="jndiName" value="java:comp/env/jdbc/shopDS"/>
+    </bean>
+
+    <bean id="transactionManager" class="org.springframework.jdbc.datasource.DataSourceTransactionManager">
+        <property name="dataSource" ref="dataSource"/>
+    </bean>
+
+    <!-- MyBatis -->
+    <bean id="sqlSessionFactory" class="org.mybatis.spring.SqlSessionFactoryBean">
+        <property name="dataSource" ref="dataSource"/>
+        <property name="configLocation" value="classpath:mybatis-config.xml"/>
+        <property name="mapperLocations" value="classpath:mapper/**/*.xml"/>
+    </bean>
+
+    <bean id="sqlSessionTemplate" class="org.mybatis.spring.SqlSessionTemplate">
+        <constructor-arg index="0" ref="sqlSessionFactory"/>
+    </bean>
+
+    <!--
+        결제 서비스는 애너테이션 없이 XML 로만 등록한다.
+          - 생성자 인자: 할인 정책 (구현체가 둘인데 defaultDiscountPolicy 를 지정)
+          - 프로퍼티(setter): orderDao
+    -->
+    <bean id="paymentService" class="com.example.shop.payment.PaymentServiceImpl">
+        <constructor-arg ref="defaultDiscountPolicy"/>
+        <property name="orderDao" ref="orderDao"/>
+    </bean>
+
+    <!-- 구버전 결제 서비스 (주석 처리됨. 빈으로 잡히면 안 된다)
+    <bean id="oldPaymentService" class="com.example.shop.payment.OldPaymentServiceImpl">
+        <property name="orderDao" ref="orderDao"/>
+    </bean>
+    -->
+
+    <import resource="classpath:batch/settle-job.xml"/>
+
+</beans>

@@ -1,0 +1,122 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<!-- 상품/재고 매퍼 (Oracle): CONNECT BY, MERGE INTO, ROWNUM, 인라인 뷰 -->
+<mapper namespace="com.example.shop.product.mapper.ProductMapper">
+
+    <!-- 카테고리 트리: 계층 쿼리 -->
+    <select id="selectCategoryTree" resultType="categoryVO">
+        SELECT LEVEL AS LVL,
+               C.CATEGORY_ID,
+               C.PARENT_ID,
+               C.CATEGORY_NM,
+               SYS_CONNECT_BY_PATH(C.CATEGORY_NM, '>') AS PATH
+          FROM TB_CATEGORY C
+         WHERE C.USE_YN = 'Y'
+         START WITH C.PARENT_ID IS NULL
+       CONNECT BY PRIOR C.CATEGORY_ID = C.PARENT_ID
+         ORDER SIBLINGS BY C.SORT_NO
+    </select>
+
+    <!-- 상품 목록: ANSI JOIN + trim(prefix=WHERE) -->
+    <select id="selectProductList" parameterType="map" resultType="productVO">
+        SELECT P.PRODUCT_ID,
+               P.CATEGORY_ID,
+               C.CATEGORY_NM,
+               P.PRODUCT_NM,
+               P.PRICE,
+               P.STATUS_CD,
+               NVL(S.STOCK_QTY, 0) AS STOCK_QTY
+          FROM TB_PRODUCT P
+          JOIN TB_CATEGORY C
+            ON C.CATEGORY_ID = P.CATEGORY_ID
+          LEFT JOIN TB_STOCK S
+            ON S.PRODUCT_ID = P.PRODUCT_ID
+        <trim prefix="WHERE" prefixOverrides="AND |OR ">
+            <if test="categoryId != null">
+                AND P.CATEGORY_ID = #{categoryId}
+            </if>
+            <if test="productNm != null and productNm != ''">
+                AND UPPER(P.PRODUCT_NM) LIKE '%' || UPPER(#{productNm}) || '%'
+            </if>
+            <if test="statusCd != null">
+                AND P.STATUS_CD = #{statusCd}
+            </if>
+        </trim>
+         ORDER BY P.PRODUCT_ID
+    </select>
+
+    <!-- 상품 1건: 뷰(VW_PRODUCT_STOCK)를 읽는다 -->
+    <select id="selectProduct" parameterType="long" resultType="productVO">
+        SELECT PRODUCT_ID, PRODUCT_NM, PRICE, CATEGORY_NM, STOCK_QTY
+          FROM VW_PRODUCT_STOCK
+         WHERE PRODUCT_ID = #{productId}
+    </select>
+
+    <!-- 재고 증감: MERGE INTO. USING 의 원본은 DUAL 로 만든 한 행이다. -->
+    <update id="mergeStock">
+        MERGE INTO TB_STOCK S
+        USING (SELECT #{productId} AS PRODUCT_ID,
+                      'W01'        AS WAREHOUSE_CD,
+                      #{qty}       AS QTY
+                 FROM DUAL) D
+           ON (S.PRODUCT_ID = D.PRODUCT_ID AND S.WAREHOUSE_CD = D.WAREHOUSE_CD)
+         WHEN MATCHED THEN
+              UPDATE SET S.STOCK_QTY = S.STOCK_QTY + D.QTY,
+                         S.UPD_DT    = SYSDATE
+         WHEN NOT MATCHED THEN
+              INSERT (PRODUCT_ID, WAREHOUSE_CD, STOCK_QTY, SAFE_QTY, UPD_DT)
+              VALUES (D.PRODUCT_ID, D.WAREHOUSE_CD, D.QTY, 0, SYSDATE)
+    </update>
+
+    <update id="decreaseStock">
+        UPDATE TB_STOCK
+           SET STOCK_QTY = STOCK_QTY - #{qty},
+               UPD_DT    = SYSDATE
+         WHERE PRODUCT_ID = #{productId}
+           AND WAREHOUSE_CD = 'W01'
+           AND STOCK_QTY &gt;= #{qty}
+    </update>
+
+    <!-- 안전 재고 미달 상품: 인라인 뷰 + ROWNUM (Top-N), CDATA -->
+    <select id="selectLowStockProducts" parameterType="int" resultType="productVO">
+        <![CDATA[
+        SELECT *
+          FROM (SELECT P.PRODUCT_ID,
+                       P.PRODUCT_NM,
+                       S.STOCK_QTY,
+                       S.SAFE_QTY
+                  FROM TB_PRODUCT P,
+                       TB_STOCK S
+                 WHERE P.PRODUCT_ID = S.PRODUCT_ID
+                   AND S.STOCK_QTY < S.SAFE_QTY
+                 ORDER BY S.STOCK_QTY)
+         WHERE ROWNUM <= #{limit}
+        ]]>
+    </select>
+
+    <!-- 판매 상위 상품: FROM 절 인라인 뷰(X)와 조인. X 는 테이블이 아니다. -->
+    <select id="selectBestSellers" resultType="java.util.HashMap">
+        SELECT P.PRODUCT_ID,
+               P.PRODUCT_NM,
+               X.SALES_QTY
+          FROM TB_PRODUCT P,
+               (SELECT I.PRODUCT_ID,
+                       SUM(I.QTY) AS SALES_QTY
+                  FROM TB_ORDER_ITEM I,
+                       TB_ORDER O
+                 WHERE I.ORDER_ID = O.ORDER_ID
+                   AND O.ORDER_STATUS != '90'
+                 GROUP BY I.PRODUCT_ID) X
+         WHERE P.PRODUCT_ID = X.PRODUCT_ID
+         ORDER BY X.SALES_QTY DESC
+    </select>
+
+    <insert id="insertProduct" parameterType="productVO">
+        <selectKey keyProperty="productId" resultType="long" order="BEFORE">
+            SELECT SEQ_PRODUCT_ID.NEXTVAL FROM DUAL
+        </selectKey>
+        INSERT INTO TB_PRODUCT (PRODUCT_ID, CATEGORY_ID, PRODUCT_NM, PRICE, STATUS_CD, REG_ID, REG_DT)
+        VALUES (#{productId}, #{categoryId}, #{productNm}, #{price}, 'SALE', #{regId, jdbcType=VARCHAR}, SYSDATE)
+    </insert>
+
+</mapper>

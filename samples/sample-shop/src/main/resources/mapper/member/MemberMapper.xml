@@ -1,0 +1,90 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<!-- 회원 매퍼 (Oracle). countByLoginId, selectMemberDiscount 는 인터페이스의 @Select 에 있다. -->
+<mapper namespace="com.example.shop.member.mapper.MemberMapper">
+
+    <resultMap id="memberResultMap" type="com.example.shop.member.vo.MemberVO">
+        <id     property="memberId" column="MEMBER_ID"/>
+        <result property="loginId"  column="LOGIN_ID"/>
+        <result property="memberNm" column="MEMBER_NM"/>
+        <result property="email"    column="EMAIL"/>
+        <result property="gradeCd"  column="GRADE_CD"/>
+        <result property="statusCd" column="STATUS_CD"/>
+        <result property="point"    column="POINT"/>
+    </resultMap>
+
+    <sql id="memberColumns">
+        M.MEMBER_ID, M.LOGIN_ID, M.MEMBER_NM, M.EMAIL, M.GRADE_CD, M.STATUS_CD, M.POINT
+    </sql>
+
+    <!-- 회원 목록: (+) 아우터 조인, NVL, 스칼라 서브쿼리, 공통 페이징 조각 -->
+    <select id="selectMemberList" parameterType="map" resultMap="memberResultMap">
+        <include refid="common.pagingHeader"/>
+        SELECT <include refid="memberColumns"/>,
+               NVL(G.GRADE_NM, '일반') AS GRADE_NM,
+               (SELECT COUNT(*)
+                  FROM TB_ORDER O
+                 WHERE O.MEMBER_ID = M.MEMBER_ID) AS ORDER_CNT
+          FROM TB_MEMBER M,
+               TB_MEMBER_GRADE G
+         WHERE M.GRADE_CD = G.GRADE_CD(+)
+        <if test="keyword != null and keyword != ''">
+           AND (M.MEMBER_NM LIKE '%' || #{keyword} || '%'
+                OR M.LOGIN_ID LIKE #{keyword} || '%')
+        </if>
+         ORDER BY M.MEMBER_ID DESC
+        <include refid="common.pagingFooter"/>
+    </select>
+
+    <select id="selectMember" parameterType="long" resultType="memberVO">
+        SELECT <include refid="memberColumns"/>
+          FROM TB_MEMBER M
+         WHERE M.MEMBER_ID = #{memberId}
+    </select>
+
+    <!-- 회원의 주문 요약: 뷰(VW_ORDER_SUMMARY)를 읽는다 -->
+    <select id="selectMemberOrders" resultType="java.util.HashMap">
+        SELECT V.ORDER_ID, V.ORDER_DT, V.ORDER_STATUS, V.TOTAL_AMT, V.ITEM_CNT
+          FROM VW_ORDER_SUMMARY V
+         WHERE V.MEMBER_ID = #{memberId}
+         ORDER BY V.ORDER_DT DESC
+    </select>
+
+    <insert id="insertMember" parameterType="memberVO" useGeneratedKeys="false">
+        <selectKey keyProperty="memberId" resultType="long" order="BEFORE">
+            SELECT SEQ_MEMBER_ID.NEXTVAL FROM DUAL
+        </selectKey>
+        INSERT INTO TB_MEMBER (MEMBER_ID, LOGIN_ID, MEMBER_NM, EMAIL, GRADE_CD, STATUS_CD, JOIN_DT)
+        VALUES (#{memberId}, #{loginId}, #{memberNm}, #{email, jdbcType=VARCHAR}, 'NORMAL', 'A', SYSDATE)
+    </insert>
+
+    <update id="updateMemberGrade">
+        UPDATE TB_MEMBER
+           SET GRADE_CD = #{gradeCd},
+               UPD_DT   = SYSDATE
+         WHERE MEMBER_ID = #{memberId}
+    </update>
+
+    <!-- 최근 1년 주문 금액으로 등급 재산정: 상관 서브쿼리로 다른 테이블을 읽어서 UPDATE -->
+    <update id="updateGradeByOrderAmt">
+        <![CDATA[
+        UPDATE TB_MEMBER M
+           SET M.GRADE_CD = (SELECT CASE WHEN SUM(O.TOTAL_AMT) >= 1000000 THEN 'VIP' ELSE 'NORMAL' END
+                               FROM TB_ORDER O
+                              WHERE O.MEMBER_ID = M.MEMBER_ID
+                                AND O.ORDER_STATUS = '40'
+                                AND O.ORDER_DT >= TO_CHAR(ADD_MONTHS(SYSDATE, -12), 'YYYYMMDD')),
+               M.UPD_DT = SYSDATE
+         WHERE M.STATUS_CD = 'A'
+           AND M.POINT < 99999999
+        ]]>
+    </update>
+
+    <!-- 휴면 회원 삭제: 주문이 없는 회원만 -->
+    <delete id="deleteDormantMembers">
+        DELETE FROM TB_MEMBER
+         WHERE STATUS_CD = 'D'
+           AND NOT EXISTS (SELECT 1 FROM TB_ORDER O WHERE O.MEMBER_ID = TB_MEMBER.MEMBER_ID)
+    </delete>
+
+</mapper>

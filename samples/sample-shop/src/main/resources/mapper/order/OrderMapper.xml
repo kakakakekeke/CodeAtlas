@@ -1,0 +1,224 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<!-- 주문 매퍼 (Oracle). @Mapper 인터페이스 com.example.shop.order.mapper.OrderMapper 와 짝이다. -->
+<mapper namespace="com.example.shop.order.mapper.OrderMapper">
+
+    <!-- 주문 + 회원(association) + 주문상세(collection) -->
+    <resultMap id="orderResultMap" type="orderVO">
+        <id     property="orderId"    column="ORDER_ID"/>
+        <result property="memberId"   column="MEMBER_ID"/>
+        <result property="orderDt"    column="ORDER_DT"/>
+        <result property="statusCode" column="ORDER_STATUS"/>
+        <result property="totalAmt"   column="TOTAL_AMT"/>
+        <result property="closeYn"    column="CLOSE_YN"/>
+        <association property="member" javaType="com.example.shop.member.vo.MemberVO">
+            <id     property="memberId" column="MEMBER_ID"/>
+            <result property="memberNm" column="MEMBER_NM"/>
+            <result property="gradeCd"  column="GRADE_CD"/>
+        </association>
+        <collection property="items" ofType="orderItemVO">
+            <id     property="orderId"   column="ORDER_ID"/>
+            <id     property="itemSeq"   column="ITEM_SEQ"/>
+            <result property="productId" column="PRODUCT_ID"/>
+            <result property="productNm" column="PRODUCT_NM"/>
+            <result property="qty"       column="QTY"/>
+            <result property="unitPrice" column="UNIT_PRICE"/>
+            <result property="amt"       column="AMT"/>
+        </collection>
+    </resultMap>
+
+    <sql id="orderColumns">
+        O.ORDER_ID, O.MEMBER_ID, O.ORDER_DT, O.ORDER_STATUS, O.TOTAL_AMT, O.CLOSE_YN
+    </sql>
+
+    <!-- 검색 조건 조각: if, choose, foreach -->
+    <sql id="searchCondition">
+        <if test="memberNm != null and memberNm != ''">
+           AND M.MEMBER_NM LIKE '%' || #{memberNm} || '%'
+        </if>
+        <if test="memberId != null">
+           AND O.MEMBER_ID = #{memberId}
+        </if>
+        <if test="statusList != null and statusList.size() > 0">
+           AND O.ORDER_STATUS IN
+            <foreach collection="statusList" item="status" open="(" separator="," close=")">
+                #{status}
+            </foreach>
+        </if>
+        <choose>
+            <when test="dateRange != null and dateRange.from != null and dateRange.to != null">
+           AND O.ORDER_DT BETWEEN #{dateRange.from} AND #{dateRange.to}
+            </when>
+            <when test="dateRange != null and dateRange.from != null">
+           AND O.ORDER_DT <![CDATA[ >= ]]> #{dateRange.from}
+            </when>
+            <otherwise>
+           AND O.ORDER_DT >= TO_CHAR(ADD_MONTHS(SYSDATE, -1), 'YYYYMMDD')
+            </otherwise>
+        </choose>
+    </sql>
+
+    <!--
+        구버전 목록 쿼리 (2019년 폐기). XML 주석이므로 분석 대상이 아니다.
+        SELECT * FROM TB_ORDER_OLD O, TB_CUSTOMER C WHERE O.CUST_ID = C.CUST_ID
+    -->
+
+    <!-- 주문 목록: 암묵 조인, (+) 아우터 조인, 힌트, NVL, 다른 namespace 의 조각 include, ${} ORDER BY -->
+    <select id="selectOrderList" parameterType="orderSearchCond" resultMap="orderResultMap">
+        <include refid="common.pagingHeader"/>
+        SELECT /*+ INDEX(O IX_ORDER_01) */
+               <include refid="orderColumns"/>,
+               M.MEMBER_NM,
+               M.GRADE_CD,
+               NVL(C.CODE_NM, '미정') AS STATUS_NM
+          FROM TB_ORDER O,
+               TB_MEMBER M,
+               TB_CODE C
+         WHERE O.MEMBER_ID = M.MEMBER_ID
+           AND O.ORDER_STATUS = C.CODE(+)
+           AND C.GROUP_CD(+) = 'ORDER_STATUS'
+           /* 예전 조건: AND O.ORDER_ID IN (SELECT ORDER_ID FROM TB_ORDER_BAK) */
+        <include refid="searchCondition"/>
+         ORDER BY ${sortColumn}
+        <include refid="common.pagingFooter"/>
+    </select>
+
+    <select id="selectOrderCount" parameterType="orderSearchCond" resultType="int">
+        SELECT COUNT(*)
+          FROM TB_ORDER O,
+               TB_MEMBER M
+         WHERE O.MEMBER_ID = M.MEMBER_ID
+        <include refid="searchCondition"/>
+    </select>
+
+    <!-- 주문 상세: ANSI JOIN (INNER / LEFT OUTER) -->
+    <select id="selectOrderDetail" parameterType="long" resultMap="orderResultMap">
+        SELECT <include refid="orderColumns"/>,
+               M.MEMBER_NM,
+               M.GRADE_CD,
+               I.ITEM_SEQ,
+               I.PRODUCT_ID,
+               P.PRODUCT_NM,
+               I.QTY,
+               I.UNIT_PRICE,
+               I.AMT
+          FROM TB_ORDER O
+         INNER JOIN TB_MEMBER M
+            ON M.MEMBER_ID = O.MEMBER_ID
+          LEFT OUTER JOIN TB_ORDER_ITEM I
+            ON I.ORDER_ID = O.ORDER_ID
+          LEFT JOIN TB_PRODUCT P
+            ON P.PRODUCT_ID = I.PRODUCT_ID
+         WHERE O.ORDER_ID = #{orderId}
+         ORDER BY I.ITEM_SEQ
+    </select>
+
+    <!-- 주문 상세 목록: DECODE, 상관 서브쿼리, 함수 호출 -->
+    <select id="selectOrderItems" resultType="orderItemVO">
+        SELECT I.ORDER_ID,
+               I.ITEM_SEQ,
+               I.PRODUCT_ID,
+               P.PRODUCT_NM,
+               I.QTY,
+               I.UNIT_PRICE,
+               I.AMT,
+               DECODE(P.STATUS_CD, 'SALE', '판매중', 'STOP', '판매중지', '기타') AS PRODUCT_STATUS_NM,
+               (SELECT MAX(H.CHG_DT)
+                  FROM TB_ORDER_HIST H
+                 WHERE H.ORDER_ID = I.ORDER_ID) AS LAST_CHG_DT
+          FROM TB_ORDER_ITEM I
+          JOIN TB_PRODUCT P ON P.PRODUCT_ID = I.PRODUCT_ID
+         WHERE I.ORDER_ID = #{orderId}
+         ORDER BY I.ITEM_SEQ
+    </select>
+
+    <!-- 주문 등록: selectKey 로 시퀀스 채번 (DUAL 은 업무 테이블이 아니다) -->
+    <insert id="insertOrder" parameterType="orderVO">
+        <selectKey keyProperty="orderId" resultType="long" order="BEFORE">
+            SELECT SEQ_ORDER_ID.NEXTVAL FROM DUAL
+        </selectKey>
+        INSERT INTO TB_ORDER (
+            ORDER_ID, MEMBER_ID, ORDER_DT, ORDER_STATUS, TOTAL_AMT, CLOSE_YN, REG_ID, REG_DT
+        ) VALUES (
+            #{orderId}, #{memberId}, TO_CHAR(SYSDATE, 'YYYYMMDD'), #{statusCode}, #{totalAmt}, 'N', #{regId}, SYSDATE
+        )
+    </insert>
+
+    <!-- 주문 상세 다건 등록: INSERT ALL + foreach -->
+    <insert id="insertOrderItems">
+        INSERT ALL
+        <foreach collection="items" item="item" index="idx">
+            INTO TB_ORDER_ITEM (ORDER_ID, ITEM_SEQ, PRODUCT_ID, QTY, UNIT_PRICE, AMT)
+            VALUES (#{orderId}, #{idx} + 1, #{item.productId}, #{item.qty}, #{item.unitPrice}, #{item.amt})
+        </foreach>
+        SELECT 1 FROM DUAL
+    </insert>
+
+    <!-- 주문 수정: set + if -->
+    <update id="updateOrder" parameterType="com.example.shop.order.vo.OrderVO">
+        UPDATE TB_ORDER
+        <set>
+            <if test="statusCode != null">ORDER_STATUS = #{statusCode},</if>
+            <if test="totalAmt != null">TOTAL_AMT = #{totalAmt},</if>
+            <if test="closeYn != null">CLOSE_YN = #{closeYn},</if>
+            UPD_ID = #{updId},
+            UPD_DT = SYSDATE
+        </set>
+         WHERE ORDER_ID = #{orderId}
+    </update>
+
+    <!-- 주문 상태 변경: trim -->
+    <update id="updateOrderStatus">
+        UPDATE TB_ORDER
+        <trim prefix="SET" suffixOverrides=",">
+            ORDER_STATUS = #{status},
+            <if test="userId != null">UPD_ID = #{userId},</if>
+            UPD_DT = SYSDATE,
+        </trim>
+         WHERE ORDER_ID = #{orderId}
+    </update>
+
+    <delete id="deleteOrderItems" parameterType="long">
+        DELETE FROM TB_ORDER_ITEM
+         WHERE ORDER_ID = #{orderId}
+    </delete>
+
+    <!-- 주문 삭제: 결제 완료 건이 없을 때만. 별칭 없이 테이블 이름으로 한정한 상관 서브쿼리 -->
+    <delete id="deleteOrder" parameterType="long">
+        DELETE FROM TB_ORDER
+         WHERE ORDER_ID = #{orderId}
+           AND NOT EXISTS (SELECT 1
+                             FROM TB_PAYMENT P
+                            WHERE P.ORDER_ID = TB_ORDER.ORDER_ID
+                              AND P.PAY_STATUS = 'DONE')
+    </delete>
+
+    <!-- 주문 마감 프로시저 호출 -->
+    <select id="callCloseOrder" parameterType="map" statementType="CALLABLE">
+        {call PKG_ORDER.CLOSE_ORDER(
+            #{orderId,  mode=IN,  jdbcType=NUMERIC},
+            #{userId,   mode=IN,  jdbcType=VARCHAR},
+            #{resultCd, mode=OUT, jdbcType=VARCHAR}
+        )}
+    </select>
+
+    <!-- 상태별 통계: 인라인 뷰 + UNION ALL. T 는 인라인 뷰 별칭이지 테이블이 아니다. -->
+    <select id="selectOrderStatusStat" resultType="java.util.HashMap">
+        SELECT T.ORDER_STATUS,
+               FN_GET_CODE_NM('ORDER_STATUS', T.ORDER_STATUS) AS STATUS_NM,
+               SUM(T.CNT) AS CNT
+          FROM (SELECT O.ORDER_STATUS, COUNT(*) AS CNT
+                  FROM TB_ORDER O
+                 WHERE O.ORDER_DT >= #{fromDt}
+                 GROUP BY O.ORDER_STATUS
+                 UNION ALL
+                SELECT H.ORDER_STATUS, COUNT(*) AS CNT
+                  FROM TB_ORDER_HIST H
+                 WHERE H.CHG_DT >= TO_DATE(#{fromDt}, 'YYYYMMDD')
+                 GROUP BY H.ORDER_STATUS
+               ) T
+         GROUP BY T.ORDER_STATUS
+         ORDER BY T.ORDER_STATUS
+    </select>
+
+</mapper>

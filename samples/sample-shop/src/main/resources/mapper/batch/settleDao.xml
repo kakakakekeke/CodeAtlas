@@ -1,0 +1,119 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<!--
+    월 정산 DAO 용 매퍼 (DB2 LUW 방언).
+    SettleDao 가 문자열 ID 로 부르고, insertSettle 은 XML 배치 설정의 MyBatisBatchItemWriter 가 statementId 로 부른다.
+-->
+<mapper namespace="settleDao">
+
+    <!-- 정산 대상: 공통 테이블 식(CTE) 2개, FETCH FIRST, WITH UR. ORDER_SUM / PAY_SUM 은 테이블이 아니다. -->
+    <select id="selectSettleTargets" parameterType="map" resultType="java.util.HashMap">
+        WITH ORDER_SUM (MEMBER_ID, ORDER_CNT, TOTAL_AMT) AS (
+            SELECT O.MEMBER_ID, COUNT(*), SUM(O.TOTAL_AMT)
+              FROM TB_ORDER O
+             WHERE O.ORDER_STATUS = '40'
+               AND O.ORDER_DT BETWEEN #{fromDt} AND #{toDt}
+             GROUP BY O.MEMBER_ID
+        ),
+        PAY_SUM AS (
+            SELECT O.MEMBER_ID, SUM(P.PAY_AMT) AS PAY_AMT
+              FROM TB_PAYMENT P
+             INNER JOIN TB_ORDER O
+                ON O.ORDER_ID = P.ORDER_ID
+             WHERE P.PAY_STATUS = 'DONE'
+             GROUP BY O.MEMBER_ID
+        )
+        SELECT M.MEMBER_ID,
+               M.MEMBER_NM,
+               S.ORDER_CNT,
+               S.TOTAL_AMT,
+               COALESCE(PS.PAY_AMT, 0) AS PAY_AMT
+          FROM ORDER_SUM S
+          JOIN TB_MEMBER M
+            ON M.MEMBER_ID = S.MEMBER_ID
+          LEFT OUTER JOIN PAY_SUM PS
+            ON PS.MEMBER_ID = S.MEMBER_ID
+         ORDER BY S.TOTAL_AMT DESC
+         FETCH FIRST 1000 ROWS ONLY
+          WITH UR
+    </select>
+
+    <!-- 정산 목록: TB_SETTLE 과 TB_MEMBER 사이에는 FK 제약이 없다 -->
+    <select id="selectSettleList" parameterType="string" resultType="java.util.HashMap">
+        SELECT S.SETTLE_ID,
+               S.SETTLE_YM,
+               S.MEMBER_ID,
+               M.MEMBER_NM,
+               S.ORDER_CNT,
+               S.SETTLE_AMT,
+               ROW_NUMBER() OVER (ORDER BY S.SETTLE_AMT DESC) AS RN
+          FROM TB_SETTLE S
+          JOIN TB_MEMBER M
+            ON M.MEMBER_ID = S.MEMBER_ID
+         WHERE S.SETTLE_YM = #{settleYm}
+         FETCH FIRST 100 ROWS ONLY
+          WITH UR
+    </select>
+
+    <!-- 정산 등록: selectKey 로 DB2 시퀀스 채번 (VALUES NEXT VALUE FOR) -->
+    <insert id="insertSettle" parameterType="map">
+        <selectKey keyProperty="settleId" resultType="long" order="BEFORE">
+            VALUES NEXT VALUE FOR SEQ_SETTLE_ID
+        </selectKey>
+        INSERT INTO TB_SETTLE (SETTLE_ID, SETTLE_YM, MEMBER_ID, ORDER_CNT, SETTLE_AMT, REG_TS)
+        VALUES (#{settleId}, #{settleYm}, #{MEMBER_ID}, #{ORDER_CNT}, #{TOTAL_AMT}, CURRENT TIMESTAMP)
+    </insert>
+
+    <!-- 정산 상세 등록: INSERT ... SELECT -->
+    <insert id="insertSettleDtl" parameterType="map">
+        INSERT INTO TB_SETTLE_DTL (SETTLE_ID, ORDER_ID, AMT)
+        SELECT #{SETTLE_ID}, O.ORDER_ID, O.TOTAL_AMT
+          FROM TB_ORDER O
+         WHERE O.MEMBER_ID = #{MEMBER_ID}
+           AND O.ORDER_STATUS = '40'
+           AND SUBSTR(O.ORDER_DT, 1, 6) = #{SETTLE_YM}
+    </insert>
+
+    <!-- 정산 금액 재계산: 다른 테이블을 읽어서 UPDATE (튜플 SET) -->
+    <update id="updateSettleAmt" parameterType="string">
+        UPDATE TB_SETTLE S
+           SET (S.SETTLE_AMT, S.ORDER_CNT) =
+               (SELECT COALESCE(SUM(D.AMT), 0), COUNT(*)
+                  FROM TB_SETTLE_DTL D
+                 WHERE D.SETTLE_ID = S.SETTLE_ID),
+               S.UPD_TS = CURRENT TIMESTAMP
+         WHERE S.SETTLE_YM = #{settleYm}
+    </update>
+
+    <delete id="deleteSettleDtl" parameterType="string">
+        DELETE FROM TB_SETTLE_DTL D
+         WHERE D.SETTLE_ID IN (SELECT S.SETTLE_ID
+                                 FROM TB_SETTLE S
+                                WHERE S.SETTLE_YM = #{settleYm})
+    </delete>
+
+    <delete id="deleteSettle" parameterType="string">
+        DELETE FROM TB_SETTLE
+         WHERE SETTLE_YM = #{settleYm}
+    </delete>
+
+    <!-- 프로시저 호출 (JDBC 이스케이프) -->
+    <update id="callSettleMonthly" parameterType="map" statementType="CALLABLE">
+        {call SP_SETTLE_MONTHLY(
+            #{settleYm,  mode=IN,  jdbcType=CHAR},
+            #{resultCnt, mode=OUT, jdbcType=INTEGER}
+        )}
+    </update>
+
+    <!-- 프로시저 호출 (중괄호 없는 CALL 문) -->
+    <update id="callWriteLog" parameterType="map" statementType="CALLABLE">
+        CALL SP_WRITE_BATCH_LOG(#{jobNm}, #{stepNm}, #{status}, #{msg})
+    </update>
+
+    <!-- SYSIBM.SYSDUMMY1 은 업무 테이블이 아니다 -->
+    <select id="selectCurrentTs" resultType="string">
+        SELECT VARCHAR_FORMAT(CURRENT TIMESTAMP, 'YYYY-MM-DD HH24:MI:SS')
+          FROM SYSIBM.SYSDUMMY1
+    </select>
+
+</mapper>

@@ -1,0 +1,88 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<!-- 일 매출 배치 매퍼 (Oracle) -->
+<mapper namespace="com.example.shop.batch.mapper.BatchMapper">
+
+    <!--
+        MyBatisPagingItemReader 가 queryId 문자열로 직접 실행한다. (_skiprows, _pagesize 는 리더가 넣어 준다)
+        T 는 인라인 뷰 별칭이다.
+    -->
+    <select id="selectClosedOrders" parameterType="map" resultType="orderVO">
+        <![CDATA[
+        SELECT *
+          FROM (SELECT ROWNUM AS RN, T.*
+                  FROM (SELECT O.ORDER_ID   AS orderId,
+                               O.MEMBER_ID  AS memberId,
+                               O.ORDER_DT   AS orderDt,
+                               O.TOTAL_AMT  AS totalAmt
+                          FROM TB_ORDER O
+                         WHERE O.ORDER_STATUS = '40'
+                           AND O.CLOSE_YN = 'N'
+                           AND O.ORDER_DT = #{baseDt}
+                         ORDER BY O.ORDER_ID) T
+                 WHERE ROWNUM <= #{_skiprows} + #{_pagesize})
+         WHERE RN > #{_skiprows}
+        ]]>
+    </select>
+
+    <!-- 일 매출 반영: MERGE. USING 의 원본이 실제 테이블(TB_ORDER_ITEM)을 읽는 서브쿼리다. -->
+    <update id="mergeDailySales" parameterType="dailySalesVO">
+        MERGE INTO TB_DAILY_SALES T
+        USING (SELECT #{salesDt}  AS SALES_DT,
+                      I.PRODUCT_ID,
+                      SUM(I.QTY)  AS QTY,
+                      SUM(I.AMT)  AS AMT
+                 FROM TB_ORDER_ITEM I
+                WHERE I.ORDER_ID = #{orderId}
+                GROUP BY I.PRODUCT_ID) S
+           ON (T.SALES_DT = S.SALES_DT AND T.PRODUCT_ID = S.PRODUCT_ID)
+         WHEN MATCHED THEN
+              UPDATE SET T.SALES_QTY = T.SALES_QTY + S.QTY,
+                         T.SALES_AMT = T.SALES_AMT + S.AMT
+         WHEN NOT MATCHED THEN
+              INSERT (SALES_DT, PRODUCT_ID, SALES_QTY, SALES_AMT, REG_DT)
+              VALUES (S.SALES_DT, S.PRODUCT_ID, S.QTY, S.AMT, SYSDATE)
+    </update>
+
+    <delete id="deleteDailySales" parameterType="string">
+        DELETE FROM TB_DAILY_SALES
+         WHERE SALES_DT = #{baseDt}
+    </delete>
+
+    <!-- 일 매출 리포트: TB_DAILY_SALES 와 TB_PRODUCT 사이에는 FK 제약이 없다 -->
+    <select id="selectDailySalesReport" parameterType="string" resultType="java.util.HashMap">
+        SELECT D.SALES_DT,
+               C.CATEGORY_NM,
+               P.PRODUCT_NM,
+               D.SALES_QTY,
+               D.SALES_AMT
+          FROM TB_DAILY_SALES D
+          JOIN TB_PRODUCT P
+            ON P.PRODUCT_ID = D.PRODUCT_ID
+          JOIN TB_CATEGORY C
+            ON C.CATEGORY_ID = P.CATEGORY_ID
+         WHERE D.SALES_DT = #{baseDt}
+         ORDER BY D.SALES_AMT DESC
+    </select>
+
+    <!-- TB_HOLIDAY 는 DDL 에 없는 테이블이다 (다른 시스템 소유) -->
+    <select id="selectIsHoliday" parameterType="string" resultType="int">
+        SELECT COUNT(*)
+          FROM TB_HOLIDAY
+         WHERE HOLIDAY_DT = #{baseDt}
+    </select>
+
+    <!-- 패키지 프로시저 호출 -->
+    <update id="callCloseDaily" parameterType="map" statementType="CALLABLE">
+        { call PKG_ORDER.CLOSE_DAILY(
+              #{baseDt,    mode=IN,  jdbcType=VARCHAR},
+              #{closedCnt, mode=OUT, jdbcType=NUMERIC}
+          ) }
+    </update>
+
+    <!-- 독립 프로시저 호출 -->
+    <update id="callDailySalesSum" statementType="CALLABLE">
+        {call SP_DAILY_SALES_SUM(#{baseDt, mode=IN, jdbcType=VARCHAR})}
+    </update>
+
+</mapper>

@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<!-- 공통 조각. 다른 매퍼에서 refid="common.pagingHeader" 처럼 namespace 를 붙여 include 한다. (Oracle) -->
+<mapper namespace="common">
+
+    <!-- Oracle ROWNUM 페이징 머리 -->
+    <sql id="pagingHeader">
+        SELECT *
+          FROM (SELECT ROWNUM AS RNUM, PAGE_T.*
+                  FROM (
+    </sql>
+
+    <!-- Oracle ROWNUM 페이징 꼬리 -->
+    <sql id="pagingFooter">
+        <![CDATA[
+                       ) PAGE_T
+                 WHERE ROWNUM <= #{endRow})
+         WHERE RNUM > #{startRow}
+        ]]>
+    </sql>
+
+    <sql id="useYn">
+        AND USE_YN = 'Y'
+    </sql>
+
+    <!-- 공통 코드 목록. 테이블이 아니라 시노님(SYN_CODE → SHOP.TB_CODE)을 읽는다. -->
+    <select id="selectCodeList" parameterType="string" resultType="java.util.HashMap">
+        SELECT CODE, CODE_NM, SORT_NO
+          FROM SYN_CODE
+         WHERE GROUP_CD = #{groupCd}
+        <include refid="useYn"/>
+         ORDER BY SORT_NO
+    </select>
+
+</mapper>

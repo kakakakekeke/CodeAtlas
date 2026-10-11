@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE configuration PUBLIC "-//mybatis.org//DTD Config 3.0//EN" "http://mybatis.org/dtd/mybatis-3-config.dtd">
+<!-- MyBatis 전역 설정. 매퍼 XML 의 parameterType/resultType 별칭은 여기서 정한다. -->
+<configuration>
+    <settings>
+        <setting name="mapUnderscoreToCamelCase" value="true"/>
+        <setting name="jdbcTypeForNull" value="NULL"/>
+        <setting name="callSettersOnNulls" value="true"/>
+    </settings>
+
+    <typeAliases>
+        <typeAlias alias="orderVO"         type="com.example.shop.order.vo.OrderVO"/>
+        <typeAlias alias="orderItemVO"     type="com.example.shop.order.vo.OrderItemVO"/>
+        <typeAlias alias="orderSearchCond" type="com.example.shop.order.vo.OrderSearchCond"/>
+        <typeAlias alias="memberVO"        type="com.example.shop.member.vo.MemberVO"/>
+        <typeAlias alias="productVO"       type="com.example.shop.product.vo.ProductVO"/>
+        <typeAlias alias="categoryVO"      type="com.example.shop.product.vo.CategoryVO"/>
+        <typeAlias alias="dailySalesVO"    type="com.example.shop.batch.vo.DailySalesVO"/>
+    </typeAliases>
+</configuration>

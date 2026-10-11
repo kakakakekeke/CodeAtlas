@@ -1,0 +1,5 @@
+<%-- 공통 꼬리말 조각. 각 화면이 정적 include 지시자로 끼워 넣는다. --%>
+<div id="footer">
+    <p>&copy; 2026 sample-shop. 문의: <a href="mailto:admin@example.com">admin@example.com</a></p>
+    <p><a href="${pageContext.request.contextPath}/main.do">처음으로</a></p>
+</div>

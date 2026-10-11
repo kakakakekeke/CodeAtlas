@@ -1,0 +1,92 @@
+--#SET TERMINATOR @
+-- =====================================================================
+-- 월 정산 프로시저 (DB2 SQL PL). 문장 종결자는 @ 이다.
+-- =====================================================================
+CREATE OR REPLACE PROCEDURE SP_SETTLE_MONTHLY (
+    IN  P_SETTLE_YM   CHAR(6),
+    OUT P_RESULT_CNT  INTEGER
+)
+LANGUAGE SQL
+SPECIFIC SP_SETTLE_MONTHLY
+BEGIN
+    DECLARE V_MEMBER_ID  DECIMAL(12,0);
+    DECLARE V_ORDER_CNT  INTEGER;
+    DECLARE V_AMT        DECIMAL(15,2);
+    DECLARE V_SETTLE_ID  BIGINT;
+    DECLARE V_DIFF_CNT   INTEGER DEFAULT 0;
+    DECLARE V_DELETED    INTEGER DEFAULT 0;
+    DECLARE V_EOF        SMALLINT DEFAULT 0;
+    DECLARE SQLSTATE     CHAR(5) DEFAULT '00000';
+
+    -- 정산 대상: 활성 회원의 배송완료 주문
+    DECLARE C_TARGET CURSOR FOR
+        SELECT O.MEMBER_ID, COUNT(*), SUM(O.TOTAL_AMT)
+          FROM TB_ORDER O
+         INNER JOIN TB_MEMBER M ON M.MEMBER_ID = O.MEMBER_ID
+         WHERE O.ORDER_STATUS = '40'
+           AND SUBSTR(O.ORDER_DT, 1, 6) = P_SETTLE_YM
+           AND M.STATUS_CD = 'A'
+         GROUP BY O.MEMBER_ID
+          WITH UR;
+
+    DECLARE CONTINUE HANDLER FOR NOT FOUND
+        SET V_EOF = 1;
+
+    DECLARE EXIT HANDLER FOR SQLEXCEPTION
+    BEGIN
+        ROLLBACK;
+        CALL SP_WRITE_BATCH_LOG('settleJob', 'SP_SETTLE_MONTHLY', 'ER', 'SQLSTATE=' || SQLSTATE);
+        SET P_RESULT_CNT = -1;
+    END;
+
+    SET P_RESULT_CNT = 0;
+
+    -- 재실행을 위해 해당 월 정산을 지운다
+    DELETE FROM TB_SETTLE_DTL D
+     WHERE EXISTS (SELECT 1
+                     FROM TB_SETTLE S
+                    WHERE S.SETTLE_ID = D.SETTLE_ID
+                      AND S.SETTLE_YM = P_SETTLE_YM);
+
+    DELETE FROM TB_SETTLE
+     WHERE SETTLE_YM = P_SETTLE_YM;
+
+    OPEN C_TARGET;
+
+    FETCH_LOOP: LOOP
+        FETCH C_TARGET INTO V_MEMBER_ID, V_ORDER_CNT, V_AMT;
+        IF V_EOF = 1 THEN
+            LEAVE FETCH_LOOP;
+        END IF;
+
+        SET V_SETTLE_ID = NEXT VALUE FOR SEQ_SETTLE_ID;
+
+        INSERT INTO TB_SETTLE (SETTLE_ID, SETTLE_YM, MEMBER_ID, ORDER_CNT, SETTLE_AMT, REG_TS)
+        VALUES (V_SETTLE_ID, P_SETTLE_YM, V_MEMBER_ID, V_ORDER_CNT, V_AMT, CURRENT TIMESTAMP);
+
+        INSERT INTO TB_SETTLE_DTL (SETTLE_ID, ORDER_ID, AMT)
+        SELECT V_SETTLE_ID, O.ORDER_ID, O.TOTAL_AMT
+          FROM TB_ORDER O
+         WHERE O.MEMBER_ID = V_MEMBER_ID
+           AND O.ORDER_STATUS = '40'
+           AND SUBSTR(O.ORDER_DT, 1, 6) = P_SETTLE_YM;
+
+        SET P_RESULT_CNT = P_RESULT_CNT + 1;
+    END LOOP FETCH_LOOP;
+
+    CLOSE C_TARGET;
+
+    -- 정산 상세 금액과 주문 금액이 어긋난 건수 (TB_SETTLE_DTL 과 TB_ORDER 사이에는 FK 가 없다)
+    SELECT COUNT(*)
+      INTO V_DIFF_CNT
+      FROM TB_SETTLE_DTL D
+      JOIN TB_ORDER O ON O.ORDER_ID = D.ORDER_ID
+     WHERE D.AMT <> O.TOTAL_AMT;
+
+    -- 문자열로 넘긴 테이블 이름은 참조가 아니다
+    CALL SP_PURGE_TABLE('BATCH.TB_BATCH_LOG', 90, V_DELETED);
+
+    CALL SP_WRITE_BATCH_LOG('settleJob', 'SP_SETTLE_MONTHLY', 'OK',
+                            'count=' || CHAR(P_RESULT_CNT) || ', diff=' || CHAR(V_DIFF_CNT));
+    COMMIT;
+END@

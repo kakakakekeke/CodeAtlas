@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xmlns:batch="http://www.springframework.org/schema/batch"
+       xsi:schemaLocation="
+           http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans.xsd
+           http://www.springframework.org/schema/batch http://www.springframework.org/schema/batch/spring-batch.xsd">
+
+    <!--
+        월 정산 잡 (XML 설정)
+          settleStep    : 청크 스텝. 리더(커스텀) → 프로세서 → 라이터(MyBatisBatchItemWriter)
+          settleLogStep : 태스크릿 스텝. 정산 상세 적재, 금액 재계산, 로그 프로시저 호출
+    -->
+    <batch:job id="settleJob">
+        <batch:step id="settleStep" next="settleLogStep">
+            <batch:tasklet>
+                <batch:chunk reader="settleItemReader"
+                             processor="settleProcessor"
+                             writer="settleWriter"
+                             commit-interval="50"/>
+            </batch:tasklet>
+        </batch:step>
+        <batch:step id="settleLogStep">
+            <batch:tasklet ref="batchLogTasklet"/>
+        </batch:step>
+    </batch:job>
+
+    <bean id="settleItemReader" class="com.example.shop.batch.SettleItemReader" scope="step">
+        <property name="settleDao" ref="settleDao"/>
+        <property name="settleYm" value="#{jobParameters['settleYm']}"/>
+    </bean>
+
+    <bean id="settleProcessor" class="com.example.shop.batch.SettleProcessor"/>
+
+    <!-- 라이터는 라이브러리 클래스다. 실행할 구문은 statementId 프로퍼티의 문자열로만 알 수 있다. -->
+    <bean id="settleWriter" class="org.mybatis.spring.batch.MyBatisBatchItemWriter">
+        <property name="sqlSessionFactory" ref="sqlSessionFactory"/>
+        <property name="statementId" value="settleDao.insertSettle"/>
+    </bean>
+
+    <bean id="batchLogTasklet" class="com.example.shop.batch.BatchLogTasklet">
+        <constructor-arg ref="settleDao"/>
+    </bean>
+
+</beans>

@@ -1,0 +1,157 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<!--
+    주문/결제 DAO 용 매퍼 (Oracle).
+    인터페이스가 없다. OrderDao 가 sqlSession.selectList("orderDao.selectOrders", ...) 처럼 문자열 ID 로 부른다.
+-->
+<mapper namespace="orderDao">
+
+    <!-- where + if + foreach, ORDER BY 는 choose 로 고른다 -->
+    <select id="selectOrders" parameterType="map" resultType="com.example.shop.order.vo.OrderVO">
+        SELECT O.ORDER_ID   AS orderId,
+               O.MEMBER_ID  AS memberId,
+               O.ORDER_DT   AS orderDt,
+               O.ORDER_STATUS AS statusCode,
+               O.TOTAL_AMT  AS totalAmt
+          FROM TB_ORDER O
+        <where>
+            <if test="memberId != null">
+                AND O.MEMBER_ID = #{memberId}
+            </if>
+            <if test="statusList != null">
+                AND O.ORDER_STATUS IN
+                <foreach collection="statusList" item="s" open="(" separator="," close=")">#{s}</foreach>
+            </if>
+            <if test="fromDt != null">
+                AND O.ORDER_DT &gt;= #{fromDt}
+            </if>
+        </where>
+         ORDER BY
+        <choose>
+            <when test="sort == 'amt'">O.TOTAL_AMT DESC</when>
+            <when test="sort == 'date'">O.ORDER_DT DESC, O.ORDER_ID DESC</when>
+            <otherwise>O.ORDER_ID DESC</otherwise>
+        </choose>
+    </select>
+
+    <!-- 테이블 이름과 정렬이 ${} 로 들어온다. 어떤 테이블을 읽는지 정적으로 알 수 없다. -->
+    <select id="selectOrderBackup" parameterType="map" resultType="java.util.HashMap">
+        SELECT ORDER_ID, MEMBER_ID, ORDER_DT, TOTAL_AMT
+          FROM ${tableName}
+         WHERE ORDER_DT &lt; #{baseDt}
+         ORDER BY ${orderBy}
+    </select>
+
+    <!-- 레거시 주문 등록: 시퀀스를 VALUES 안에서 쓰고 selectKey(AFTER) 로 CURRVAL 을 읽는다 -->
+    <insert id="insertOrder" parameterType="orderVO">
+        INSERT INTO TB_ORDER (ORDER_ID, MEMBER_ID, ORDER_DT, ORDER_STATUS, TOTAL_AMT, REG_ID, REG_DT)
+        VALUES (SEQ_ORDER_ID.NEXTVAL, #{memberId}, #{orderDt}, '10', #{totalAmt}, #{regId}, SYSDATE)
+        <selectKey keyProperty="orderId" resultType="long" order="AFTER">
+            SELECT SEQ_ORDER_ID.CURRVAL FROM DUAL
+        </selectKey>
+    </insert>
+
+    <!-- INSERT ... SELECT -->
+    <insert id="insertOrderHist" parameterType="map">
+        INSERT INTO TB_ORDER_HIST (HIST_ID, ORDER_ID, ORDER_STATUS, CHG_DT, CHG_ID)
+        SELECT SEQ_ORDER_HIST_ID.NEXTVAL,
+               O.ORDER_ID,
+               O.ORDER_STATUS,
+               SYSDATE,
+               #{userId}
+          FROM TB_ORDER O
+         WHERE O.ORDER_ID = #{orderId}
+    </insert>
+
+    <insert id="insertPayment" parameterType="map">
+        <selectKey keyProperty="paymentId" resultType="long" order="BEFORE">
+            SELECT SEQ_PAYMENT_ID.NEXTVAL FROM DUAL
+        </selectKey>
+        INSERT INTO TB_PAYMENT (PAYMENT_ID, ORDER_ID, PAY_METHOD_CD, PAY_AMT, PAY_STATUS, PAY_DT)
+        VALUES (#{paymentId}, #{orderId}, #{payMethodCd}, #{payAmt}, 'DONE', SYSDATE)
+    </insert>
+
+    <!-- 스칼라 상관 서브쿼리 -->
+    <select id="selectPaymentsByOrder" parameterType="long" resultType="java.util.HashMap">
+        SELECT P.PAYMENT_ID,
+               P.ORDER_ID,
+               P.PAY_METHOD_CD,
+               (SELECT C.CODE_NM
+                  FROM TB_CODE C
+                 WHERE C.GROUP_CD = 'PAY_METHOD'
+                   AND C.CODE = P.PAY_METHOD_CD) AS PAY_METHOD_NM,
+               P.PAY_AMT,
+               P.PAY_STATUS,
+               TO_CHAR(P.PAY_DT, 'YYYY-MM-DD HH24:MI:SS') AS PAY_DT
+          FROM TB_PAYMENT P
+         WHERE P.ORDER_ID = #{orderId}
+         ORDER BY P.PAYMENT_ID
+    </select>
+
+    <!-- 결제 결과로 주문 상태 갱신: 다른 테이블을 읽어서 UPDATE (튜플 SET + EXISTS) -->
+    <update id="updateOrderByPayment" parameterType="long">
+        UPDATE TB_ORDER O
+           SET (O.ORDER_STATUS, O.UPD_DT) =
+               (SELECT DECODE(P.PAY_STATUS, 'DONE', '20', '10'), SYSDATE
+                  FROM TB_PAYMENT P
+                 WHERE P.ORDER_ID = O.ORDER_ID
+                   AND P.PAYMENT_ID = #{paymentId})
+         WHERE EXISTS (SELECT 1
+                         FROM TB_PAYMENT P2
+                        WHERE P2.ORDER_ID = O.ORDER_ID
+                          AND P2.PAYMENT_ID = #{paymentId})
+    </update>
+
+    <update id="cancelPayment" parameterType="long">
+        UPDATE TB_PAYMENT
+           SET PAY_STATUS = 'CANCEL'
+         WHERE ORDER_ID = #{orderId}
+           AND PAY_STATUS = 'DONE'
+    </update>
+
+    <!-- 다중 테이블 UPDATE (조인 뷰 갱신). 실제로 바뀌는 것은 TB_DELIVERY 뿐이고 TB_ORDER 는 읽기만 한다. -->
+    <update id="updateDeliveryShip" parameterType="long">
+        UPDATE (SELECT D.DELIVERY_STATUS,
+                       D.SHIP_DT,
+                       O.ORDER_STATUS
+                  FROM TB_DELIVERY D,
+                       TB_ORDER O
+                 WHERE D.ORDER_ID = O.ORDER_ID
+                   AND O.ORDER_ID = #{orderId}
+                   AND O.ORDER_STATUS = '30')
+           SET DELIVERY_STATUS = 'SHIP',
+               SHIP_DT = SYSDATE
+    </update>
+
+    <!-- 주문 이력: ANSI JOIN. ON 절에 상수 조건이 섞여 있다. -->
+    <select id="selectOrderHistory" parameterType="long" resultType="java.util.HashMap">
+        SELECT H.HIST_ID,
+               H.ORDER_ID,
+               H.ORDER_STATUS,
+               C.CODE_NM AS STATUS_NM,
+               H.CHG_DT,
+               H.CHG_ID,
+               O.TOTAL_AMT
+          FROM TB_ORDER_HIST H
+          JOIN TB_ORDER O
+            ON O.ORDER_ID = H.ORDER_ID
+          LEFT JOIN TB_CODE C
+            ON C.GROUP_CD = 'ORDER_STATUS'
+           AND C.CODE = H.ORDER_STATUS
+         WHERE H.ORDER_ID = #{orderId}
+         ORDER BY H.CHG_DT DESC
+    </select>
+
+    <!-- 패키지 함수 호출 -->
+    <select id="selectOrderAmount" parameterType="long" resultType="long">
+        SELECT PKG_ORDER.GET_ORDER_AMT(#{orderId}) FROM DUAL
+    </select>
+
+    <!-- 익명 PL/SQL 블록으로 프로시저 호출 -->
+    <update id="callCancelOrder" parameterType="map" statementType="CALLABLE">
+        BEGIN
+            PKG_ORDER.CANCEL_ORDER(#{orderId, mode=IN, jdbcType=NUMERIC}, #{userId, mode=IN, jdbcType=VARCHAR});
+        END;
+    </update>
+
+</mapper>

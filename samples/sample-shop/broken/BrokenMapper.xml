@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<!-- 일부러 깨뜨린 매퍼 XML: if 태그가 닫히지 않았고, 이스케이프하지 않은 < 가 있고, 루트 요소도 닫히지 않았다. -->
+<mapper namespace="broken.BrokenMapper">
+
+    <select id="selectBroken" resultType="map">
+        SELECT BROKEN_ID, BROKEN_NM
+          FROM TB_BROKEN
+         WHERE 1 = 1
+        <if test="brokenId != null">
+           AND BROKEN_ID < #{brokenId}
+    </select>
+
+    <update id="updateBroken">
+        UPDATE TB_BROKEN SET BROKEN_NM = #{brokenNm} WHERE BROKEN_ID = #{brokenId}
+    </update>
