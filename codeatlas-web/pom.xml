@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <parent>
+    <groupId>io.codeatlas</groupId>
+    <artifactId>codeatlas-parent</artifactId>
+    <version>0.1.0-SNAPSHOT</version>
+  </parent>
+
+  <artifactId>codeatlas-web</artifactId>
+  <name>codeatlas-web</name>
+  <description>JS·TS 분석, js 내장 소스 소비</description>
+
+  <properties>
+    <!-- 2026-10-11에 Maven Central maven-metadata.xml에서 확인한 최신판 -->
+    <tree-sitter.version>0.26.6</tree-sitter.version>
+    <tree-sitter-javascript.version>0.25.0</tree-sitter-javascript.version>
+    <tree-sitter-typescript.version>0.23.2</tree-sitter-typescript.version>
+    <tree-sitter-tsx.version>0.23.2</tree-sitter-tsx.version>
+  </properties>
+
+  <dependencies>
+    <dependency>
+      <groupId>io.codeatlas</groupId>
+      <artifactId>codeatlas-core</artifactId>
+    </dependency>
+
+    <!-- tree-sitter Java 바인딩(tree-sitter-ng, JNI). 네이티브 라이브러리가 jar의 lib/ 아래에 들어 있다. ADR-0005 -->
+    <dependency>
+      <groupId>io.github.bonede</groupId>
+      <artifactId>tree-sitter</artifactId>
+      <version>${tree-sitter.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>io.github.bonede</groupId>
+      <artifactId>tree-sitter-javascript</artifactId>
+      <version>${tree-sitter-javascript.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>io.github.bonede</groupId>
+      <artifactId>tree-sitter-typescript</artifactId>
+      <version>${tree-sitter-typescript.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>io.github.bonede</groupId>
+      <artifactId>tree-sitter-tsx</artifactId>
+      <version>${tree-sitter-tsx.version}</version>
+    </dependency>
+
+    <dependency>
+      <groupId>org.junit.jupiter</groupId>
+      <artifactId>junit-jupiter</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.assertj</groupId>
+      <artifactId>assertj-core</artifactId>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+</project>
