@@ -1,4 +1,4 @@
-// 탐색 화면: 종류 필터, 이름 검색, 노드 상세.
+// 탐색 화면: 종류 필터, 이름 검색, 노드 상세(지나온 노드로 뒤로·앞으로).
 (function (root) {
   'use strict';
   var CA = root.CodeAtlas = root.CodeAtlas || {};
@@ -69,7 +69,7 @@
       var list = ui.createVirtualList({
         render: function (node) {
           var row = ui.nodeRow(node, node.id === selectedId ? 'selected' : '');
-          row.addEventListener('click', function () { select(node.id, true); });
+          row.addEventListener('click', function () { select(node.id, 'list'); });
           return row;
         }
       });
@@ -83,7 +83,7 @@
         if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
         var at = results.findIndex(function (n) { return n.id === selectedId; });
         var next = Math.max(0, Math.min(results.length - 1, at + (e.key === 'ArrowDown' ? 1 : -1)));
-        if (results[next]) { select(results[next].id, true); list.reveal(next); }
+        if (results[next]) { select(results[next].id, 'list'); list.reveal(next); }
         e.preventDefault();
       });
       var resultsPane = h('div', { class: 'pane results' }, [
@@ -93,13 +93,26 @@
 
       // ---- 상세
       var detailBody = h('div', { class: 'pane-body' }, [h('div', { class: 'empty', text: '목록에서 노드를 고르면 속성과 관계가 여기에 나온다.' })]);
-      var detailPane = h('div', { class: 'pane detail' }, [detailBody]);
+      var nav = ui.createTrailNav(index, function (id) { select(id, 'trail'); });
+      var detailPane = h('div', { class: 'pane detail' }, [h('div', { class: 'pane-head detail-nav' }, [nav.back, nav.forward]), detailBody]);
 
-      function select(id, fromList) {
+      /**
+       * 노드를 고른다. how는 어떻게 왔는지다: 'list'(결과 목록), 'follow'(상세 안의 링크), 'trail'(뒤로·앞으로 단추), 'address'(주소의 #).
+       * 주소는 자취와 같이 간다: 자취에 칸이 늘면 주소에도 새 항목을 쌓아 브라우저의 뒤로 가기로 돌아올 수 있게 하고,
+       * 목록에서 연달아 고른 것(자취의 칸을 바꿈)은 주소도 그 자리에서 바꾼다. 주소에서 온 이동은 주소를 건드리지 않는다.
+       */
+      function select(id, how) {
+        var first = selectedId == null;
+        var step = null;   // 주소에 할 일: 'push'(새 항목), 'replace'(그 자리에서 바꿈), 그 밖에는 그대로 둔다
+        if (how === 'address') nav.trail.sync(id);
+        else if (how === 'trail') step = 'push';
+        else step = nav.trail.visit(id, how === 'list');
         selectedId = id;
-        ui.renderDetail(detailBody, app, id);
+        ui.renderDetail(detailBody, app, id, { follow: function (to) { select(to, 'follow'); } });
+        nav.update();
         list.refresh();
-        if (fromList) app.setHash('explore', { id: id });
+        if (step === 'replace' || (step === 'push' && first)) app.setHash('explore', { id: id });
+        else if (step === 'push') app.pushHash('explore', { id: id });
       }
 
       runSearch();
@@ -108,13 +121,13 @@
         show: function (params) {
           list.refresh();
           if (params && params.id && params.id !== selectedId) {
-            select(params.id, false);
+            select(params.id, 'address');
             var at = results.findIndex(function (n) { return n.id === params.id; });
             if (at >= 0) list.reveal(at);
           }
         },
         /** 탐색 화면이 떠 있을 때 다른 노드로 옮겨 간다. */
-        showDetail: function (id) { select(id, true); }
+        showDetail: function (id) { select(id, 'follow'); }
       };
     }
   };

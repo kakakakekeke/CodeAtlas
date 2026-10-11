@@ -84,6 +84,11 @@ JS 테스트: `node --test "codeatlas-viewer/src/test/js/*.test.js"` · Java 테
 - [x] 테스트 도구: `tools/export-tree.js`(풀어 쓴 이름 `labelText`, selfSubmit 묶음 줄), `tools/export-notation.js`(문맥 없는 미해결 selfSubmit 이름)
 - [x] sample-shop의 표준 산출물(`codeatlas-cli/target/final-out`)을 새 jar로 다시 내고 대조 테스트 통과(JS 263개)
 
+## 상세의 뒤로·앞으로 (2026-10-11, 사용자 요청)
+- [x] F-016-AC83~AC87(`trail.test.js` 7개) → 고치기 전의 뷰어로 실행해 7개 모두 실패 확인 → `core/trail.js`(자취), `widgets.js`(`createTrailNav`: 단추와 풍선말), `detail.js`(상세 안의 노드 링크를 `opts.follow`로), `view-explore.js`(고른 경로 `list`·`follow`·`trail`·`address`에 따라 자취와 주소를 맞춤), `app.js`(서랍의 자취, `pushHash`) (F-016-R45)
+- [x] 실제 브라우저 확인: jeesite 결과를 `http://localhost`로 띄워 탐색의 단추, 브라우저의 뒤로·앞으로 가기, 서랍의 단추를 확인(콘솔 오류 없음). `file://`은 확인에 쓴 브라우저 도구가 열지 못해 `file-protocol.test.js`(덫에 걸린 접근 없음)로 갈음
+- [x] JS 272개(그중 28개는 실제 그래프와 표준 산출물이 있을 때만 돈다) 통과, `mvn -q -pl codeatlas-viewer test` 통과
+
 ## 마무리
 - [x] 모든 수용 기준 통과 확인 (JS 193개 — 그중 26개는 실제 그래프와 표준 산출물(`codeatlas-cli/target/final-out/`)이 있을 때만 돈다, Java 7개)
 - [x] spec.md의 status를 implemented로 변경

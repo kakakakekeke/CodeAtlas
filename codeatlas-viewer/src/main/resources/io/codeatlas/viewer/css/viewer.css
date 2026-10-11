@@ -218,6 +218,7 @@ button, input, select { font: inherit; color: inherit; }
 .detail { flex: 1 1 42%; min-width: 320px; }
 
 /* ---------- 노드 상세 */
+.detail-nav { min-height: 0; padding: 4px 10px; gap: 6px; }
 .detail-body { padding: 0 0 24px; }
 .detail-head { padding: 10px 12px 8px; border-bottom: 1px solid var(--border); }
 .detail-tags { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }

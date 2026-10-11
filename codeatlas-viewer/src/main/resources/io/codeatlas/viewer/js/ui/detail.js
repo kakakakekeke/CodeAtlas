@@ -23,10 +23,10 @@
   }
 
   /** 속성 값. 노드 ID인 값은 그 노드로 가는 링크로, 나머지는 글자로. 목록은 쉼표로 잇는다. */
-  function attrValue(attr, app) {
+  function attrValue(attr, follow) {
     var parts = attr.items.map(function (it) {
       if (!it.nodeId) return it.text;
-      return h('button', { class: 'link', type: 'button', text: it.text, title: '이 노드로 이동', on: { click: function (e) { e.stopPropagation(); app.showDetail(it.nodeId); } } });
+      return h('button', { class: 'link', type: 'button', text: it.text, title: '이 노드로 이동', on: { click: function (e) { e.stopPropagation(); follow(it.nodeId); } } });
     });
     // 값 안에 쉼표가 있는 목록(indexes의 `IX1(A,B DESC)`)은 한 줄에 하나씩 보인다.
     if (attr.multiline) return [h('div', { class: 'multi' }, parts.map(function (p) { return h('span', { class: 'item' }, [p]); }))];
@@ -38,16 +38,16 @@
     return out;
   }
 
-  function attrTable(attrs, app) {
+  function attrTable(attrs, follow) {
     var table = h('dl', { class: 'kv' });
     attrs.forEach(function (a) {
       table.appendChild(h('dt', { text: a.key }));
-      table.appendChild(h('dd', { class: a.key === 'sql' ? 'sql' : '' }, attrValue(a, app)));
+      table.appendChild(h('dd', { class: a.key === 'sql' ? 'sql' : '' }, attrValue(a, follow)));
     });
     return table;
   }
 
-  function edgeSection(title, groups, app) {
+  function edgeSection(title, groups, follow) {
     var total = groups.reduce(function (s, g) { return s + g.items.length; }, 0);
     var section = h('div', { class: 'section' }, [h('h3', {}, [title, h('span', { class: 'n', text: ui.formatCount(total) })])]);
     if (!total) {
@@ -62,7 +62,7 @@
       var more = null;
       function showMore() {
         var until = Math.min(g.items.length, shown + PAGE);
-        for (; shown < until; shown++) box.insertBefore(edgeRow(g.items[shown], app), more);
+        for (; shown < until; shown++) box.insertBefore(edgeRow(g.items[shown], follow), more);
         if (more && shown >= g.items.length) { more.remove(); more = null; }
         else if (more) more.firstChild.textContent = '더 보기 (' + ui.formatCount(g.items.length - shown) + '개 남음)';
       }
@@ -77,7 +77,7 @@
   }
 
   /** 엣지 한 줄. 속성이 있으면 ▸를 눌러 모든 속성과 위치를 펼친다(추론 관계의 근거 구문, 주입 후보 등). */
-  function edgeRow(item, app) {
+  function edgeRow(item, follow) {
     var extra = edgeExtra(item);
     var details = null;
     var toggle = h('button', { class: 'edge-toggle' + (item.attrs.length ? '' : ' leaf'), type: 'button', text: '▸', attrs: { 'aria-label': '엣지 속성 펼치기', 'aria-expanded': 'false' } });
@@ -85,7 +85,7 @@
       toggle,
       ui.confBadge(item.confidence, true),
       item.other ? ui.kindBadge(item.other.kind) : h('span', { class: 'tag warn', text: '노드 없음', title: '그래프에 이 ID의 노드가 없다' }),
-      h('button', { class: 'link', type: 'button', text: item.label, title: item.otherId, on: { click: function () { app.showDetail(item.otherId); } } }),
+      h('button', { class: 'link', type: 'button', text: item.label, title: item.otherId, on: { click: function () { follow(item.otherId); } } }),
       item.summary ? h('span', { class: 'edge-summary', text: item.summary, title: item.summary }) : null,
       extra ? h('span', { class: 'extra', text: extra, title: extra }) : null
     ]);
@@ -94,7 +94,7 @@
       if (!item.attrs.length) return;
       if (details) { details.remove(); details = null; }
       else {
-        details = h('div', { class: 'edge-attrs' }, [attrTable(item.attrs, app)]);
+        details = h('div', { class: 'edge-attrs' }, [attrTable(item.attrs, follow)]);
         if (item.location) details.appendChild(h('div', { class: 'edge-loc', text: '위치 ' + item.location }));
         wrap.appendChild(details);
       }
@@ -107,9 +107,11 @@
   /**
    * container에 노드 상세를 그린다.
    * opts.inDrawer: 서랍 안이면 "탐색에서 열기" 단추를 붙인다.
+   * opts.follow(id): 상세 안의 노드 링크(엣지의 상대, 속성 값의 노드)를 눌렀을 때 부른다. 없으면 app.showDetail.
    */
   function renderDetail(container, app, id, opts) {
     var o = opts || {};
+    var follow = o.follow || function (to) { app.showDetail(to); };
     var index = app.index;
     var d = G.nodeDetail(index, id);
     if (!d) {
@@ -151,12 +153,12 @@
 
     var attrs = h('div', { class: 'section' }, [
       h('h3', {}, ['속성', h('span', { class: 'n', text: String(d.attrs.length) })]),
-      d.attrs.length ? attrTable(d.attrs, app) : h('div', { class: 'hint', text: '없음' }),
+      d.attrs.length ? attrTable(d.attrs, follow) : h('div', { class: 'hint', text: '없음' }),
       // 분석기가 링커에 넘기려고 남긴 중간 정보(메서드 본문의 구문 ID 문자열, 폼 필드 등)는 접어 둔다.
       d.internalAttrs && d.internalAttrs.length ? h('details', { class: 'internal-attrs' }, [
         h('summary', {}, ['분석 중간 정보', h('span', { class: 'n', text: String(d.internalAttrs.length) })]),
         h('div', { class: 'hint', text: '분석기가 다음 단계(링커)에 넘기려고 남긴 값이다. 관계는 이미 엣지로 만들어져 있다.' }),
-        attrTable(d.internalAttrs, app)
+        attrTable(d.internalAttrs, follow)
       ]) : null
     ]);
 
@@ -169,12 +171,12 @@
         h('div', { class: 'hint', text: 'SQL은 참조하지만 이 테이블의 DDL에 없는 컬럼이다. DDL이 오래됐거나 다른 방언·버전의 DDL이 선택됐을 수 있다. ERD에는 넣지 않는다.' })
       ].concat(d.undeclaredColumns.map(function (c) {
         var parts = [
-          h('button', { class: 'link name', type: 'button', text: c.name, title: c.id, on: { click: function () { app.showDetail(c.id); } } }),
+          h('button', { class: 'link name', type: 'button', text: c.name, title: c.id, on: { click: function () { follow(c.id); } } }),
           h('span', { class: 'muted', text: ' — 구문 ' + c.statements.length + '개' + (c.statements.length ? ': ' : '') })
         ];
         c.statements.forEach(function (st, i) {
           if (i > 0) parts.push(', ');
-          parts.push(h('button', { class: 'link', type: 'button', text: st.label, title: st.id, on: { click: function () { app.showDetail(st.id); } } }));
+          parts.push(h('button', { class: 'link', type: 'button', text: st.label, title: st.id, on: { click: function () { follow(st.id); } } }));
         });
         return h('div', { class: 'undeclared-column' }, parts);
       })));
@@ -182,8 +184,8 @@
 
     container.replaceChildren(h('div', { class: 'detail-body' }, [
       head, attrs, ghosts,
-      edgeSection('나가는 엣지', d.outgoing, app),
-      edgeSection('들어오는 엣지', d.incoming, app)
+      edgeSection('나가는 엣지', d.outgoing, follow),
+      edgeSection('들어오는 엣지', d.incoming, follow)
     ]));
     container.scrollTop = 0;
   }

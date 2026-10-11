@@ -3,6 +3,7 @@ css/viewer.css
 js/core/graph.js
 js/core/search.js
 js/core/vlist.js
+js/core/trail.js
 js/core/calltree.js
 js/core/classdiagram.js
 js/core/erd.js
