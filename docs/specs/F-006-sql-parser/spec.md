@@ -12,7 +12,7 @@ updated: 2026-10-11
 콜트리를 테이블까지 잇고(PRD 목표 1) ERD의 관계를 조인에서 추론하려면(PRD 목표 2) SQL 구문이 어떤 테이블·컬럼을 읽고 쓰는지, 어떤 컬럼끼리 등치 조건으로 묶이는지 알아야 한다. SQL은 매퍼 XML 안(내장 소스)과 SQL 파일 양쪽에 있고, MyBatis가 전개한 SQL은 문법이 깨져 있을 수 있다. ADR-0004에 따라 오류를 허용하는 재귀 하강 파서를 직접 구현한다.
 
 ## 2. 범위
-- 포함: Oracle·DB2 LUW의 SELECT/INSERT/UPDATE/DELETE/MERGE/CALL(및 TRUNCATE, LOCK TABLE, 익명 블록 안의 호출·DML) 파싱, 스크립트 분할, `sql` 내장 소스 소비, SQL 파일의 독립 DML 구문 처리, READS/WRITES/JOINS/CALLS 엣지 기록, 루틴 단위 확장 지점.
+- 포함: Oracle·DB2 LUW의 SELECT/INSERT/UPDATE/DELETE/MERGE/CALL(및 TRUNCATE, LOCK TABLE, 익명 블록 안의 호출·DML) 파싱, 스크립트 분할, `sql` 내장 소스 소비, SQL 파일의 독립 DML 구문 처리, `.properties` 파일의 값에 든 SQL 구문 처리, READS/WRITES/JOINS/CALLS 엣지 기록, 루틴 단위 확장 지점.
 - 제외: DDL(F-007), 프로시저·함수·패키지·트리거 본문 분석(F-008), 뷰·시노님 이름 맞추기와 관계 추론(F-012, F-018), 문법 검증.
 - 범위 밖 방언: MySQL·MariaDB, PostgreSQL, HSQL, MSSQL 등은 지원 대상이 아니다. 이런 SQL을 만나면 **죽지 않고, 틀린 사실을 만들지 않고, 경고를 쏟아내지 않는 것**까지만 목표로 한다(F-006-R18, F-007-R17).
 
@@ -62,6 +62,8 @@ updated: 2026-10-11
 | F-006-R40 | DB가 제공하는 사전 뷰·카탈로그 테이블(Oracle의 `USER_`·`ALL_`·`DBA_` 사전 뷰와 `V$…`, `SYS.*`, DB2의 `SYSCAT.*`·`SYSIBM.*`·`SYSSTAT.*` 등)을 읽으면, 시스템은 테이블 노드를 만들되 `attrs.systemCatalog=true`를 붙여야 한다. 이름만 비슷한 프로젝트의 테이블(`USER_INFO`), DDL에 정의된 테이블, 사전 스키마 없이도 읽은 이름에는 붙이지 않는다. | 공개 프로젝트 재검증 3차("DDL에 없는 테이블"에 사전 뷰가 섞임) |
 | F-006-R41 | 사전 스키마(`SYS`, `SYSCAT`, `SYSIBM`, `SYSSTAT`, `SYSIBMADM`, `SYSTOOLS`, `SYSPROC`, `SYSFUN`, `INFORMATION_SCHEMA`)로 한정한 테이블 참조면, 시스템은 테이블 이름과 상관없이 사전 뷰·카탈로그 테이블로 다뤄야 한다(F-006-R40의 `systemCatalog=true`): 이름이나 스키마를 따옴표·백틱으로 감쌌어도, 대소문자가 어떻든, 구문 일부를 해석하지 못해 구문 끝에서 건진 참조여도 같다. 한정자 없이도 읽은 이름(`TABLES`, `COLUMNS`)에는 전처럼 붙이지 않는다. | 공개 프로젝트 재검증 4차(jeesite `GenDataBaseDictDao.xml`의 ``information_schema.`TABLES` ``·`COLUMNS`가 일반 테이블로 남고 `TABLES`가 "의심"으로 나왔다) |
 | F-006-R42 | 구문 특징으로 방언을 판정할 때(F-006-R12·R37), Oracle·DB2에 없는 MySQL 표기 — 괄호가 붙은 `SYSDATE()`, 따옴표 없는 수를 쓴 `INTERVAL [+\|-]n <단위>`, `ADDDATE(` — 가 하나라도 있으면, 시스템은 그 구문을 Oracle·DB2로 추측하지 않아야 한다(`dialect` 키 없음). Oracle의 `INTERVAL '6' MONTH`, 괄호 없는 `SYSDATE`, DB2의 `CURRENT DATE - 6 MONTHS`의 판정은 그대로여야 한다. | 공개 프로젝트 재검증 4차(재현 `my2`의 `ADDDATE(SYSDATE(), INTERVAL -6 MONTH)`에 `dialect=ORACLE`) |
+| F-006-R43 | `.properties` 파일의 값이 SQL 구문 꼴(F-006-R44)이면, 시스템은 그 값을 SQL 구문으로 분석해야 한다: 구문 노드 `sql:stmt:<파일>:<키가 있는 줄>`(`name`과 `attrs.propertyKey`는 키, `attrs.sql`은 공백을 정리한 본문)을 만들고, 파일에서 그 구문으로 `CONTAINS`를 잇고, 본문이 읽고 쓰는 테이블·컬럼·조인·호출을 다른 구문과 같은 엣지로 기록한다. 줄 끝 `\`로 이은 값은 이어서 읽는다. 누가 이 구문을 실행하는지는 알 수 없으므로 `EXECUTES`는 만들지 않는다. | 공개 프로젝트 실측(전자정부 공통컴포넌트 `egov-security-config.properties`의 `sqlRolesAndUrl` 등 권한 조회 SQL이 `impact COMTNROLEINFO`에 없음) |
+| F-006-R44 | `.properties` 값의 SQL 구문 꼴은 값이 대소문자와 상관없이 `SELECT … FROM <이름>`, `INSERT INTO`, `UPDATE <이름> [별칭] SET`, `DELETE FROM`, `MERGE INTO`, `WITH <이름> … AS (`, `{call …`·`{? = call …`으로 시작하는 것이다. 중괄호 없는 `CALL …`은 문장(`Call center (weekdays)`)과 가릴 수 없어 넣지 않는다. 그 꼴이 아닌 값(`Select`, `Select a list to delete!`, `Update Executive Calendar`), 더미 테이블에서 리터럴 하나만 읽는 연결 확인 쿼리(값 전체가 `SELECT <숫자 또는 문자열> FROM DUAL` 또는 `… FROM SYSIBM.SYSDUMMY1`. `SELECT SEQ.NEXTVAL FROM DUAL`은 구문이다), 메시지 번들 파일(파일 이름에 `message`·`i18n`·`label`이 들었거나, `Resources`로 끝나거나, 로케일 접미사 `_xx`·`_xx_YY`로 끝나는 파일)의 값은 SQL로 보지 않아야 한다(구문 노드와 테이블 노드를 만들지 않는다). | 공개 프로젝트 실측(properties 499개에서 SQL 키워드로 시작하는 값 113개 가운데 SQL은 20개이고 나머지는 화면 문구) |
 ## 4. 수용 기준
 
 ### F-006-AC1 (대상: F-006-R1)
@@ -274,6 +276,16 @@ updated: 2026-10-11
 - When 구문 특징으로 방언을 판정하면(`DialectDetector.fromTokens`), 그리고 방언 이름이 없는 SQL 파일로 분석하면
 - Then 앞의 다섯은 판정하지 않고(null) 구문 노드에 `dialect`가 없다. 뒤의 Oracle·DB2 구문은 전처럼 `ORACLE`·`DB2`다.
 
+### F-006-AC43 (대상: F-006-R43)
+- Given `conf/security.properties`의 `sqlRolesAndUrl = SELECT a.ROLE_PTTRN as url, b.AUTHOR_CODE authority FROM COMTNROLEINFO a, COMTNAUTHORROLERELATE b WHERE a.ROLE_CODE = b.ROLE_CODE …`, 소문자로 쓰고 줄 끝 `\`로 두 줄에 나눈 `sqlRoleAndUrl`, `:` 구분자를 쓴 `audit.insert: INSERT INTO TB_AUDIT (…) VALUES (?, ?)`, `user.lock = UPDATE TB_USER SET …`, `log.purge = DELETE FROM TB_LOG WHERE …`, `stats.call = {call PKG_STATS.REFRESH(?)}`, `order.nextId = SELECT SEQ_ORDER.NEXTVAL FROM DUAL`과 DDL
+- When 분석하면
+- Then 값마다 구문 노드 `sql:stmt:conf/security.properties:<키의 줄>`이 생긴다: `name`·`propertyKey`가 키, `statementType`이 구문 종류, 위치가 키의 줄이고 파일에서 `CONTAINS`가 온다. `sqlRolesAndUrl`은 두 테이블을 `READS`하고 `ROLE_CODE`로 `JOINS`하며, 소문자로 쓴 테이블도 대문자 이름의 테이블로 간다. INSERT·UPDATE·DELETE는 `WRITES`, `{call …}`은 루틴으로 `CALLS`, 시퀀스를 읽는 구문은 시퀀스로 `READS`다. 이 구문들로 들어오는 `EXECUTES`는 없다.
+
+### F-006-AC44 (대상: F-006-R44)
+- Given 보통의 properties에 든 `button.select = Select`, `validate.noDelList = Select a list to delete!`, `title = Update Executive Calendar`, `btn.withdraw = Delete Your Account`, `jdbc.url = jdbc:oracle:thin:@db:1521:XE`, `jdbc.testSql = SELECT 'x' FROM DUAL`, `db2.validationQuery = select 1 from sysibm.sysdummy1`, 그리고 메시지 번들(`message/message-common_en.properties`, `i18n/labels.properties`, `ApplicationResources.properties`, `texts_ko_KR.properties`)에 든 `Select a file from the list`·`Delete from cart`
+- When 분석하면
+- Then `SQL_STATEMENT` 노드와 테이블 노드가 하나도 생기지 않는다.
+
 ## 5. 가정
 - 컬럼 엣지: UPDATE/DELETE/MERGE 대상 테이블은 테이블 수준 WRITES만 만들고 테이블 수준 READS는 따로 만들지 않는다. WHERE나 SET 우변에서 읽은 대상 테이블 컬럼은 컬럼 READS로 남긴다. 인라인 뷰를 거친 DML에서는 SET(또는 INSERT 컬럼 목록)의 컬럼이 원본으로 추적되는 테이블 인스턴스, 원본을 못 찾았으면 인라인 뷰의 테이블이 하나일 때 그 인스턴스가 대상이다. 그 테이블을 읽는 인스턴스가 모두 이런 대상일 때만 테이블 수준 READS를 뺀다(F-006-R14). 어느 테이블이 갱신되는지 정하지 못하면 쓰기를 만들지 않고 읽기만 남긴다.
 - **고정 컬럼(F-006-R13)**: AND로만 이어진 조건에서 `컬럼 = 상수`(좌우 무관)와 `컬럼 IN (리터럴 하나)`를 본다. 상수는 리터럴(문자열·숫자·부호 붙은 숫자·`CURRENT DATE` 같은 특수 레지스터), 바인드(`?`, `:name`, `#{..}`), 루틴 본문의 변수·매개변수다. OR·NOT 아래의 조건, `<>`·범위·`LIKE`·`IN (여럿)`·`IN (바인드 하나)`(MyBatis `<foreach>`를 한 번 전개한 모양일 수 있다)·`= NULL`·함수 호출 결과와의 비교는 고정이 아니다. 서브쿼리 안의 조건은 바깥이 OR 아래여도 그 서브쿼리의 인스턴스에 대해 따로 본다. 인라인 뷰·CTE를 거친 컬럼은 원본 인스턴스로 추적하고, 인라인 뷰의 선택 목록에 놓인 바인드(`SELECT #{dt} AS SALES_DT …`)와의 등치는 보지 않는다.
@@ -347,6 +359,8 @@ updated: 2026-10-11
 - 별칭 자리의 절 키워드: `SELECT A LIMIT FROM T`, `FROM T OFFSET`처럼 `LIMIT`·`OFFSET`·`WINDOW` 등을 AS 없는 별칭으로 쓴 것은 읽지 못한다(AS를 쓰거나 따옴표로 감싸면 읽는다).
 - PL/SQL 본문 안의 SQL에서 지역 변수는 `FactExtractor.variables`로 알려 주지 않으면, 테이블이 하나뿐이고 카탈로그에 없을 때 컬럼으로 오인될 수 있다. (해소됨, F-008) 루틴 본문과 익명 블록은 본문 파서가 변수 스코프를 모아 넘긴다(F-008-R4).
 - (해소됨, F-008) ~~DB2 레이블이 `L1:LOOP`처럼 붙어 있으면 `:LOOP`가 바인드로 렉싱된다.~~ 렉서가 이름 바로 뒤의 `:` 다음이 블록을 여는 키워드(`LOOP`, `WHILE`, `FOR`, `REPEAT`, `BEGIN`)이면 레이블로 읽는다(`LexerTest`의 F-008-AC1). `L1:LOOPS`처럼 키워드가 아닌 이름은 그대로 바인드다.
+
+- **properties 파일의 SQL(F-006-R43·R44)**: 값이 SQL인지는 모양으로만 판정한다(키 이름은 보지 않는다. 실측한 코퍼스에서 SQL 20개는 모두 모양으로 가려졌고 화면 문구 93개는 하나도 걸리지 않았다). 메시지 번들이 아닌 파일에 `Delete from cart`처럼 SQL 꼴인 문장이 있으면 구문으로 읽힌다(알려진 한계). `{0}` 같은 `MessageFormat` 자리는 따로 풀지 않는다. 값은 `java.util.Properties`와 같은 규칙으로 읽는다(`#`·`!` 주석, `=`·`:`·공백 구분자, 줄 끝 `\` 이음, `\t`·`\n`·`\uXXXX`). 한 값에 구문이 여럿이면 다른 내장 소스처럼 한 구문 노드에 합친다. 본문은 연속 구간이 아니라서 엣지의 위치는 모두 키의 줄이다. 방언은 본문의 구문 특징으로만 적는다. `src/test/`의 properties도 다른 테스트 파일처럼 읽는다(`--exclude-tests`로 뺀다). `.yml`·`.yaml`의 값과 Java 문자열에 든 SQL은 읽지 않는다. 사용자 검토가 필요하다.
 
 ## 6. 미확정 사항
 - 없음(사용자가 기본값으로 진행하도록 위임했다. 5절의 가정은 검토 대상이다).

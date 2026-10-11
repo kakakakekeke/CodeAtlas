@@ -38,6 +38,7 @@ import io.codeatlas.sql.parser.ParseResult;
 import io.codeatlas.sql.parser.SqlParser;
 import io.codeatlas.sql.routine.RoutineBodyHandler;
 import io.codeatlas.sql.script.HeaderOnlyRoutineHandler;
+import io.codeatlas.sql.script.PropertiesSql;
 import io.codeatlas.sql.script.RoutineContext;
 import io.codeatlas.sql.script.RoutineHeader;
 import io.codeatlas.sql.script.RoutineUnit;
@@ -319,7 +320,8 @@ public final class SqlAnalyzer implements Analyzer {
             nothingRead(graph, fu);
         }
 
-        // 4. 내장 소스
+        // 4. 내장 소스. properties 파일의 값에 든 SQL은 여기서 구문 노드를 만들어 함께 얹는다(F-006-R43)
+        propertiesSql(ctx);
         Map<String, List<EmbeddedSource>> byOwner = new LinkedHashMap<>();
         for (EmbeddedSource source : ctx.embedded(EmbeddedSource.SQL)) {
             byOwner.computeIfAbsent(source.ownerNodeId(), k -> new ArrayList<>()).add(source);
@@ -704,6 +706,34 @@ public final class SqlAnalyzer implements Analyzer {
             }
         }
         selection.droppedLoadGroups(dropped);
+    }
+
+    /**
+     * properties 파일의 값이 SQL 구문 꼴이면 키의 줄을 ID로 하는 구문 노드를 만들고 본문을 내장 소스로 등록한다(F-006-R43·R44).
+     * 누가 실행하는지는 알 수 없으므로 EXECUTES는 만들지 않는다. 메시지 번들의 값은 문장이라 보지 않는다.
+     */
+    private static void propertiesSql(AnalysisContext ctx) {
+        GraphModel graph = ctx.graph();
+        for (SourceFile file : ctx.files().ofType(FileType.PROPERTIES)) {
+            String path = file.relativePath();
+            if (PropertiesSql.messageBundle(path)) {
+                continue;
+            }
+            try {
+                for (PropertiesSql.Entry entry : PropertiesSql.statements(file.readText())) {
+                    String statementId = Ids.sqlStatement(path, entry.line());
+                    SourceLocation location = file.location(entry.line());
+                    graph.declare(Node.builder(statementId, NodeKind.SQL_STATEMENT).name(entry.key())
+                            .qualifiedName(path + ":" + entry.line()).location(location)
+                            .attr("sql", normalizeSql(entry.value())).attr("propertyKey", entry.key()).build());
+                    graph.addEdge(Edge.of(Ids.file(path), statementId, EdgeKind.CONTAINS));
+                    // 줄을 잇고 이스케이프를 푼 값이라 호스트 파일의 연속 구간이 아니다(exactPositions=false)
+                    ctx.addEmbedded(EmbeddedSource.sql(statementId, entry.value(), location, false));
+                }
+            } catch (RuntimeException e) {
+                graph.report(Diagnostic.error(DiagnosticCodes.PARSE_FAILED, "properties 파일을 읽지 못함: " + e, SourceLocation.ofFile(path)));
+            }
+        }
     }
 
     private static void declareStatement(GraphModel graph, String statementId, FileUnits fu, ScriptUnit unit, Locator locator) {
