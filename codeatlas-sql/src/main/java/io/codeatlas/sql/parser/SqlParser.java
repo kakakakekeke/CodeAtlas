@@ -256,11 +256,14 @@ public final class SqlParser extends TokenCursor {
     }
 
     /**
-     * PostgreSQL {@code COPY}(F-019-R23). {@code COPY 테이블 [(컬럼, ..)] FROM stdin ..}만 데이터 적재다. 파일에서 읽는 {@code COPY .. FROM '경로'},
-     * {@code COPY .. TO ..}, {@code COPY (쿼리) TO ..}는 조용히 넘긴다.
+     * PostgreSQL {@code COPY}(F-019-R23, F-019-R38). {@code COPY 테이블 [(컬럼, ..)] FROM stdin ..}만 데이터 적재다. {@code COPY (쿼리) TO ..}는
+     * 괄호 안의 쿼리를 읽은 구문이다({@link #copyQuery}). 파일에서 읽는 {@code COPY 테이블 .. FROM '경로'}와 {@code COPY 테이블 .. TO ..}는 조용히 넘긴다.
      */
     private Statement copy() {
         next(); // COPY
+        if (atSymbol("(")) {
+            return copyQuery();
+        }
         Statement.Copy copy = null;
         if (peek().isIdentifier() && !atTableNameStop()) {
             QName table = qualifiedName();
@@ -271,6 +274,24 @@ public final class SqlParser extends TokenCursor {
         }
         pos = tokens.size() - 1;
         return copy != null ? copy : new Statement.Other("COPY", false);
+    }
+
+    /**
+     * {@code COPY (쿼리) TO 대상 [옵션]}(F-019-R38): 괄호 안이 {@code SELECT}·{@code VALUES}·{@code WITH} 쿼리면 그 쿼리를 읽는 {@code SELECT} 구문이고,
+     * {@code INSERT|UPDATE|DELETE|MERGE .. RETURNING ..}이면 그 구문이다. {@code TO} 뒤의 대상과 옵션은 받아 넘긴다. 쿼리를 다 읽지 못해
+     * 닫는 괄호에 닿지 못하면 남은 토큰을 그대로 둔다: {@link #parseStatement()}가 문제를 남기고 FROM/JOIN 뒤의 테이블 이름을 건진다.
+     * 현재 위치는 여는 괄호다.
+     */
+    private Statement copyQuery() {
+        open();
+        Statement inner = atAny("INSERT", "UPDATE", "DELETE", "MERGE") ? statement() : new Statement.Select(parseQuery());
+        if (atSymbol(")")) {
+            close();
+            pos = tokens.size() - 1; // TO 대상 [WITH (옵션)]
+        } else if (openParens > 0) {
+            openParens--;
+        }
+        return inner;
     }
 
     /**

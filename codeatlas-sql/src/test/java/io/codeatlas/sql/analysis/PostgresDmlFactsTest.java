@@ -8,6 +8,7 @@ import static io.codeatlas.sql.analysis.FactsTestSupport.writeColumns;
 import static io.codeatlas.sql.analysis.FactsTestSupport.writes;
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.codeatlas.sql.ast.Statement;
 import io.codeatlas.sql.lexer.Lexer;
 import io.codeatlas.sql.lexer.Syntax;
 import io.codeatlas.sql.parser.DdlParser;
@@ -469,5 +470,73 @@ class PostgresDmlFactsTest {
             assertThat(reads(r.facts)).as(sql).isEmpty();
             assertThat(r.facts.dummyTable()).as(sql).isNull();
         }
+    }
+
+    // ------------------------------------------------------------------ F-019-AC36: COPY (쿼리) TO
+
+    @Test
+    @DisplayName("F-019-AC36 COPY (쿼리) TO ..: 괄호 안의 쿼리를 읽어 SELECT 구문의 읽기와 조인으로 기록한다. TO 뒤의 대상과 옵션은 받아 넘긴다")
+    void copyQueryTo() {
+        for (String tail : List.of("TO STDOUT", "TO STDOUT;", "TO stdout WITH (FORMAT csv, HEADER true, DELIMITER ';')", "TO '/tmp/orders.csv' CSV HEADER",
+                "TO PROGRAM 'gzip > /tmp/orders.gz' WITH (FORMAT text)")) {
+            String sql = "COPY (SELECT o.id FROM orders o JOIN customers c ON c.id = o.customer_id) " + tail;
+            Read r = pg(sql);
+            assertThat(r.problems()).as(sql).isEmpty();
+            assertThat(r.facts.statementType()).as(sql).isEqualTo("SELECT");
+            assertThat(reads(r.facts)).as(sql).isEqualTo("CUSTOMERS,ORDERS");
+            assertThat(readColumns(r.facts)).as(sql).isEqualTo("CUSTOMERS.ID,ORDERS.CUSTOMER_ID,ORDERS.ID");
+            assertThat(joins(r.facts)).as(sql).isEqualTo("CUSTOMERS(ID)=ORDERS(CUSTOMER_ID)");
+            assertThat(writes(r.facts)).as(sql).isEmpty();
+        }
+        Read cte = pg("COPY (WITH x AS (SELECT id FROM orders WHERE status = 'NEW') SELECT x.id FROM x) TO STDOUT");
+        assertThat(cte.problems()).isEmpty();
+        assertThat(cte.everyName()).isEqualTo("ORDERS||ORDERS.ID,ORDERS.STATUS|");
+        Read union = pg("COPY ((SELECT id FROM orders) UNION ALL (SELECT id FROM customers)) TO STDOUT");
+        assertThat(union.problems()).isEmpty();
+        assertThat(reads(union.facts)).isEqualTo("CUSTOMERS,ORDERS");
+        Read values = pg("COPY (VALUES (1, 'a'), (2, 'b')) TO STDOUT");
+        assertThat(values.problems()).isEmpty();
+        assertThat(values.facts.statementType()).isEqualTo("SELECT");
+        assertThat(values.everyName()).isEqualTo("|||");
+    }
+
+    @Test
+    @DisplayName("F-019-AC36 COPY (INSERT|UPDATE|DELETE .. RETURNING ..) TO ..: 괄호 안의 데이터 변경 구문을 읽어 그 대상을 쓰기로 기록한다")
+    void copyDataChangingStatementTo() {
+        Read delete = pg("COPY (DELETE FROM orders WHERE status = 'OLD' RETURNING id) TO STDOUT");
+        assertThat(delete.problems()).isEmpty();
+        assertThat(delete.facts.statementType()).isEqualTo("DELETE");
+        assertThat(delete.everyName()).isEqualTo("|ORDERS[DELETE]|ORDERS.ID,ORDERS.STATUS|");
+        Read insert = pg("COPY (INSERT INTO orders (id) SELECT c.id FROM customers c RETURNING id) TO '/tmp/new.csv'");
+        assertThat(insert.problems()).isEmpty();
+        assertThat(reads(insert.facts)).isEqualTo("CUSTOMERS");
+        assertThat(writes(insert.facts)).isEqualTo("ORDERS[INSERT]");
+    }
+
+    @Test
+    @DisplayName("F-019-AC36 COPY (쿼리) TO의 쿼리를 읽지 못하면 조용히 넘기지 않는다: 문제를 남기고 읽은 데까지의 테이블은 남긴다")
+    void copyQueryToWithUnreadableQuery() {
+        Read garbage = pg("COPY (FROBNICATE orders) TO STDOUT");
+        assertThat(garbage.problems()).isNotEmpty();
+        Read unclosed = pg("COPY (SELECT o.id FROM orders o JOIN customers c ON c.id = o.customer_id TO STDOUT");
+        assertThat(unclosed.problems()).isNotEmpty();
+        assertThat(reads(unclosed.facts)).isEqualTo("CUSTOMERS,ORDERS");
+        Read broken = pg("COPY (SELECT o.id FROM orders o WHERE o.id = = 1 }) TO STDOUT");
+        assertThat(broken.problems()).isNotEmpty();
+        assertThat(reads(broken.facts)).isEqualTo("ORDERS");
+    }
+
+    @Test
+    @DisplayName("F-019-AC36 COPY 테이블 FROM '경로'와 COPY 테이블 [(컬럼)] TO ..는 전처럼 조용히 넘긴다(F-019-R23). 기본 읽기 방식의 COPY는 전처럼 모르는 구문이다")
+    void copyTableFormsStaySilent() {
+        for (String sql : List.of("COPY orders FROM '/tmp/a.csv'", "COPY orders TO '/tmp/out.csv'", "COPY orders (id, status) TO STDOUT WITH (FORMAT csv)",
+                "COPY public.orders FROM PROGRAM 'cat /tmp/a.csv'")) {
+            Read r = pg(sql);
+            assertThat(r.problems()).as(sql).isEmpty();
+            assertThat(r.result.statement()).as(sql).isInstanceOf(Statement.Other.class);
+            assertThat(r.everyName()).as(sql).isEqualTo("|||");
+        }
+        assertThat(pg("COPY orders (id, status) FROM stdin").result.statement()).isInstanceOf(Statement.Copy.class);
+        assertThat(read("COPY (SELECT id FROM orders) TO STDOUT", Syntax.DEFAULT, shop()).result.statement()).isInstanceOf(Statement.Unparsed.class);
     }
 }

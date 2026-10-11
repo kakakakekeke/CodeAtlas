@@ -18,12 +18,12 @@ updated: 2026-10-11
 
 | 구성 요소 | 변경 내용 | 관련 요구사항 |
 |---|---|---|
-| core `spi/Dialect` | `POSTGRES` 추가. `parse`가 `postgres`·`postgresql`·`pgsql`을 읽는다 | R1 |
+| core `spi/Dialect` | `POSTGRES` 추가. `parse`가 `postgres`·`postgresql`·`pgsql`을 읽는다. 대상 방언의 표준 이름(`canonicalName()`, `ofCanonicalName(..)`)을 갖는다: sql과 mybatis가 `Dialect`와 표준 이름을 바꿀 때 쓴다(리뷰 뒤 정리) | R1, R4 |
 | core `scan/FileClassifier` | SQL 확장자에 `pgsql` 추가 | R2 |
 | sql `lexer/Syntax` (새로) | `DEFAULT`, `MYSQL`, `POSTGRES` | R6 |
 | sql `lexer/Lexer` | `boolean mysql` → `Syntax`. PostgreSQL: 달러 인용(토큰이 `$`로 시작할 때), `E''`, `$n`, 연산자, `#`을 이름 글자로 보지 않음 | R6, R9, R10 |
 | sql `script/ScriptSplitter` | `Syntax` 전달. `COPY … FROM stdin` 데이터 구간, psql 메타 명령 | R9, R11 |
-| sql `parser/SqlParser`, `DdlParser` | 생성자에 `Syntax`. PostgreSQL DML·DDL 문법 | R12~R23 |
+| sql `parser/SqlParser`, `DdlParser` | 생성자에 `Syntax`. PostgreSQL DML·DDL 문법. `COPY (쿼리) TO`의 쿼리(`SqlParser.copyQuery`, 본문에서는 `RoutineParser`가 SQL 구문으로 넘긴다) | R12~R23, R38 |
 | sql `parser/RoutineLanguage` (새로), `RoutineParser` | `boolean sqlPl` → `RoutineLanguage`. PL/pgSQL 문장 | R25 |
 | sql `script/RoutineHeader`, `routine/RoutineBodyHandler`, `BodyWalker`, `DynamicSql` | PostgreSQL 루틴 헤더와 달러 인용 본문, `language` 값, `PERFORM`·`EXECUTE`·`RETURN QUERY`, 트리거·`DO`·`LANGUAGE sql` | R24~R31 |
 | sql `analysis/DialectDetector` | PostgreSQL 내용 특징과 토큰 점수, 읽기 방식을 정하는 한곳(`syntaxOfFile`, `syntaxOfEmbedded`) | R2, R3, R7 |
@@ -60,7 +60,7 @@ public enum RoutineLanguage { PLSQL, SQLPL, PLPGSQL }
 - `ScriptSplitter.forEach(text, sink, tokenListener, Syntax)`, `splitEmbedded(text, Syntax)`, `shapeOf(text, Syntax)`.
 - `new SqlParser(tokens, Syntax)`, `new DdlParser(tokens, Syntax)`. 토큰만 받는 생성자는 `DEFAULT`로 남긴다(기존 테스트가 쓴다).
 - `new RoutineParser(tokens, RoutineLanguage)`.
-- `DialectDetector.syntaxOfFile(pathToken, optionDialect, text, projectSyntax)`와 `syntaxOfEmbedded(attrsDialect, projectSyntax, text)`가 읽기 방식을 정한다. 다른 곳에서 따로 정하지 않는다.
+- `DialectDetector.syntaxOfFile(pathToken, optionDialect, content, projectSyntax)`와 `syntaxOfEmbedded(attrsDialect, projectSyntax, text)`가 읽기 방식을 정한다. 다른 곳에서 따로 정하지 않는다. `content`는 `DialectDetector.content(text)`가 본문을 한 번 훑어 낸 내용 판정(`Content(dialect, mysql)`)이다: 파일의 방언을 정할 때 구한 것을 그대로 넘겨 본문을 두 번 훑지 않는다(리뷰 뒤 고침. 본문을 받는 `syntaxOfFile(.., text, ..)`도 남아 있고 답이 같다).
 - 달러 인용 본문은 문자열 토큰 하나로 온다. 루틴 본문으로 읽을 때는 그 토큰의 안쪽을 원문 위치(`Lexer.tokenizeAt`)에 맞춰 다시 토큰으로 만든다. 그래서 본문 구문의 위치가 원본 파일 기준이다(R25).
 
 명령줄: `--dialect oracle|db2|postgres|auto`.

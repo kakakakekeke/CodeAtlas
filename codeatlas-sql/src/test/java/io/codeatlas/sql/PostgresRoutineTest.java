@@ -697,6 +697,39 @@ class PostgresRoutineTest {
     }
 
     @Test
+    @DisplayName("F-019-AC36 PL/pgSQL·LANGUAGE sql 본문의 COPY (쿼리) TO ..는 루틴에 속한 SELECT 구문이다: 쿼리의 읽기가 기록되고 매개변수는 컬럼이 아니다. 본문의 COPY 테이블 TO|FROM '경로'는 전처럼 조용히 넘긴다")
+    void copyQueryToInBody() {
+        String sql = """
+                CREATE FUNCTION export_audit(p_customer bigint) RETURNS void LANGUAGE plpgsql AS $$
+                BEGIN
+                    COPY (SELECT a.id, a.memo FROM audit_log a JOIN orders o ON o.id = a.id WHERE o.customer_id = p_customer) TO '/tmp/audit.csv' WITH (FORMAT csv);
+                    COPY session_cache TO '/tmp/cache.csv';
+                    COPY orders (id, status) FROM '/tmp/orders.csv';
+                END;
+                $$;
+                CREATE PROCEDURE export_cache() LANGUAGE sql AS $$
+                    COPY (SELECT k FROM session_cache WHERE expires_at IS NULL) TO '/tmp/keys.csv';
+                $$;
+                """;
+        GraphModel g = analyze(sql);
+        assertThat(g.diagnostics()).isEmpty();
+        String routine = "db:routine:EXPORT_AUDIT";
+        String copy = stmt("EXPORT_AUDIT", sql, "COPY (SELECT a.id");
+        assertThat(statementsOf(g, routine)).containsExactly(copy);
+        assertThat(node(g, copy).attrString("statementType")).isEqualTo("SELECT");
+        assertThat(targets(g, copy, EdgeKind.READS)).containsExactly("db:column:AUDIT_LOG.ID", "db:column:AUDIT_LOG.MEMO",
+                "db:column:ORDERS.CUSTOMER_ID", "db:column:ORDERS.ID", "db:table:AUDIT_LOG", "db:table:ORDERS");
+        assertThat(targets(g, copy, EdgeKind.WRITES)).isEmpty();
+        assertThat(routineTargets(g, routine, EdgeKind.CALLS)).isEmpty();
+        assertThat(node(g, routine).attr("statementCount")).isEqualTo(1);
+        String sqlBody = stmt("EXPORT_CACHE", sql, "COPY (SELECT k");
+        assertThat(statementsOf(g, "db:routine:EXPORT_CACHE")).containsExactly(sqlBody);
+        assertThat(targets(g, sqlBody, EdgeKind.READS)).containsExactly("db:column:SESSION_CACHE.EXPIRES_AT", "db:column:SESSION_CACHE.K", "db:table:SESSION_CACHE");
+        assertThat(undeclaredColumns(g)).isEmpty();
+        assertThat(tables(g)).containsExactly("AUDIT_LOG", "CUSTOMERS", "ORDERS", "ORDER_ITEMS", "SESSION_CACHE");
+    }
+
+    @Test
     @DisplayName("F-019-AC22 F-019-AC24 작은따옴표 본문과 옛 표기 LANGUAGE 'plpgsql': 안의 ''를 풀어 읽고 구문의 줄은 원본 파일 기준이다. NEW.컬럼에 대입해도 컬럼이 생기지 않는다")
     void singleQuotedPlpgsqlBody() {
         String sql = """

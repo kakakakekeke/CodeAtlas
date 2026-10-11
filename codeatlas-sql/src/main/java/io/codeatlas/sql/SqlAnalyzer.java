@@ -205,15 +205,17 @@ public final class SqlAnalyzer implements Analyzer {
             try {
                 String text = file.readText();
                 files.add(fu);
-                // 파일의 방언: 경로의 방언 이름이 먼저고, 없으면 내용 특징(CREATE MEMORY TABLE, 백틱, VARCHAR2 등)으로 읽는다(F-007-R24)
-                String token = pathToken != null ? pathToken : DialectDetector.contentDialect(text);
+                // 파일의 방언: 경로의 방언 이름이 먼저고, 없으면 내용 특징(CREATE MEMORY TABLE, 백틱, VARCHAR2 등)으로 읽는다(F-007-R24).
+                // 내용 특징은 본문을 한 번만 훑어 구하고, 같은 판정을 아래 읽기 방식에도 쓴다
+                DialectDetector.Content content = pathToken != null ? null : DialectDetector.content(text);
+                String token = pathToken != null ? pathToken : content.dialect();
                 fu.token = token;
                 selection.registerFile(path, token);
                 // 구문 노드에 적을 방언은 파일에서 판정한 것만이다: --dialect 옵션은 찍지 않는다(F-006-R37)
-                Dialect pathDialect = DialectDetector.targetOf(token);
+                Dialect pathDialect = Dialect.ofCanonicalName(token);
                 fu.dialect = pathDialect;
                 // 파일의 읽기 방식(F-019-R7): 경로의 방언 이름이 먼저고, 이름이 없으면 옵션(--dialect), 프로젝트 방언, 그다음 본문 특징이다
-                fu.syntax = DialectDetector.syntaxOfFile(pathToken, optionDialect, text, declaredSyntax);
+                fu.syntax = DialectDetector.syntaxOfFile(pathToken, optionDialect, content, declaredSyntax);
                 // 대상 외 방언의 파일이면 구문 특징으로 대상 방언을 추측하지 않는다(dialect를 비워 둔다)
                 fu.foreign = pathDialect == null && (token != null || fu.syntax == Syntax.MYSQL);
                 // 옵션과 경로로 방언을 모르면 같은 훑기에서 구문 특징으로 판정한다
@@ -380,7 +382,7 @@ public final class SqlAnalyzer implements Analyzer {
                 ddl.apply(work.ddl.statement(), fu.path, locator, unit.pos(), unit.text());
             } else if (unit.kind() == ScriptUnit.Kind.STATEMENT && fu.syntax == Syntax.POSTGRES && unit.first().is("COPY")) {
                 // PostgreSQL COPY 테이블 FROM stdin과 그 데이터 줄: 그 테이블의 데이터 적재 묶음이다(F-019-R23).
-                // 파일에서 읽는 COPY와 COPY … TO는 적재가 아니다: 남겨 두면 뒤에서 조용히 넘어간다
+                // 파일에서 읽는 COPY와 COPY … TO는 적재가 아니다: 남겨 두면 뒤에서 구문으로 읽는다(COPY (쿼리) TO는 그 쿼리를 읽고, 나머지는 조용히 넘어간다)
                 if (new SqlParser(new ArrayList<>(unit.tokens()), fu.syntax).parseStatement().statement() instanceof Statement.Copy copy
                         && !copy.table().anyDynamic()) {
                     fu.loads.offerCopy(unit, copy, unit.dataRows());

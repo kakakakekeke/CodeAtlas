@@ -97,7 +97,7 @@ public final class DialectSelection {
         this.conflicting = List.copyOf(conflicting);
         this.others = List.copyOf(others);
         this.optionDialect = DialectDetector.fromOption(optionDialect);
-        String requested = DialectDetector.tokenOf(this.optionDialect);
+        String requested = this.optionDialect == null ? null : this.optionDialect.canonicalName();
         if (requested != null) {
             requests.add(new Request(requested, "--dialect"));
         }
@@ -145,7 +145,8 @@ public final class DialectSelection {
     public static String dialectOfFile(String path) {
         String dialect = DialectTokens.ofPath(path);
         if (dialect == null) {
-            dialect = DialectDetector.tokenOf(DialectDetector.fromPath(path));
+            Dialect byExtension = DialectDetector.fromPath(path);
+            dialect = byExtension == null ? null : byExtension.canonicalName();
         }
         return dialect;
     }
