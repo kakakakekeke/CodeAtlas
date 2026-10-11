@@ -186,7 +186,8 @@ final class DialectVariants {
             preferred.add(forced);
             requests.add(new Request(forced, OPTION));
         }
-        String optionDialect = requestOf(dialect);
+        // --dialect가 요청하는 방언(표준 이름). 방언을 정하지 않았으면(auto, null) null이다
+        String optionDialect = dialect == null ? null : dialect.canonicalName();
         if (optionDialect != null && !preferred.contains(optionDialect)) {
             preferred.add(optionDialect);
             requests.add(new Request(optionDialect, "--dialect"));
@@ -233,19 +234,6 @@ final class DialectVariants {
                 }
             }
         });
-    }
-
-    /** {@code --dialect} 값이 요청하는 방언(표준 이름). 방언을 정하지 않았으면({@code auto}, null) null. */
-    static String requestOf(Dialect dialect) {
-        if (dialect == null) {
-            return null;
-        }
-        return switch (dialect) {
-            case ORACLE -> "oracle";
-            case DB2 -> "db2";
-            case POSTGRES -> "postgres";
-            default -> null;
-        };
     }
 
     private int rank(String dialect) {

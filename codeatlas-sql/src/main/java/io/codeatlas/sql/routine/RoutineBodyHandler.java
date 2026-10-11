@@ -269,6 +269,14 @@ public final class RoutineBodyHandler implements RoutineUnitHandler {
         root.declare("OLD");
         RoutineSink sink = new RoutineSink(env, unit.nodeId(), name, name);
         BodyWalker walker = new BodyWalker(env, null, sink, name);
+        walkTriggerCondition(tokens, executeStart(tokens), RoutineLanguage.PLPGSQL, walker, root);
+        if (header.postgres().triggerFunction() != null && !header.postgres().triggerFunction().anyDynamic()) {
+            walker.walkCall(header.postgres().triggerFunction(), root);
+        }
+    }
+
+    /** 본문이 없는 PostgreSQL 트리거의 헤더가 끝나는 자리: 괄호 밖의 첫 {@code EXECUTE}. 없으면 토큰 목록의 끝. */
+    private static int executeStart(List<Token> tokens) {
         int parens = 0;
         for (int i = 0; i + 1 < tokens.size(); i++) {
             Token t = tokens.get(i);
@@ -276,17 +284,34 @@ public final class RoutineBodyHandler implements RoutineUnitHandler {
                 parens++;
             } else if (t.isSymbol(")")) {
                 parens--;
-            } else if (parens == 0 && t.is("WHEN") && tokens.get(i + 1).isSymbol("(")) {
-                int close = matching(tokens, i + 1, tokens.size());
-                RoutineParser condition = new RoutineParser(tokens.subList(i + 2, Math.max(i + 2, close)), RoutineLanguage.PLPGSQL);
-                walker.walkExpression(condition.parseExpression(), root);
-                break;
             } else if (parens == 0 && t.is("EXECUTE")) {
-                break;
+                return i;
             }
         }
-        if (header.postgres().triggerFunction() != null && !header.postgres().triggerFunction().anyDynamic()) {
-            walker.walkCall(header.postgres().triggerFunction(), root);
+        return tokens.size();
+    }
+
+    /**
+     * 트리거 헤더의 {@code WHEN (조건)}: 조건식의 서브쿼리와 함수 호출을 낸다. 헤더에서 괄호 밖의 첫 {@code WHEN (}만 본다.
+     *
+     * @param end 헤더가 끝나는 토큰 인덱스(제외): 본문이 시작하는 자리, 본문이 없는 PostgreSQL 트리거는 {@code EXECUTE}의 자리({@link #executeStart})
+     * @param language 조건식을 읽을 언어
+     * @param scope 조건식에서 변수로 볼 이름({@code NEW}, {@code OLD}, 상관 이름)
+     */
+    private static void walkTriggerCondition(List<Token> tokens, int end, RoutineLanguage language, BodyWalker walker, VarScope scope) {
+        int parens = 0;
+        for (int i = 0; i < end && i + 1 < tokens.size(); i++) {
+            Token t = tokens.get(i);
+            if (t.isSymbol("(")) {
+                parens++;
+            } else if (t.isSymbol(")")) {
+                parens--;
+            } else if (parens == 0 && t.is("WHEN") && tokens.get(i + 1).isSymbol("(")) {
+                int close = matching(tokens, i + 1, end);
+                RoutineParser condition = new RoutineParser(tokens.subList(i + 2, Math.max(i + 2, close)), language);
+                walker.walkExpression(condition.parseExpression(), scope);
+                return;
+            }
         }
     }
 
@@ -470,20 +495,7 @@ public final class RoutineBodyHandler implements RoutineUnitHandler {
         BodyWalker walker = new BodyWalker(env, null, sink, name);
         walker.transientRelations(transitionTables);
         // WHEN (조건): 서브쿼리와 함수 호출이 있을 수 있다
-        int parens = 0;
-        for (int i = 0; i < bodyStart; i++) {
-            Token t = tokens.get(i);
-            if (t.isSymbol("(")) {
-                parens++;
-            } else if (t.isSymbol(")")) {
-                parens--;
-            } else if (parens == 0 && t.is("WHEN") && tokens.get(i + 1).isSymbol("(")) {
-                int close = matching(tokens, i + 1, bodyStart);
-                RoutineParser conditionParser = new RoutineParser(tokens.subList(i + 2, Math.max(i + 2, close)), language);
-                walker.walkExpression(conditionParser.parseExpression(), root);
-                break;
-            }
-        }
+        walkTriggerCondition(tokens, bodyStart, language, walker, root);
         RoutineParser parser = new RoutineParser(tokens.subList(bodyStart, tokens.size()), language);
         Routine.Block body = parser.parseBody(false);
         boolean dynamicInCondition = walker.dynamicSeen();
