@@ -13,7 +13,7 @@ import java.util.Set;
 public final class FileClassifier {
 
     private static final Set<String> SQL_EXTENSIONS =
-            Set.of("sql", "ddl", "pks", "pkb", "pls", "plb", "prc", "fnc", "trg", "db2", "spsql");
+            Set.of("sql", "ddl", "pks", "pkb", "pls", "plb", "prc", "fnc", "trg", "db2", "spsql", "pgsql");
     private static final Set<String> JS_EXTENSIONS = Set.of("js", "mjs", "cjs", "jsx");
     private static final Set<String> TS_EXTENSIONS = Set.of("ts", "tsx");
     private static final Set<String> JSP_EXTENSIONS = Set.of("jsp", "jspf", "tag");

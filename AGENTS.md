@@ -50,6 +50,7 @@
 - 필요한 것: JDK 21 이상, Maven 3.9.
 - 전체 빌드와 테스트: 루트에서 `mvn -q install`. 단위 테스트와 실행 jar 통합 테스트(`*IT`)를 돌리고 모든 모듈을 `~/.m2`에 설치한다.
 - 샘플 프로젝트 정답 대조: `mvn -q -pl codeatlas-cli verify -Dsample.verify=report` 를 돌리면 `codeatlas-cli/target/sample-shop-report.md`에 종류별 통과율과 실패 목록이 나온다. `-Dsample.verify=report` 없이 돌리면 통과율 100%와 함정 위반 0을 단언한다.
+- 같은 명령이 PostgreSQL 샘플(`samples/sample-pg`)도 대조한다. 리포트는 `codeatlas-cli/target/sample-pg-report.md`이고, 단언 모드에서는 `PARSE_FAILED`·`UNSUPPORTED_SYNTAX`가 샘플의 "일부러 넣은 미지원 구문" 위치에만 있는지도 본다.
 - IDE의 Java 자동 빌드가 `target/`에 클래스를 써서 테스트 결과가 이상해 보이면(`Unresolved compilation problems`) `clean`을 붙여 다시 돌린다.
 - 뷰어의 JS 로직 테스트는 Maven에 묶여 있지 않다: `node --test "codeatlas-viewer/src/test/js/*.test.js"` (Maven 테스트를 먼저 돌려야 생성된 `viewer.html` 검사까지 한다).
 - 모듈 하나만 테스트: 루트에서 `mvn -q -pl codeatlas-<모듈> test`. 다른 모듈은 `~/.m2`에 설치된 것을 쓴다.

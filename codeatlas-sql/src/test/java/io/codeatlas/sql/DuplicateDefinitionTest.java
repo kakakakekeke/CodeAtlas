@@ -111,7 +111,7 @@ class DuplicateDefinitionTest {
     }
 
     @Test
-    @DisplayName("F-007-AC14 --dialect가 있으면 그 방언 경로의 정의를, 힌트가 없으면 경로순 첫 파일의 정의를 쓴다")
+    @DisplayName("F-007-AC14 F-019-AC4 --dialect가 있으면 그 방언 경로의 정의를, 힌트가 없으면 방언 순위(Oracle·DB2가 없으면 PostgreSQL이 먼저)와 경로순으로 첫 파일의 정의를 쓴다")
     void selectionOrder() {
         try (TestProject project = TestProject.create()
                 .file("db/db2/ddl.sql", "CREATE TABLE T_X (ID INTEGER NOT NULL, DB2_COL VARCHAR(10));\n")
@@ -128,11 +128,19 @@ class DuplicateDefinitionTest {
             GraphModel g = project.run(new SqlAnalyzer()).graph();
             assertThat(targets(g, "db:table:T_X", EdgeKind.CONTAINS)).containsExactly("db:column:T_X.ID", "db:column:T_X.ORA_COL");
         }
-        // 힌트가 없는 방언끼리: 그 밖의 방언의 순서(이름의 사전순, F-007-R28. 이 배치에서는 경로순과 같다). 다만 upgrade 스크립트는 뒤로 미룬다
+        // Oracle·DB2가 없으면 대상 방언 postgres가 먼저다(F-019-R4. 전에는 그 밖의 방언의 사전순으로 maria였다). 다만 upgrade 스크립트는 뒤로 미룬다
         try (TestProject project = TestProject.create()
                 .file("db/a_upgrade/update_2020.sql", "CREATE TABLE T_X (ID INT, OLD_COL INT);\n")
                 .file("db/maria/ddl.sql", "CREATE TABLE T_X (ID INT, MARIA_COL INT);\n")
                 .file("db/postgres/ddl.sql", "CREATE TABLE T_X (ID INT, PG_COL INT);\n")) {
+            GraphModel g = project.run(new SqlAnalyzer()).graph();
+            assertThat(node(g, "db:table:T_X").location().file()).isEqualTo("db/postgres/ddl.sql");
+            assertThat(targets(g, "db:table:T_X", EdgeKind.CONTAINS)).containsExactly("db:column:T_X.ID", "db:column:T_X.PG_COL");
+        }
+        // 대상 방언이 없을 때: upgrade 스크립트가 경로상 먼저여도 방언 파일(maria)의 정의를 쓴다
+        try (TestProject project = TestProject.create()
+                .file("db/a_upgrade/update_2020.sql", "CREATE TABLE T_X (ID INT, OLD_COL INT);\n")
+                .file("db/maria/ddl.sql", "CREATE TABLE T_X (ID INT, MARIA_COL INT);\n")) {
             GraphModel g = project.run(new SqlAnalyzer()).graph();
             assertThat(node(g, "db:table:T_X").location().file()).isEqualTo("db/maria/ddl.sql");
             assertThat(targets(g, "db:table:T_X", EdgeKind.CONTAINS)).containsExactly("db:column:T_X.ID", "db:column:T_X.MARIA_COL");

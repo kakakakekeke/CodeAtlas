@@ -35,8 +35,10 @@ final class Hints {
     private static final String DIALECT_VARIANT_DDL = "DIALECT_VARIANT_DDL";
     private static final String DIALECT_NOT_FOUND = "DIALECT_NOT_FOUND";
     private static final String DIALECT_NOT_TARGET = "DIALECT_NOT_TARGET";
-    /** 대상 외 방언을 고르는 옵션. {@code --dialect}는 oracle·db2·auto만 받는다. 매퍼(mybatis)와 DDL(sql) 선택이 둘 다 이 값을 읽는다. */
+    /** 대상 외 방언을 고르는 옵션. {@code --dialect}는 oracle·db2·postgres·auto만 받는다. 매퍼(mybatis)와 DDL(sql) 선택이 둘 다 이 값을 읽는다. */
     private static final String VARIANT_OPTION = "--opt mybatis.dialectVariant=<방언>";
+    /** 대상 방언을 고르는 옵션 안내(F-019-R34). {@code AnalyzeCommand}의 사용법, 계약 문서 4.5의 힌트 표와 같은 값이다. */
+    private static final String DIALECT_OPTION = "--dialect <oracle|db2|postgres>";
     private static final String UNKNOWN_COLUMN = "UNKNOWN_COLUMN";
     private static final String DATA_LOAD_GROUPED = "DATA_LOAD_GROUPED";
     private static final String DDL_NOT_APPLIED = "DDL_NOT_APPLIED";
@@ -45,8 +47,9 @@ final class Hints {
     /**
      * 방언 표준 이름과 별칭. sql 모듈의 {@code DialectTokens}, mybatis 모듈의 {@code DialectVariants}와 같은 표다(설계 3.8의
      * {@code mybatis.dialectVariant}). cli는 그 모듈들의 클래스를 쓰지 않으므로 표를 따로 둔다: 그쪽 표가 바뀌면 여기도 고친다.
+     * 앞의 다섯이 기본 선호 순서다(F-019-R4): Oracle, DB2, PostgreSQL, Oracle 계열(Tibero, Altibase).
      */
-    private static final List<String> DIALECT_NAMES = List.of("oracle", "db2", "tibero", "altibase", "postgres", "mysql", "mariadb", "mssql",
+    private static final List<String> DIALECT_NAMES = List.of("oracle", "db2", "postgres", "tibero", "altibase", "mysql", "mariadb", "mssql",
             "cubrid", "goldilocks", "hsql", "h2", "derby", "sqlite", "sybase", "informix");
     private static final Map<String, String> DIALECT_ALIASES = Map.of("ora", "oracle", "postgresql", "postgres", "pgsql", "postgres",
             "maria", "mariadb", "sqlserver", "mssql", "hsqldb", "hsql");
@@ -76,7 +79,8 @@ final class Hints {
      * 서로 다른 DB의 것이다). 고른 방언은 진단 문구가 아니라 그래프에서 읽는다({@link #mismatchedDialects}).
      *
      * <p>방언 정책(sql·mybatis): 고르는 순서는 명시값({@code --dialect}, {@code mybatis.dialectVariant}) → 프로젝트 설정이 가리키는 대상 방언
-     * → Oracle → DB2 → Oracle 계열 → 설정의 대상 외 방언 → 경로순이다. 설정과 다르게 대상 방언을 골랐다는 것은 INFO로 오고(그대로 옮긴다),
+     * (oracle, db2, postgres) → Oracle → DB2 → PostgreSQL → Oracle 계열 → 설정의 대상 외 방언 → 경로순이다(F-019-R4). 설정과 다르게
+     * 대상 방언을 골랐다는 것은 INFO로 오고(그대로 옮긴다),
      * WARN은 대상 방언 파일이 없어 대상 외 방언을 썼을 때와 요청한 방언의 파일이 없을 때뿐이다(맨 위에 "주의:"로 올린다).
      * 메시지에 바꾸는 옵션 안내가 이미 들어 있으면 덧붙이지 않는다.
      */
@@ -108,12 +112,12 @@ final class Hints {
         }
         if (ddl != null) {
             String text = ddl.contains("mybatis.dialectVariant") ? ddl
-                    : sentence(ddl) + "다른 방언의 DDL을 쓰려면 --dialect <oracle|db2>, 그 밖의 방언은 " + VARIANT_OPTION;
+                    : sentence(ddl) + "다른 방언의 DDL을 쓰려면 " + DIALECT_OPTION + ", 그 밖의 방언은 " + VARIANT_OPTION;
             (ddlWarn ? hints : notes).add(ddlWarn ? "주의: " + text : text);
         }
         for (String message : notFound) {
             hints.add("주의: " + (message.contains("mybatis.dialectVariant") ? message : sentence(message)
-                    + "분석 대상에 그 방언의 파일이 있는지 확인한다. 감지한 방언으로 분석하려면 --dialect <oracle|db2>, 그 밖의 방언은 " + VARIANT_OPTION));
+                    + "분석 대상에 그 방언의 파일이 있는지 확인한다. 감지한 방언으로 분석하려면 " + DIALECT_OPTION + ", 그 밖의 방언은 " + VARIANT_OPTION));
         }
         hints.addAll(notes);
         if (notTarget != null) {
@@ -123,7 +127,7 @@ final class Hints {
         if (mismatch != null) {
             hints.add("경고: 매퍼는 " + mismatch[0] + ", DDL은 " + mismatch[1] + " 방언 파일을 골랐다. 구문과 테이블 정의가 서로 다른 DB의 것이라 "
                     + "컬럼·관계 해석이 어긋날 수 있다: " + VARIANT_OPTION + "으로 맞춘다(매퍼와 DDL 선택이 둘 다 이 값을 읽는다. "
-                    + "대상 방언이면 --dialect <oracle|db2>도 된다)");
+                    + "대상 방언이면 " + DIALECT_OPTION + "도 된다)");
         }
     }
 
@@ -312,7 +316,8 @@ final class Hints {
         }
         if (count > 0) {
             hints.add("SQL이 DDL에 없는 컬럼을 참조한다(진단 UNKNOWN_COLUMN " + count + "건): 그 컬럼의 엣지는 만들지 않았다. "
-                    + "DDL이 오래됐거나 다른 방언·다른 버전의 DDL이 선택됐을 수 있다(--ddl, --dialect <oracle|db2>, 그 밖의 방언은 " + VARIANT_OPTION + "을 확인한다)");
+                    + "DDL이 오래됐거나 다른 방언·다른 버전의 DDL이 선택됐을 수 있다(--ddl, " + DIALECT_OPTION + ", 그 밖의 방언은 " + VARIANT_OPTION
+                    + "을 확인한다)");
         }
     }
 

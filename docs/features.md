@@ -19,7 +19,7 @@ updated: 2026-10-11
 | F-003 | Java | Java 콜 그래프 | 메서드 호출, 생성자 호출, 오버라이드, 필드 접근을 타입 해석 기반으로 추출 | P0 | 완료 | [spec](specs/F-003-java-call-graph/spec.md) |
 | F-004 | Spring | Spring 해석 (애너테이션) | 스테레오타입 빈, `@Bean`, 의존성 주입, 요청 매핑(엔드포인트), 뷰 이름, Java 코드 안의 MyBatis 호출 해석 | P0 | 완료 | [spec](specs/F-004-spring/spec.md) |
 | F-005 | Spring | Spring Batch 해석 (Java 설정) | Java 설정으로 만든 Job, Step, Reader/Processor/Writer 구성 해석 | P1 | 완료 | [spec](specs/F-005-spring-batch/spec.md) |
-| F-006 | SQL | SQL 파서 | Oracle, DB2 DML을 오류 허용 방식으로 파싱해 테이블, 컬럼, 조인 조건 추출 | P0 | 완료 | [spec](specs/F-006-sql-parser/spec.md) |
+| F-006 | SQL | SQL 파서 | Oracle, DB2(PostgreSQL은 F-019) DML을 오류 허용 방식으로 파싱해 테이블, 컬럼, 조인 조건 추출 | P0 | 완료 | [spec](specs/F-006-sql-parser/spec.md) |
 | F-007 | SQL | DDL 파서 | DDL 파일에서 테이블, 컬럼, 키, 제약, 뷰, 시퀀스, 시노님 추출 | P0 | 완료 | [spec](specs/F-007-ddl-parser/spec.md) |
 | F-008 | SQL | 프로시저 분석 | PL/SQL과 DB2 SQL PL의 프로시저·함수·패키지·트리거 본문 파싱, 내부 SQL과 호출 추출 | P1 | 완료 | [spec](specs/F-008-routines/spec.md) |
 | F-009 | MyBatis | MyBatis 매퍼 분석 | 매퍼 XML의 구문, 동적 SQL, include, resultMap 해석과 SQL 분석 연결 | P0 | 완료 | [spec](specs/F-009-mybatis/spec.md) |
@@ -32,3 +32,4 @@ updated: 2026-10-11
 | F-016 | 출력 | HTML 뷰어 | 분석 결과를 검색하고 다이어그램과 콜트리를 보는 단일 HTML 파일 | P2 | 완료 | [spec](specs/F-016-html-viewer/spec.md) |
 | F-017 | Spring | Spring XML 설정 해석 | XML 빈 설정(빈, 주입, 뷰 리졸버)과 Spring Batch XML 잡 설정(Job, Step, 흐름) 해석 | P0 | 완료 | [spec](specs/F-017-spring-xml/spec.md) |
 | F-018 | 연결 | 테이블 관계 추론 | SQL 조인 조건과 키 정보에서 FK 제약이 없는 테이블 관계를 추론 | P0 | 완료 | [spec](specs/F-018-relation-inference/spec.md) |
+| F-019 | SQL | PostgreSQL 지원 | PostgreSQL을 대상 방언으로 추가: 방언 판정·선택, DML·DDL(pg_dump 포함), PL/pgSQL 루틴·트리거, 읽기 방식을 파서까지 넘기는 통로 | P1 | 완료 | [spec](specs/F-019-postgresql/spec.md) |

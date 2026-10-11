@@ -222,7 +222,7 @@ class HintsTest {
         assertThat(hints.get(3)).startsWith("경고").contains("매퍼는 mysql").contains("DDL은 oracle").contains("--dialect")
                 .contains("--opt mybatis.dialectVariant=");
 
-        // 대상 방언(Oracle, DB2)의 파일이 없어 대상 외 방언으로 분석됐으면(WARN) 그 진단도 맨 위로 올린다.
+        // 대상 방언(Oracle, DB2, PostgreSQL)의 파일이 없어 대상 외 방언으로 분석됐으면(WARN) 그 진단도 맨 위로 올린다.
         // 방언별 DDL에서 한 벌을 고른 것이면 파일 쌍마다 나온 중복 정의 힌트는 접는다
         GraphModel foreign = graph(AnalysisOptions.defaults());
         file(foreign, "db/mysql/schema.sql", "SQL");
@@ -336,32 +336,33 @@ class HintsTest {
         assertThat(Hints.dialectOfPath(null)).isNull();
     }
 
-    // sql·mybatis가 지금 내는 문구(재현 프로젝트를 실제로 분석해 옮긴 것). 대상 방언 파일이 없을 때만 WARN이고 옵션 안내가 없다
-    private static final String FOREIGN_MAPPERS = "방언별 매퍼 2벌 감지(postgres, mysql): postgres 파일을 사용, 제외한 파일 1개."
-            + " 이 도구의 대상 방언(Oracle, DB2)의 파일이 없어 postgres 파일을 씀: SQL 해석이 부정확할 수 있음";
-    private static final String FOREIGN_DDL = "방언별 DDL 2벌 감지(mysql, postgres): mysql 파일을 사용(테이블 2개), 다른 방언에서 보충 0개, 제외한 파일 1개."
-            + " 이 도구의 대상 방언(Oracle, DB2)의 파일이 없어 mysql 파일을 씀: SQL 해석이 부정확할 수 있음";
+    // sql·mybatis가 내는 문구의 꼴. 대상 방언 파일이 없을 때만 WARN이고 옵션 안내가 없다. PostgreSQL이 대상 방언이 되면서(F-019-R4)
+    // 대상 외 방언의 예시를 postgres에서 cubrid로 바꿨다(postgres 파일이 있으면 이 WARN이 나오지 않는다)
+    private static final String FOREIGN_MAPPERS = "방언별 매퍼 2벌 감지(cubrid, mysql): cubrid 파일을 사용, 제외한 파일 1개."
+            + " 이 도구의 대상 방언(Oracle, DB2, PostgreSQL)의 파일이 없어 cubrid 파일을 씀: SQL 해석이 부정확할 수 있음";
+    private static final String FOREIGN_DDL = "방언별 DDL 2벌 감지(mysql, cubrid): mysql 파일을 사용(테이블 2개), 다른 방언에서 보충 0개, 제외한 파일 1개."
+            + " 이 도구의 대상 방언(Oracle, DB2, PostgreSQL)의 파일이 없어 mysql 파일을 씀: SQL 해석이 부정확할 수 있음";
     private static final String PREFERRED_MAPPERS = "방언별 매퍼 2벌 감지(oracle, mysql): oracle 파일을 사용, 제외한 파일 1개."
             + " 프로젝트 설정(src/main/resources/globals.properties:Globals.DbType=mysql)과 다르게 대상 방언 oracle 파일을 사용."
             + " 설정대로 분석하려면 `--opt mybatis.dialectVariant=mysql`. `--opt mybatis.dialectVariant=<방언|all>`로 변경";
 
     @Test
-    @DisplayName("F-001-AC73 방언 힌트는 지금의 방언 정책을 따른다: DIALECT_NOT_TARGET 한 줄, 대상 외 방언으로 바꾸는 안내는 --dialect가 아니라 --opt mybatis.dialectVariant, 설정과 다르게 대상 방언을 고른 INFO는 주의로 올리지 않는다")
+    @DisplayName("F-001-AC73 F-019-AC32 방언 힌트는 지금의 방언 정책을 따른다: DIALECT_NOT_TARGET 한 줄, 대상 외 방언으로 바꾸는 안내는 --dialect가 아니라 --opt mybatis.dialectVariant, 설정과 다르게 대상 방언을 고른 INFO는 주의로 올리지 않는다")
     void dialectPolicyHints() {
         // 방언별 여러 벌은 아니지만 프로젝트의 SQL이 대상 외 방언으로 보임
         GraphModel notTarget = graph(AnalysisOptions.defaults());
         notTarget.report(Diagnostic.info("DIALECT_NOT_TARGET",
-                "이 프로젝트의 SQL은 mysql로 보임. 대상 방언이 아니어서 일부 구문을 해석하지 못할 수 있음(이 도구의 대상 방언은 Oracle, DB2)", null));
+                "이 프로젝트의 SQL은 mysql로 보임. 대상 방언이 아니어서 일부 구문을 해석하지 못할 수 있음(이 도구의 대상 방언은 Oracle, DB2, PostgreSQL)", null));
         assertThat(Hints.of(notTarget)).singleElement().asString().contains("mysql로 보임").contains("대상 방언").doesNotContain("\n");
 
         // 대상 방언 파일이 없어 대상 외 방언을 쓴 경우(WARN): 메시지에 옵션 안내가 없으면 덧붙이되,
-        // --dialect는 oracle·db2만 받으므로 그 밖의 방언은 --opt mybatis.dialectVariant로 안내한다(매퍼와 DDL 선택 둘 다 이 값을 읽는다)
+        // --dialect는 oracle·db2·postgres만 받으므로 그 밖의 방언은 --opt mybatis.dialectVariant로 안내한다(매퍼와 DDL 선택 둘 다 이 값을 읽는다)
         GraphModel foreignOnly = graph(AnalysisOptions.defaults());
         foreignOnly.report(Diagnostic.warn("DIALECT_VARIANT_MAPPERS", FOREIGN_MAPPERS, null));
         foreignOnly.report(Diagnostic.warn("DIALECT_VARIANT_DDL", FOREIGN_DDL, null));
         foreignOnly.report(Diagnostic.warn("DIALECT_NOT_FOUND",
-                "요청한 방언 db2(`--dialect`)의 매퍼 파일이 없음: 감지한 방언(postgres, mysql) 가운데 postgres 파일을 사용", null));
-        mapperStatement(foreignOnly, "findList", "src/main/resources/mapper/A_SQL_postgres.xml", "postgres");
+                "요청한 방언 db2(`--dialect`)의 매퍼 파일이 없음: 감지한 방언(cubrid, mysql) 가운데 cubrid 파일을 사용", null));
+        mapperStatement(foreignOnly, "findList", "src/main/resources/mapper/A_SQL_cubrid.xml", "cubrid");
         table(foreignOnly, "TB_A", "db/mysql/ddl_mysql.sql");
         List<String> hints = Hints.of(foreignOnly);
         assertThat(hints).hasSize(4);
@@ -369,10 +370,12 @@ class HintsTest {
                 .allMatch(hint -> hint.contains("--opt mybatis.dialectVariant=<방언>"));
         // 메시지가 마침표 없이 끝나도 덧붙이는 안내와 붙어 버리지 않는다
         assertThat(hints).noneMatch(hint -> hint.contains("있음 다른"));
-        assertThat(hints.get(3)).startsWith("경고").contains("매퍼는 postgres").contains("DDL은 mysql")
+        assertThat(hints.get(3)).startsWith("경고").contains("매퍼는 cubrid").contains("DDL은 mysql")
                 .contains("--opt mybatis.dialectVariant=<방언>").contains("둘 다");
-        // 대상 외 방언을 --dialect로 주라는 안내는 어디에도 없다
-        assertThat(hints).noneMatch(hint -> hint.matches(".*--dialect (<방언|mysql|postgres|<oracle\\|db2>를 감지한).*"));
+        // 대상 외 방언을 --dialect로 주라는 안내는 어디에도 없다. --dialect 안내는 대상 방언 셋뿐이다
+        assertThat(hints).noneMatch(hint -> hint.matches(".*--dialect (<방언|mysql|cubrid|<oracle\\|db2\\|postgres>를 감지한).*"));
+        assertThat(hints).noneMatch(hint -> hint.contains("<oracle|db2>"));
+        assertThat(hints.subList(1, 3)).allMatch(hint -> hint.contains("--dialect <oracle|db2|postgres>"));
 
         // 프로젝트 설정(mysql)과 다르게 대상 방언 oracle을 고른 것은 INFO다: 주의로 올리지 않고 메시지를 그대로 옮긴다
         GraphModel preferred = graph(AnalysisOptions.defaults());
@@ -396,14 +399,14 @@ class HintsTest {
     }
 
     @Test
-    @DisplayName("F-001-AC86 방언별 DDL 요약(DIALECT_VARIANT_DDL)에 '다른 방언 파일의 적재 묶음' 문장이 붙어도 힌트는 그 문장을 그대로 옮기고 옵션 안내를 한 번만 붙인다")
+    @DisplayName("F-001-AC86 F-019-AC32 방언별 DDL 요약(DIALECT_VARIANT_DDL)에 '다른 방언 파일의 적재 묶음' 문장이 붙어도 힌트는 그 문장을 그대로 옮기고 옵션 안내(--dialect <oracle|db2|postgres>)를 한 번만 붙인다")
     void ddlVariantHintCarriesBorrowedDataLoadSentence() {
         String borrowed = "oracle 파일에 적재가 없는 테이블의 묶음 18개는 다른 방언 파일의 것을 씀(mysql 12개, hsql 6개).";
         // 만들지 않은 묶음이 있을 때: "…만들지 않음." 바로 뒤에 붙는다
         GraphModel both = graph(AnalysisOptions.defaults());
         both.report(Diagnostic.info("DIALECT_VARIANT_DDL", "방언별 DDL 3벌 감지(oracle, mysql, hsql): oracle 파일을 사용(테이블 20개), 제외한 파일 40개. "
                 + "데이터 적재 스크립트도 같은 규칙으로 골라 다른 방언 파일의 묶음 95개를 만들지 않음. " + borrowed, null));
-        assertThat(Hints.of(both)).singleElement().asString().contains("만들지 않음. " + borrowed + " 다른 방언의 DDL을 쓰려면 --dialect <oracle|db2>")
+        assertThat(Hints.of(both)).singleElement().asString().contains("만들지 않음. " + borrowed + " 다른 방언의 DDL을 쓰려면 --dialect <oracle|db2|postgres>")
                 .containsOnlyOnce("mybatis.dialectVariant").doesNotContain("\n").doesNotContain("..");
 
         // 만들지 않은 묶음이 0이면 그 문장만 나온다
@@ -414,7 +417,7 @@ class HintsTest {
         // 메시지에 옵션 안내가 이미 들어 있으면(끝에 `--opt mybatis.dialectVariant=…`) 덧붙이지 않는다
         GraphModel withOption = graph(AnalysisOptions.defaults());
         String message = "방언별 DDL 2벌 감지(oracle, mysql): oracle 파일을 사용(테이블 20개), 제외한 파일 4개. " + borrowed
-                + " `--dialect <oracle|db2>`(그 밖의 방언은 `--opt mybatis.dialectVariant=<방언>`)로 변경";
+                + " `--dialect <oracle|db2|postgres>`(그 밖의 방언은 `--opt mybatis.dialectVariant=<방언>`)로 변경";
         withOption.report(Diagnostic.info("DIALECT_VARIANT_DDL", message, null));
         assertThat(Hints.of(withOption)).containsExactly(message);
     }

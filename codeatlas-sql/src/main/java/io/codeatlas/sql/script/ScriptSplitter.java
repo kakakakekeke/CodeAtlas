@@ -1,6 +1,7 @@
 package io.codeatlas.sql.script;
 
 import io.codeatlas.sql.lexer.Lexer;
+import io.codeatlas.sql.lexer.Syntax;
 import io.codeatlas.sql.lexer.Token;
 import io.codeatlas.sql.lexer.TokenType;
 import java.util.ArrayList;
@@ -18,6 +19,10 @@ import java.util.Set;
  *   <li>SQL*Plus·CLP 줄 명령({@code SET ..}, {@code @file}, {@code EXIT})은 그 줄에서 끝난다. PROMPT/REM 줄은 버린다.</li>
  *   <li>종결자가 (거의) 없고 줄 시작에 구문 키워드가 여럿인 파일(HSQL {@code .script} 형식처럼 줄바꿈으로만 나눈 스크립트)은
  *       줄 처음의 구문 키워드에서도 끊는다(F-006-R22).</li>
+ *   <li>PostgreSQL 읽기 방식의 파일(psql 스크립트, F-019-R9·R11): 달러 인용 본문은 문자열 토큰 하나라 안의 {@code ;}에서 나누지 않고,
+ *       {@code CREATE FUNCTION|PROCEDURE|TRIGGER}는 첫 {@code ;}에서 끝난다({@code BEGIN ATOMIC .. END} 본문 안은 제외).
+ *       {@code COPY … FROM stdin;} 뒤의 데이터 줄은 구문으로 읽지 않고 줄 수만 그 단위에 남기며({@link ScriptUnit#dataRows()}),
+ *       줄 처음이 {@code \}인 메타 명령은 건너뛴다. {@code BEGIN;}은 익명 블록이 아니라 트랜잭션 명령이다.</li>
  * </ul>
  *
  * <p>토큰을 통째로 만들어 두지 않는다: 렉서에서 흘려 읽고 지금 자르는 단위만큼만 쥔다. {@link #forEach}는 단위를 만드는 대로 넘겨주므로
@@ -95,6 +100,8 @@ public final class ScriptSplitter {
 
     private final String text;
     private final boolean fileMode;
+    /** 이 텍스트의 읽기 방식(ADR-0012). 렉서와 같은 값을 쓴다. */
+    private final Syntax syntax;
     private final Shape shape;
     private final boolean lineMode;
     private final Window all;
@@ -103,22 +110,30 @@ public final class ScriptSplitter {
     private int reported;
     private String customTerminator;
     private int i;
+    /** 방금 자른 단위가 {@code COPY … FROM stdin}이면 그 뒤의 데이터 줄 수, 아니면 -1. */
+    private int dataRows = -1;
+    /** PostgreSQL 읽기 방식인가. */
+    private final boolean postgres;
 
-    private ScriptSplitter(String text, boolean fileMode, boolean mysql, java.util.function.Consumer<ScriptUnit> sink,
+    private ScriptSplitter(String text, boolean fileMode, Syntax syntax, java.util.function.Consumer<ScriptUnit> sink,
             java.util.function.Consumer<Token> tokenListener) {
         this.fileMode = fileMode;
-        this.text = fileMode ? blankPromptLines(text == null ? "" : text) : (text == null ? "" : text);
-        this.shape = fileMode ? shapeOf(this.text, mysql) : null;
+        this.syntax = syntax == null ? Syntax.DEFAULT : syntax;
+        this.postgres = this.syntax == Syntax.POSTGRES;
+        // psql 스크립트에는 PROMPT·REM 줄이 없다: 달러 인용 본문의 줄(rem := 1)을 지우지 않는다
+        this.text = fileMode && !postgres ? blankPromptLines(text == null ? "" : text) : (text == null ? "" : text);
+        this.shape = fileMode ? shapeOf(this.text, this.syntax) : null;
         this.lineMode = fileMode && shape.lineSeparated();
-        this.all = new Window(Lexer.stream(this.text, true, mysql));
+        // 파일이면 스크립트로 읽는다: PostgreSQL 읽기 방식에서 COPY 데이터 구간과 psql 메타 명령을 렉서가 건너뛴다(F-019-R11)
+        this.all = new Window(fileMode ? Lexer.scriptStream(this.text, this.syntax) : Lexer.stream(this.text, true, this.syntax));
         this.sink = sink;
         this.tokenListener = tokenListener;
     }
 
-    /** SQL 파일을 나눈다. */
+    /** SQL 파일을 나눈다(기본 읽기 방식). */
     public static List<ScriptUnit> split(String text) {
         List<ScriptUnit> units = new ArrayList<>();
-        new ScriptSplitter(text, true, false, units::add, null).run();
+        new ScriptSplitter(text, true, Syntax.DEFAULT, units::add, null).run();
         return units;
     }
 
@@ -127,30 +142,30 @@ public final class ScriptSplitter {
      * (방언 판정처럼 파일 전체를 보는 일을 같은 훑기에서 하도록).
      */
     public static Shape forEach(String text, java.util.function.Consumer<ScriptUnit> sink, java.util.function.Consumer<Token> tokenListener) {
-        return forEach(text, sink, tokenListener, false);
+        return forEach(text, sink, tokenListener, Syntax.DEFAULT);
     }
 
     /**
      * {@link #forEach(String, java.util.function.Consumer, java.util.function.Consumer)}와 같다.
      *
-     * @param mysql MySQL로 판정한 파일이면 true: 줄 처음의 {@code #}을 줄 주석으로 읽는다(F-006-R27)
+     * @param syntax 파일의 읽기 방식. {@link Syntax#MYSQL}이면 줄 처음의 {@code #}을 줄 주석으로 읽는다(F-006-R27)
      */
     public static Shape forEach(String text, java.util.function.Consumer<ScriptUnit> sink, java.util.function.Consumer<Token> tokenListener,
-            boolean mysql) {
-        ScriptSplitter splitter = new ScriptSplitter(text, true, mysql, sink, tokenListener);
+            Syntax syntax) {
+        ScriptSplitter splitter = new ScriptSplitter(text, true, syntax, sink, tokenListener);
         splitter.run();
         return splitter.shape;
     }
 
     /** 내장 소스(매퍼 구문 본문)를 나눈다: 빈 줄, 줄 단독 {@code /}, 줄 명령, {@code @} 규칙을 쓰지 않는다. */
     public static List<ScriptUnit> splitEmbedded(String text) {
-        return splitEmbedded(text, false);
+        return splitEmbedded(text, Syntax.DEFAULT);
     }
 
-    /** {@link #splitEmbedded(String)}와 같되 MySQL로 판정한 SQL이면 줄 처음의 {@code #}을 주석으로 읽는다. */
-    public static List<ScriptUnit> splitEmbedded(String text, boolean mysql) {
+    /** {@link #splitEmbedded(String)}와 같되 주어진 읽기 방식으로 읽는다. */
+    public static List<ScriptUnit> splitEmbedded(String text, Syntax syntax) {
         List<ScriptUnit> units = new ArrayList<>();
-        new ScriptSplitter(text, false, mysql, units::add, null).run();
+        new ScriptSplitter(text, false, syntax, units::add, null).run();
         return units;
     }
 
@@ -159,11 +174,16 @@ public final class ScriptSplitter {
      * 줄 처음(공백 뒤)에 오는 구문 키워드의 수.
      */
     public static Shape shapeOf(String text) {
-        return shapeOf(text, false);
+        return shapeOf(text, Syntax.DEFAULT);
     }
 
-    /** {@link #shapeOf(String)}와 같되 MySQL로 판정한 파일이면 줄 처음의 {@code #}부터 줄 끝까지를 주석으로 건너뛴다. */
-    public static Shape shapeOf(String text, boolean mysql) {
+    /**
+     * {@link #shapeOf(String)}와 같되 읽기 방식이 {@link Syntax#MYSQL}이면 줄 처음의 {@code #}부터 줄 끝까지를 주석으로 건너뛴다.
+     * {@link Syntax#POSTGRES}면 달러 인용 본문, {@code COPY … FROM stdin;} 뒤의 데이터 줄, 줄 처음이 {@code \}인 메타 명령 줄을 세지 않는다(F-019-R9·R11).
+     */
+    public static Shape shapeOf(String text, Syntax syntax) {
+        boolean mysql = syntax == Syntax.MYSQL;
+        boolean postgres = syntax == Syntax.POSTGRES;
         String s = text == null ? "" : text;
         int n = s.length();
         int terminators = 0;
@@ -203,7 +223,15 @@ public final class ScriptSplitter {
                 p++;
                 continue;
             }
-            if (c == '\'' || c == '"' || c == '`') {
+            if (postgres && c == '\\' && codeCount == 0) {
+                p = lineEnd(s, p); // psql 메타 명령 줄
+                continue;
+            }
+            int dollarEnd = postgres && c == '$' ? dollarQuoteEnd(s, p) : -1;
+            if (dollarEnd > p) {
+                p = dollarEnd; // 달러 인용 본문: 안의 ;와 줄 처음 키워드는 세지 않는다
+                c = 'a';
+            } else if (c == '\'' || c == '"' || c == '`') {
                 int q = p + 1;
                 while (q < n && s.charAt(q) != c && !(c != '\'' && (s.charAt(q) == '\n' || s.charAt(q) == '\r'))) {
                     q++;
@@ -221,6 +249,16 @@ public final class ScriptSplitter {
                     }
                     if (CONTENT_KEYWORDS.contains(word)) {
                         content++;
+                    }
+                    int dataEnd = postgres && word.equals("COPY") ? copyDataEnd(s, e) : -1;
+                    if (dataEnd >= 0) {
+                        // COPY … FROM stdin; 과 그 데이터 줄: 구문 하나로 세고 데이터는 건너뛴다
+                        terminators++;
+                        codeCount = 0;
+                        first = 0;
+                        last = 0;
+                        p = dataEnd;
+                        continue;
                     }
                 }
                 p = e;
@@ -240,6 +278,67 @@ public final class ScriptSplitter {
             }
         }
         return new Shape(terminators, lineStarts, content, directive);
+    }
+
+    /**
+     * p의 {@code $}가 달러 인용({@code $$}, {@code $태그$})을 여는 자리면 닫는 구분자 다음 위치(닫히지 않았으면 글의 끝), 아니면 -1.
+     * 이름에 붙은 {@code $}({@code a$$b})는 이름의 글자다.
+     */
+    private static int dollarQuoteEnd(String s, int p) {
+        int n = s.length();
+        if (p > 0 && (Character.isLetterOrDigit(s.charAt(p - 1)) || s.charAt(p - 1) == '_' || s.charAt(p - 1) == '$')) {
+            return -1;
+        }
+        int q = p + 1;
+        if (q < n && (Character.isLetter(s.charAt(q)) || s.charAt(q) == '_')) {
+            q++;
+            while (q < n && (Character.isLetterOrDigit(s.charAt(q)) || s.charAt(q) == '_')) {
+                q++;
+            }
+        }
+        if (q >= n || s.charAt(q) != '$') {
+            return -1;
+        }
+        String delimiter = s.substring(p, q + 1);
+        int close = s.indexOf(delimiter, q + 1);
+        return close < 0 ? n : close + delimiter.length();
+    }
+
+    private static final java.util.regex.Pattern FROM_STDIN = java.util.regex.Pattern.compile("\\bFROM\\s+STDIN\\b", java.util.regex.Pattern.CASE_INSENSITIVE);
+
+    /**
+     * from(줄 처음의 {@code COPY} 바로 뒤)부터의 구문이 {@code COPY … FROM stdin …;}이면 그 데이터 구간이 끝나는 위치
+     * (줄 처음의 {@code \.} 뒤, 없으면 글의 끝), 아니면 -1.
+     */
+    private static int copyDataEnd(String s, int from) {
+        int n = s.length();
+        int q = from;
+        while (q < n && s.charAt(q) != ';') {
+            char c = s.charAt(q);
+            if (c == '\'' || c == '"') {
+                q++;
+                while (q < n && s.charAt(q) != c) {
+                    q++;
+                }
+            }
+            q++;
+        }
+        if (q >= n || !FROM_STDIN.matcher(s.substring(from, q)).find()) {
+            return -1;
+        }
+        int line = lineEnd(s, q);
+        while (line < n) {
+            int start = line + (s.charAt(line) == '\r' && line + 1 < n && s.charAt(line + 1) == '\n' ? 2 : 1);
+            if (start >= n) {
+                return n;
+            }
+            int end = lineEnd(s, start);
+            if (s.substring(start, end).stripTrailing().equals("\\.")) {
+                return end;
+            }
+            line = end;
+        }
+        return n;
     }
 
     /** from부터 처음 나오는 줄 끝 글자(CR 또는 LF)의 위치. 없으면 글의 끝. */
@@ -299,10 +398,13 @@ public final class ScriptSplitter {
             int start = i;
             List<Token> tokens = new ArrayList<>();
             ScriptUnit.Kind kind = classify(start);
+            dataRows = -1;
             if (fileMode && kind == ScriptUnit.Kind.STATEMENT && startsLineCommand(start)) {
                 lineCommand(tokens);
             } else if (kind == ScriptUnit.Kind.STATEMENT) {
                 statement(tokens);
+            } else if (postgres && kind == ScriptUnit.Kind.ROUTINE && !all.get(i).isEof()) {
+                postgresRoutine(tokens);
             } else {
                 routine(tokens, kind);
             }
@@ -312,7 +414,7 @@ public final class ScriptSplitter {
             if (!tokens.isEmpty()) {
                 Token first = tokens.get(0);
                 Token last = tokens.get(tokens.size() - 1);
-                sink.accept(new ScriptUnit(kind, tokens, text.substring(first.offset(), last.endOffset())));
+                sink.accept(new ScriptUnit(kind, tokens, text.substring(first.offset(), last.endOffset()), dataRows));
             }
         }
         listen(i + 1);
@@ -405,6 +507,10 @@ public final class ScriptSplitter {
 
     private ScriptUnit.Kind classify(int index) {
         Token t = all.get(index);
+        if (postgres && fileMode && t.isAny("BEGIN", "DECLARE")) {
+            // psql 스크립트: BEGIN;은 트랜잭션 명령, DECLARE c CURSOR ..는 구문이다. 익명 블록은 DO $$ .. $$로 쓴다
+            return ScriptUnit.Kind.STATEMENT;
+        }
         if (t.is("BEGIN")) {
             return ScriptUnit.Kind.BLOCK;
         }
@@ -421,7 +527,7 @@ public final class ScriptSplitter {
             k = nextSignificantIndex(nextSignificantIndex(k));
             x = all.get(k);
         }
-        while (x.isAny("EDITIONABLE", "NONEDITIONABLE", "PUBLIC", "FORCE", "NO")) {
+        while (x.isAny("EDITIONABLE", "NONEDITIONABLE", "PUBLIC", "FORCE", "NO") || (postgres && x.is("CONSTRAINT"))) {
             k = nextSignificantIndex(k);
             x = all.get(k);
         }
@@ -469,6 +575,10 @@ public final class ScriptSplitter {
             }
             if (t.isSymbol(";") || (!tokens.isEmpty() && isTerminator(i))) {
                 i++;
+                if (postgres && fileMode && first.is("COPY") && all.get(i).copyDataRows() >= 0) {
+                    dataRows = all.get(i).copyDataRows(); // COPY … FROM stdin; 뒤의 데이터 구간(렉서가 건너뛰고 줄 수만 남겼다, F-019-R11)
+                    i++;
+                }
                 return;
             }
             if (fileMode && !tokens.isEmpty() && t.blankLineBefore() && startsNewStatement(t, tokens.get(tokens.size() - 1), first, i)) {
@@ -548,6 +658,40 @@ public final class ScriptSplitter {
             }
         }
         return false;
+    }
+
+    /**
+     * PostgreSQL의 {@code CREATE FUNCTION|PROCEDURE|TRIGGER}: 본문이 달러 인용이나 문자열(토큰 하나)이라 첫 {@code ;}에서 끝난다(F-019-R9).
+     * SQL 표준 본문({@code BEGIN ATOMIC 구문; .. END})만 안에 {@code ;}가 있다: 그 {@code END}까지는 끊지 않는다.
+     * 끝의 {@code ;}까지가 단위다.
+     */
+    private void postgresRoutine(List<Token> tokens) {
+        int depth = 0; // BEGIN ATOMIC 본문과 그 안의 CASE
+        int start = i;
+        Token prev = null;
+        while (!all.get(i).isEof()) {
+            Token t = all.get(i);
+            if (t.type() == TokenType.COMMENT) {
+                i++;
+                continue;
+            }
+            if (depth > 0 && i > start && t.firstOnLine() && t.is("CREATE") && classifyIsCreateStatement(i)) {
+                return; // 닫히지 않은 BEGIN ATOMIC: 다음 CREATE에서 다시 시작
+            }
+            if (depth == 0 && t.is("BEGIN") && nextSignificant(i).is("ATOMIC")) {
+                depth = 1;
+            } else if (depth > 0 && t.is("CASE") && !(prev != null && prev.is("END"))) {
+                depth++;
+            } else if (depth > 0 && t.is("END")) {
+                depth--;
+            }
+            tokens.add(t);
+            prev = t;
+            i++;
+            if (depth == 0 && t.isSymbol(";")) {
+                return;
+            }
+        }
     }
 
     private void routine(List<Token> tokens, ScriptUnit.Kind kind) {

@@ -14,6 +14,7 @@ import io.codeatlas.core.testing.TestProject;
 import io.codeatlas.sql.ast.Routine;
 import io.codeatlas.sql.lexer.Lexer;
 import io.codeatlas.sql.lexer.Token;
+import io.codeatlas.sql.parser.RoutineLanguage;
 import io.codeatlas.sql.parser.RoutineParser;
 import io.codeatlas.sql.parser.SqlParser;
 import java.time.Duration;
@@ -174,7 +175,7 @@ class RoutineFuzzTest {
                 try {
                     List<Token> all = Lexer.tokenize(text);
                     List<Token> tokens = all.subList(0, all.size() - 1);
-                    for (boolean sqlPl : new boolean[] {false, true}) {
+                    for (RoutineLanguage sqlPl : new RoutineLanguage[] {RoutineLanguage.PLSQL, RoutineLanguage.SQLPL}) {
                         Routine.Block a = new RoutineParser(tokens, sqlPl).parseBody(false);
                         Routine.Block b = new RoutineParser(tokens, sqlPl).parseBody(true);
                         assertThat(a).isNotNull();

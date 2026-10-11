@@ -1,0 +1,14 @@
+# sample-pg: PostgreSQL 만 쓰는 주문 관리 샘플의 Spring Boot 설정
+spring:
+  application:
+    name: sample-pg
+  datasource:
+    url: jdbc:postgresql://localhost:5432/shop?currentSchema=public
+    driver-class-name: org.postgresql.Driver
+    username: shop_app
+    password: ${DB_PASSWORD:}
+
+mybatis:
+  mapper-locations: classpath:mapper/*.xml
+  configuration:
+    map-underscore-to-camel-case: true

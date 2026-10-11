@@ -233,6 +233,9 @@ public class TokenCursor {
         if (prev.isSymbol("(") || prev.isSymbol(".") || prev.isSymbol(",")) {
             return false;
         }
+        if (t.isSymbol("::") || prev.isSymbol("::") || t.isSymbol("[") || t.isSymbol("]") || prev.isSymbol("[")) {
+            return false; // PostgreSQL 캐스트와 배열 표기는 붙여 적는다: '{}'::JSONB, ARRAY[1,2], TEXT[]
+        }
         if (prev.type() == TokenType.SYMBOL && !prev.isSymbol(")") && prev.endOffset() == t.offset() && prev.endOffset() > 0) {
             return false;
         }

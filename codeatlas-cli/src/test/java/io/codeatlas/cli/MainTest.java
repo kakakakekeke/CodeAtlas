@@ -446,12 +446,13 @@ class MainTest {
     }
 
     @Test
-    @DisplayName("F-007-AC29 F-009-AC47 대상 방언 파일도 프로젝트 설정도 없는 프로젝트에서 mybatis와 sql 분석기가 같은 방언을 고른다: 매퍼·DDL이 mysql·postgres 두 벌이면 둘 다 mysql, 한쪽에만 있는 방언(cubrid)이 사전순으로 앞서도 양쪽에 다 있는 mysql. 불일치 경고가 없다")
+    @DisplayName("F-007-AC29 F-009-AC47 F-019-AC4 대상 방언 파일도 프로젝트 설정도 없는 프로젝트에서 mybatis와 sql 분석기가 같은 방언을 고른다: 매퍼·DDL이 mysql·sqlite 두 벌이면 둘 다 mysql, 한쪽에만 있는 방언(cubrid)이 사전순으로 앞서도 양쪽에 다 있는 mysql. 불일치 경고가 없다")
     void mapperAndDdlAgreeOnOtherDialect() throws Exception {
+        // PostgreSQL이 대상 방언이 되면서(F-019-R4) "그 밖의 방언"의 예시를 postgres에서 sqlite로 바꿨다. postgres가 낀 조합은 아래 테스트가 본다
         String[][][] projects = {
-                {{"mysql", "postgres"}, {"mysql", "postgres"}},
-                {{"cubrid", "mysql", "postgres"}, {"mysql", "postgres"}},
-                {{"mysql", "postgres"}, {"cubrid", "mysql", "postgres"}}};
+                {{"mysql", "sqlite"}, {"mysql", "sqlite"}},
+                {{"cubrid", "mysql", "sqlite"}, {"mysql", "sqlite"}},
+                {{"mysql", "sqlite"}, {"cubrid", "mysql", "sqlite"}}};
         for (int i = 0; i < projects.length; i++) {
             Path root = dialectProject("dialect" + i, projects[i][0], projects[i][1]);
             Path outDir = work.resolve("dialect-out" + i);
@@ -462,6 +463,37 @@ class MainTest {
             assertThat(graph.node("mybatis:stmt:aDAO.findList").orElseThrow().attrString("dialectVariant")).as("매퍼 " + i).isEqualTo("mysql");
             assertThat(graph.node("db:table:TB_A").orElseThrow().location().file()).as("DDL " + i).isEqualTo("db/mysql/ddl_mysql.sql");
             assertThat(out()).as("힌트 " + i).contains("방언별 매퍼").contains("방언별 DDL").doesNotContain("경고: 매퍼는");
+        }
+    }
+
+    @Test
+    @DisplayName("F-019-AC4 mybatis와 sql 분석기가 PostgreSQL을 같은 순위로 고른다: (가) oracle·postgres면 둘 다 oracle (다) postgres·tibero면 둘 다 postgres "
+            + "(라) postgres·mysql이면 둘 다 postgres (사) oracle·postgres에 --dialect postgres면 둘 다 postgres. 대상 방언을 골랐으므로 주의(WARN)도 불일치 경고도 없다")
+    void mapperAndDdlAgreeOnPostgres() throws Exception {
+        // {매퍼·DDL의 방언들, 고를 방언, --dialect 값(없으면 null)}
+        String[][][] cases = {
+                {{"oracle", "postgres"}, {"oracle"}, {null}},
+                {{"postgres", "tibero"}, {"postgres"}, {null}},
+                {{"mysql", "postgres"}, {"postgres"}, {null}},
+                {{"oracle", "postgres"}, {"postgres"}, {"postgres"}}};
+        for (int i = 0; i < cases.length; i++) {
+            String expected = cases[i][1][0];
+            String option = cases[i][2][0];
+            Path root = dialectProject("pg" + i, cases[i][0], cases[i][0]);
+            Path outDir = work.resolve("pg-out" + i);
+            outBytes.reset();
+            int exit = option == null ? run("analyze", root.toString(), "--out", outDir.toString(), "--no-export")
+                    : run("analyze", root.toString(), "--out", outDir.toString(), "--no-export", "--dialect", option);
+            assertThat(exit).as(err()).isZero();
+
+            GraphModel graph = GraphJson.read(outDir.resolve("graph.json"));
+            assertThat(graph.node("mybatis:stmt:aDAO.findList").orElseThrow().attrString("dialectVariant")).as("매퍼 " + i).isEqualTo(expected);
+            assertThat(graph.node("db:table:TB_A").orElseThrow().location().file()).as("DDL " + i)
+                    .isEqualTo("db/" + expected + "/ddl_" + expected + ".sql");
+            assertThat(graph.diagnostics()).as("진단 " + i)
+                    .filteredOn(d -> d.code().startsWith("DIALECT_")).isNotEmpty()
+                    .noneMatch(d -> d.severity() == io.codeatlas.core.model.Severity.WARN);
+            assertThat(out()).as("힌트 " + i).contains("방언별 매퍼").contains("방언별 DDL").doesNotContain("경고: 매퍼는").doesNotContain("주의: ");
         }
     }
 }

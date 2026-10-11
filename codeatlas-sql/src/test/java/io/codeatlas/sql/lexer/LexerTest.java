@@ -169,9 +169,9 @@ class LexerTest {
     @DisplayName("F-006-AC18 F-006-AC27 MySQL로 판정한 SQL의 줄 처음 # 주석과 16진 리터럴 0x..: 주석은 빠지고 리터럴은 숫자 하나다. #{..} 바인드와 이름 안의 #은 그대로다")
     void hashCommentAndHexLiteral() {
         String sql = "# 주석 'x\nSELECT 1 FROM t\n  # 들여쓴 주석\nWHERE a = #{v} AND col#1 = 2";
-        assertThat(Lexer.tokenize(sql, true)).filteredOn(t -> !t.isEof()).extracting(Token::text)
+        assertThat(Lexer.tokenize(sql, Syntax.MYSQL)).filteredOn(t -> !t.isEof()).extracting(Token::text)
                 .containsExactly("SELECT", "1", "FROM", "t", "WHERE", "a", "=", "#{v}", "AND", "col#1", "=", "2");
-        assertThat(Lexer.stream("# c\nx", true, true).next().text()).isEqualTo("# c");
+        assertThat(Lexer.stream("# c\nx", true, Syntax.MYSQL).next().text()).isEqualTo("# c");
         assertThat(render("VALUES (0x89504E470D0A, 0X1f, 0, 0xZ)")).isEqualTo("I:VALUES ( N:0x89504E470D0A , N:0X1f , N:0 , N:0 I:XZ )");
     }
 

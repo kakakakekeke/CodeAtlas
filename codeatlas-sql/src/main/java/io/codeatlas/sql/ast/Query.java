@@ -17,10 +17,17 @@ public record Query(List<Cte> ctes, QueryBody body, List<Expr> orderBy, List<Exp
         pos = pos == null ? Pos.NONE : pos;
     }
 
-    /** {@code name [(columns)] AS (query)} */
-    public record Cte(String name, List<String> columns, Query query, Pos pos) {
+    /**
+     * {@code name [(columns)] AS (query)}. PostgreSQL의 데이터 변경 CTE({@code name AS (INSERT|UPDATE|DELETE … [RETURNING ..])}, F-019-R14)면
+     * {@code dml}이 그 구문이고 {@code query}는 빈 쿼리다. 보통의 CTE면 {@code dml}은 null이다.
+     */
+    public record Cte(String name, List<String> columns, Query query, Pos pos, Statement dml) {
         public Cte {
             columns = List.copyOf(columns);
+        }
+
+        public Cte(String name, List<String> columns, Query query, Pos pos) {
+            this(name, columns, query, pos, null);
         }
     }
 
@@ -31,14 +38,20 @@ public record Query(List<Cte> ctes, QueryBody body, List<Expr> orderBy, List<Exp
     public sealed interface QueryBody {
     }
 
-    /** SELECT 한 덩어리. 없는 절은 null 또는 빈 목록. */
+    /** SELECT 한 덩어리. 없는 절은 null 또는 빈 목록. {@code distinctOn}은 PostgreSQL {@code SELECT DISTINCT ON (식, ..)}의 식이다(F-019-R15). */
     public record Select(boolean distinct, List<SelectItem> items, List<Expr> into, List<TableRef> from, Expr where,
-            Expr startWith, Expr connectBy, List<Expr> groupBy, Expr having, Pos pos) implements QueryBody {
+            Expr startWith, Expr connectBy, List<Expr> groupBy, Expr having, Pos pos, List<Expr> distinctOn) implements QueryBody {
         public Select {
             items = List.copyOf(items);
             into = List.copyOf(into);
             from = List.copyOf(from);
             groupBy = List.copyOf(groupBy);
+            distinctOn = List.copyOf(distinctOn);
+        }
+
+        public Select(boolean distinct, List<SelectItem> items, List<Expr> into, List<TableRef> from, Expr where,
+                Expr startWith, Expr connectBy, List<Expr> groupBy, Expr having, Pos pos) {
+            this(distinct, items, into, from, where, startWith, connectBy, groupBy, having, pos, List.of());
         }
     }
 

@@ -27,16 +27,26 @@ import java.util.TreeMap;
 import java.util.function.Function;
 
 /**
- * 대조 결과 리포트. 사람이 읽는 Markdown({@value #MARKDOWN_FILE})과 기계가 읽는 JSON({@value #JSON_FILE})을 만든다.
+ * 대조 결과 리포트. 사람이 읽는 Markdown({@code <샘플 이름>-report.md})과 기계가 읽는 JSON({@code <샘플 이름>-report.json})을 만든다.
+ * 샘플 이름을 주지 않으면 {@value #DEFAULT_SAMPLE}이다.
  *
  * <pre>{@code
- * SampleReport.builder(graph, result).mode("report").gate("must-not 위반 0", true, "").build().write(targetDir);
+ * SampleReport.builder(graph, result).sample("sample-pg").mode("report").gate("must-not 위반 0", true, "").build().write(targetDir);
  * }</pre>
  */
 public final class SampleReport {
 
-    public static final String MARKDOWN_FILE = "sample-shop-report.md";
-    public static final String JSON_FILE = "sample-shop-report.json";
+    public static final String DEFAULT_SAMPLE = "sample-shop";
+
+    /** 그 샘플의 Markdown 리포트 파일 이름. */
+    public static String markdownFile(String sample) {
+        return sample + "-report.md";
+    }
+
+    /** 그 샘플의 JSON 리포트 파일 이름. */
+    public static String jsonFile(String sample) {
+        return sample + "-report.json";
+    }
 
     /** Markdown에서 목록 하나에 싣는 최대 줄 수. 넘는 것은 JSON에만 있다. */
     public static final int DEFAULT_MAX_LIST = 300;
@@ -47,16 +57,21 @@ public final class SampleReport {
 
     private final GraphModel graph;
     private final VerificationResult result;
+    private final String sample;
     private final String mode;
     private final List<String> components;
     private final List<Gate> gates;
     private final Map<String, List<Diagnostic>> brokenFiles;
+    /** null이면 허용 목록으로 진단을 보지 않는 샘플이다. */
+    private final List<UnresolvedPoints.Point> allowedParseFailures;
     private final List<UnresolvedPoints.Point> unresolvedPoints;
     private final int maxList;
 
     private SampleReport(Builder builder) {
         this.graph = builder.graph;
         this.result = builder.result;
+        this.sample = builder.sample;
+        this.allowedParseFailures = builder.allowedParseFailures == null ? null : List.copyOf(builder.allowedParseFailures);
         this.mode = builder.mode;
         this.components = List.copyOf(builder.components);
         this.gates = List.copyOf(builder.gates);
@@ -72,16 +87,24 @@ public final class SampleReport {
     public static final class Builder {
         private final GraphModel graph;
         private final VerificationResult result;
+        private String sample = DEFAULT_SAMPLE;
         private String mode = "assert";
         private List<String> components = List.of();
         private final List<Gate> gates = new ArrayList<>();
         private Map<String, List<Diagnostic>> brokenFiles = Map.of();
+        private List<UnresolvedPoints.Point> allowedParseFailures;
         private List<UnresolvedPoints.Point> unresolvedPoints = List.of();
         private int maxList = DEFAULT_MAX_LIST;
 
         private Builder(GraphModel graph, VerificationResult result) {
             this.graph = graph;
             this.result = result;
+        }
+
+        /** 샘플 이름. 리포트 제목과 파일 이름에 들어간다. */
+        public Builder sample(String sample) {
+            this.sample = sample;
+            return this;
         }
 
         /** 실행 모드 표시({@code assert} 또는 {@code report}). */
@@ -107,6 +130,15 @@ public final class SampleReport {
             return this;
         }
 
+        /**
+         * 샘플의 "일부러 넣은 미지원 구문" 목록(F-019-AC34). 주면 지점마다 남은 PARSE_FAILED·UNSUPPORTED_SYNTAX와
+         * 목록 밖의 것({@link DiagnosticChecks#parseFailuresOutside})을 싣는다.
+         */
+        public Builder allowedParseFailures(List<UnresolvedPoints.Point> points) {
+            this.allowedParseFailures = points;
+            return this;
+        }
+
         public Builder unresolvedPoints(List<UnresolvedPoints.Point> points) {
             this.unresolvedPoints = points;
             return this;
@@ -126,18 +158,26 @@ public final class SampleReport {
         return gates;
     }
 
+    public String markdownFile() {
+        return markdownFile(sample);
+    }
+
+    public String jsonFile() {
+        return jsonFile(sample);
+    }
+
     /** 두 파일을 쓴다. 디렉터리가 없으면 만든다. */
     public void write(Path dir) throws IOException {
         Files.createDirectories(dir);
-        Files.writeString(dir.resolve(MARKDOWN_FILE), markdown(), StandardCharsets.UTF_8);
-        Files.writeString(dir.resolve(JSON_FILE), json(), StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve(markdownFile()), markdown(), StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve(jsonFile()), json(), StandardCharsets.UTF_8);
     }
 
     // ------------------------------------------------------------------ Markdown
 
     public String markdown() {
         StringBuilder sb = new StringBuilder();
-        sb.append("# sample-shop 검증 리포트\n\n");
+        sb.append("# ").append(sample).append(" 검증 리포트\n\n");
         header(sb);
         gatesSection(sb);
         summarySection(sb);
@@ -360,10 +400,42 @@ public final class SampleReport {
         if (graph.diagnostics().isEmpty()) {
             sb.append("| - | (진단 없음) | 0 |\n");
         }
-        sb.append("\n### 깨진 입력 파일 (파일마다 PARSE_FAILED 또는 UNSUPPORTED_SYNTAX가 남아야 한다)\n\n| 파일 | 진단 | 내용 |\n|---|---|---|\n");
-        brokenFiles.forEach((file, diagnostics) -> sb.append("| ").append(code(file)).append(" | ").append(diagnostics.isEmpty() ? "**없음**" : "있음").append(" | ")
-                .append(cell(String.join("; ", diagnostics.stream().map(d -> d.code() + " " + d.location() + " " + d.message()).limit(3).toList())))
-                .append(" |\n"));
+        sb.append('\n');
+        if (!brokenFiles.isEmpty()) {
+            sb.append("### 깨진 입력 파일 (파일마다 PARSE_FAILED 또는 UNSUPPORTED_SYNTAX가 남아야 한다)\n\n| 파일 | 진단 | 내용 |\n|---|---|---|\n");
+            brokenFiles.forEach((file, diagnostics) -> sb.append("| ").append(code(file)).append(" | ").append(diagnostics.isEmpty() ? "**없음**" : "있음").append(" | ")
+                    .append(cell(String.join("; ", diagnostics.stream().map(d -> d.code() + " " + d.location() + " " + d.message()).limit(3).toList())))
+                    .append(" |\n"));
+            sb.append('\n');
+        }
+        if (allowedParseFailures != null) {
+            allowedParseFailuresSection(sb);
+        }
+    }
+
+    /** 허용 목록의 지점마다 남은 진단과, 목록 밖의 PARSE_FAILED·UNSUPPORTED_SYNTAX 전부(F-019-AC34). */
+    private void allowedParseFailuresSection(StringBuilder sb) {
+        sb.append("### 일부러 넣은 미지원 구문 (이 위치 밖의 PARSE_FAILED·UNSUPPORTED_SYNTAX는 실패다. 이 위치에는 진단이 남아도 되고 없어도 된다)\n\n");
+        if (allowedParseFailures.isEmpty()) {
+            sb.append("목록이 비었다.\n\n");
+        } else {
+            sb.append("| # | 위치 | 진단 |\n|---|---|---|\n");
+            for (UnresolvedPoints.Point point : allowedParseFailures) {
+                List<Diagnostic> found = DiagnosticChecks.parseFailuresAt(graph, point);
+                sb.append("| ").append(point.id()).append(" | ").append(code(point.label())).append(" | ")
+                        .append(found.isEmpty() ? "없음" : cell(String.join("; ", found.stream().map(d -> d.code() + " " + d.message()).toList())))
+                        .append(" |\n");
+            }
+            sb.append('\n');
+        }
+        List<Diagnostic> outside = DiagnosticChecks.parseFailuresOutside(graph, allowedParseFailures).stream().sorted(DIAGNOSTIC_ORDER).toList();
+        sb.append("#### 목록 밖의 PARSE_FAILED·UNSUPPORTED_SYNTAX (").append(outside.size()).append(")\n\n");
+        if (outside.isEmpty()) {
+            sb.append("없다.\n\n");
+            return;
+        }
+        sb.append("| 코드 | 위치 | 메시지 |\n|---|---|---|\n");
+        limited(sb, outside, d -> "| " + cell(d.code()) + " | " + (d.location() == null ? "-" : code(d.location().toString())) + " | " + cell(d.message()) + " |");
         sb.append('\n');
     }
 
@@ -474,7 +546,7 @@ public final class SampleReport {
             sb.append(line.apply(item)).append('\n');
         }
         if (items.size() > maxList) {
-            sb.append("\n… 외 ").append(items.size() - maxList).append("개 (전체는 ").append(JSON_FILE).append(")\n");
+            sb.append("\n… 외 ").append(items.size() - maxList).append("개 (전체는 ").append(jsonFile()).append(")\n");
         }
     }
 
@@ -555,6 +627,13 @@ public final class SampleReport {
         brokenFiles.forEach((file, diagnostics) -> broken.add(map("file", file, "reported", !diagnostics.isEmpty(),
                 "diagnostics", diagnostics.stream().map(SampleReport::diagnosticJson).toList())));
         root.put("brokenFiles", broken);
+        if (allowedParseFailures != null) {
+            root.put("allowedParseFailures", allowedParseFailures.stream().map(point -> map("id", point.id(), "file", point.file(),
+                    "startLine", point.startLine(), "endLine", point.endLine(),
+                    "diagnostics", DiagnosticChecks.parseFailuresAt(graph, point).stream().map(SampleReport::diagnosticJson).toList())).toList());
+            root.put("unexpectedParseFailures", DiagnosticChecks.parseFailuresOutside(graph, allowedParseFailures).stream().sorted(DIAGNOSTIC_ORDER)
+                    .map(SampleReport::diagnosticJson).toList());
+        }
         root.put("unresolvedPoints", unresolvedPoints.stream().map(point -> {
             UnresolvedPoints.Evidence evidence = UnresolvedPoints.evidence(graph, point);
             return map("id", point.id(), "file", point.file(), "startLine", point.startLine(), "endLine", point.endLine(), "text", point.text(),

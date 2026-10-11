@@ -155,7 +155,7 @@ public final class Routine {
         BASIC,
         /** {@code WHILE 조건 LOOP|DO} */
         WHILE,
-        /** {@code FOR i IN lo..hi LOOP} */
+        /** {@code FOR i IN lo..hi LOOP}, PL/pgSQL {@code FOREACH x IN ARRAY 식 LOOP}(control이 배열 식이다) */
         FOR_RANGE,
         /** {@code FOR r IN 커서[(인자)] LOOP} */
         FOR_CURSOR,
@@ -229,7 +229,10 @@ public final class Routine {
     public record Close(String cursor, Pos pos) implements Stmt {
     }
 
-    /** {@code EXECUTE IMMEDIATE 식 [INTO ..] [USING ..] [RETURNING ..]}. rest는 식 뒤의 절들. */
+    /**
+     * {@code EXECUTE IMMEDIATE 식 [INTO ..] [USING ..] [RETURNING ..]}. rest는 식 뒤의 절들.
+     * PL/pgSQL의 {@code EXECUTE 식 [INTO ..] [USING ..]}, {@code RETURN QUERY EXECUTE 식}, {@code FOR r IN EXECUTE 식}의 동적 SQL 지점도 이것이다.
+     */
     public record ExecuteImmediate(Expr sql, Expr rest, Pos pos) implements Stmt {
     }
 

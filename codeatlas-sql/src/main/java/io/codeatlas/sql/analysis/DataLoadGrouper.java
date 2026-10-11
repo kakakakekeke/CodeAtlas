@@ -36,6 +36,9 @@ import java.util.Map;
  * <p>묶음은 구문을 받는 대로 행 수와 컬럼 이름만 더하고 구문 자체는 놓아 준다. 62만 건짜리 스크립트도 테이블 수만큼의 메모리로 지나간다
  * (기준에 닿기 전의 후보는 테이블마다 {@code MIN_STATEMENTS - 1}건까지만 쥔다).
  *
+ * <p>PostgreSQL의 {@code COPY 테이블 [(컬럼, ..)] FROM stdin}(F-019-R23)은 구문 하나가 곧 적재다: 건수 기준 없이 {@link #offerCopy}로 바로
+ * 그 테이블의 묶음에 더하고(행 수는 데이터 줄 수), 그런 묶음이 생긴 파일은 데이터 적재 파일이다.
+ *
  * <p>사용: 파일마다 하나 만들고, INSERT 단위마다 {@link #candidate}로 후보를 얻어 {@link #offer}에 준다. 그 밖의 단위는
  * {@link #noteOther()}(적재 파일 판정 (b)를 깨는 구문)나 {@link #noteReset()}으로 알린다. 파일을 다 읽으면 {@link #endOfFile()}을 부르고
  * (이때 적재 파일인지 정해진다) {@link #write}가 묶음 노드와 엣지를 쓴다.
@@ -92,6 +95,8 @@ public final class DataLoadGrouper {
         /** 고른 방언이 아닌 방언의 파일에서 온 묶음이면 그 방언(F-007-R29). 아니면 null. */
         String borrowedFrom;
         int statements;
+        /** 묶은 구문 가운데 {@code COPY … FROM stdin}의 수. */
+        int copies;
         long rows;
         final Map<String, Pos> tables = new LinkedHashMap<>();
         final Map<String, Map<String, Pos>> columns = new LinkedHashMap<>();
@@ -162,6 +167,30 @@ public final class DataLoadGrouper {
         groups.put(table, group);
         held.remove(table);
         return Offer.GROUPED;
+    }
+
+    /**
+     * PostgreSQL {@code COPY 테이블 [(컬럼, ..)] FROM stdin} 구문을 그 테이블의 묶음에 더한다(F-019-R23). 리터럴 INSERT와 달리 기준 건수를
+     * 기다리지 않는다. 같은 테이블의 리터럴 INSERT 후보를 쥐고 있었으면 함께 묶는다(그 구문의 표는 {@link #takeReleased()}로 돌려준다).
+     *
+     * @param rows 구문 뒤에 따라온 데이터 줄 수
+     */
+    public void offerCopy(ScriptUnit unit, Statement.Copy copy, int rows) {
+        String table = copy.table().name();
+        Group group = groups.get(table);
+        if (group == null) {
+            List<Held> list = held.remove(table);
+            group = new Group(table, list == null ? unit : list.get(0).unit());
+            if (list != null) {
+                for (Held h : list) {
+                    group.add(h.candidate());
+                    released.add(h.token());
+                }
+            }
+            groups.put(table, group);
+        }
+        group.add(new Candidate(List.of(new Target(table, copy.table().pos(), copy.columns())), Math.max(rows, 0), List.of()));
+        group.copies++;
     }
 
     /** 쥐고 있다가 묶음으로 넘어간 구문의 표들. 한 번 돌려주면 비운다. */
@@ -239,14 +268,19 @@ public final class DataLoadGrouper {
         }
     }
 
-    /** 구문이 {@link #MIN_STATEMENTS}건에 못 미치는데 적재 파일이라 묶인 묶음 수. */
+    /** 구문이 {@link #MIN_STATEMENTS}건에 못 미치는데 적재 파일이라 묶인 묶음 수. {@code COPY}가 든 묶음은 세지 않는다(건수 기준이 없다). */
     public int smallGroupCount() {
-        return (int) groups.values().stream().filter(g -> g.statements < MIN_STATEMENTS).count();
+        return (int) groups.values().stream().filter(g -> g.statements < MIN_STATEMENTS && g.copies == 0).count();
     }
 
-    /** 묶은 구문 수. */
+    /** 묶은 구문 수({@code COPY} 포함). */
     public int statementCount() {
         return groups.values().stream().mapToInt(g -> g.statements).sum();
+    }
+
+    /** 묶은 구문 가운데 {@code COPY … FROM stdin}의 수. */
+    public int copyCount() {
+        return groups.values().stream().mapToInt(g -> g.copies).sum();
     }
 
     /**

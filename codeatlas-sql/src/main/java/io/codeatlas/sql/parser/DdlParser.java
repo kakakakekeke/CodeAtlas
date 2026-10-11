@@ -6,6 +6,7 @@ import io.codeatlas.sql.ast.Pos;
 import io.codeatlas.sql.ast.QName;
 import io.codeatlas.sql.ast.Query;
 import io.codeatlas.sql.ast.Statement;
+import io.codeatlas.sql.lexer.Syntax;
 import io.codeatlas.sql.lexer.Token;
 import io.codeatlas.sql.lexer.TokenType;
 import java.util.ArrayList;
@@ -13,8 +14,10 @@ import java.util.List;
 import java.util.Set;
 
 /**
- * Oracle·DB2 DDL 파서: CREATE TABLE/INDEX/VIEW/SEQUENCE/SYNONYM/ALIAS, ALTER TABLE, COMMENT ON.
+ * Oracle·DB2·PostgreSQL DDL 파서: CREATE TABLE/INDEX/VIEW/SEQUENCE/SYNONYM/ALIAS, ALTER TABLE, COMMENT ON.
  * 스토리지·파티션 같은 물리 절은 건너뛴다. 어떤 입력에도 예외를 던지지 않는다.
+ * PostgreSQL의 DDL 표기는 다른 방언의 표기와 겹치지 않아 읽기 방식과 무관하게 읽는다(ADR-0012). 읽기 방식으로 가르는 것은
+ * {@code CREATE INDEX CONCURRENTLY ON ..}의 {@code CONCURRENTLY}뿐이다.
  *
  * <p>사용: {@code DdlParser.isDdl(tokens)}로 확인한 뒤 {@code new DdlParser(tokens).parse()}.
  * 결과의 구문은 {@link Ddl} 구현, 조용히 건너뛸 구문이면 {@link Statement.Other}, 모르는 구문이면 {@link Statement.Unparsed}다.
@@ -27,7 +30,12 @@ public final class DdlParser extends TokenCursor {
             "TYPE", "LIBRARY", "STOGROUP", "NICKNAME", "VARIABLE", "MASK", "PERMISSION", "CLUSTER", "DIMENSION",
             "OPERATOR", "OUTLINE", "PFILE", "SPFILE", "ROLLBACK", "UNDO", "TEMPORARY", "BIGFILE", "SMALLFILE",
             "SERVER", "WRAPPER", "AUDIT", "DISTINCT", "MODULE", "EVENT", "WORKLOAD", "THRESHOLD", "JAVA", "EDITION",
-            "RESTORE", "FLASHBACK", "CONTROLFILE", "DISKGROUP", "LOCKDOWN", "PLUGGABLE", "REGULAR", "LARGE", "SYSTEM");
+            "RESTORE", "FLASHBACK", "CONTROLFILE", "DISKGROUP", "LOCKDOWN", "PLUGGABLE", "REGULAR", "LARGE", "SYSTEM",
+            // PostgreSQL(pg_dump의 부속 구문, F-019-R22)
+            "EXTENSION", "DOMAIN", "COLLATION");
+
+    /** 자동 증가 컬럼을 뜻하는 타입(F-019-R19): 이 타입의 컬럼은 identity다. */
+    private static final Set<String> SERIAL_TYPES = Set.of("SMALLSERIAL", "SERIAL", "BIGSERIAL", "SERIAL2", "SERIAL4", "SERIAL8");
 
     private static final Set<String> COLUMN_OPTION_START = Set.of(
             "NOT", "NULL", "DEFAULT", "CONSTRAINT", "PRIMARY", "UNIQUE", "REFERENCES", "CHECK", "GENERATED", "WITH",
@@ -35,8 +43,23 @@ public final class DdlParser extends TokenCursor {
 
     private static final Set<String> ALTER_ACTIONS = Set.of("ADD", "MODIFY", "ALTER", "DROP", "RENAME");
 
+    /** 이 구문이 든 텍스트의 읽기 방식(ADR-0012). 안에서 만드는 구문 파서에도 그대로 넘긴다. */
+    private final Syntax syntax;
+
+    /** 기본 읽기 방식으로 읽는다. */
     public DdlParser(List<Token> tokens) {
+        this(tokens, Syntax.DEFAULT);
+    }
+
+    /** @param syntax 읽기 방식. 토큰을 만든 렉서와 같은 값이어야 한다. null이면 기본이다 */
+    public DdlParser(List<Token> tokens, Syntax syntax) {
         super(tokens);
+        this.syntax = syntax == null ? Syntax.DEFAULT : syntax;
+    }
+
+    /** 이 파서의 읽기 방식. */
+    public Syntax syntax() {
+        return syntax;
     }
 
     /** DDL 파서가 맡는 구문인가: CREATE(루틴 제외), ALTER, COMMENT ON, DECLARE GLOBAL TEMPORARY TABLE. */
@@ -60,7 +83,7 @@ public final class DdlParser extends TokenCursor {
         if (accept("CREATE")) {
             statement = create();
         } else if (accept("ALTER")) {
-            statement = accept("TABLE") && peek().isIdentifier() ? alterTable() : new Statement.Other("ALTER", false);
+            statement = accept("TABLE") && skipAlterModifiers() && peek().isIdentifier() ? alterTable() : new Statement.Other("ALTER", false);
         } else if (at("COMMENT") && peek(1).is("ON")) {
             next();
             next();
@@ -73,6 +96,26 @@ public final class DdlParser extends TokenCursor {
         }
         Token last = tokens.size() >= 2 ? tokens.get(tokens.size() - 2) : first;
         return new ParseResult(statement, problems, List.of(), Pos.span(first, last));
+    }
+
+    /**
+     * {@code ALTER TABLE [IF EXISTS] [ONLY] 이름}의 수식어를 넘긴다(F-019-R18). 바로 뒤가 테이블 이름이 될 수 없으면
+     * ({@code ALTER TABLE ONLY ADD ..}) 그 낱말이 테이블 이름이다: 그대로 둔다.
+     *
+     * @return 항상 true(조건식에 이어 쓰려고)
+     */
+    private boolean skipAlterModifiers() {
+        if (atSeq("IF", "EXISTS") && startsTableName(peek(2))) {
+            pos += 2;
+        }
+        if (at("ONLY") && startsTableName(peek(1))) {
+            next();
+        }
+        return true;
+    }
+
+    private static boolean startsTableName(Token t) {
+        return t.isIdentifier() && !(t.type() == TokenType.IDENT && ALTER_ACTIONS.contains(t.upper()));
     }
 
     private Statement create() {
@@ -99,11 +142,13 @@ public final class DdlParser extends TokenCursor {
             } else if (at("MATERIALIZED") && peek(1).is("VIEW")) {
                 next();
                 materialized = true;
-            } else if (atAny("GLOBAL", "PRIVATE", "LOCAL") && peek(1).is("TEMPORARY")) {
+            } else if (atAny("GLOBAL", "PRIVATE", "LOCAL") && peek(1).isAny("TEMPORARY", "TEMP")) {
                 next();
             } else if (atAny("TEMPORARY", "TEMP") && peek(1).is("TABLE")) {
                 next();
                 temporary = true;
+            } else if (at("UNLOGGED") && peek(1).isAny("TABLE", "SEQUENCE")) {
+                next(); // PostgreSQL: 로그를 남기지 않는 테이블. 임시 테이블이 아니다(F-019-R19)
             } else if (atAny("MEMORY", "CACHED", "TEXT") && peek(1).is("TABLE")) {
                 next(); // HSQL: CREATE MEMORY|CACHED|TEXT TABLE (F-007-R17)
             } else {
@@ -120,6 +165,9 @@ public final class DdlParser extends TokenCursor {
             return createView(materialized);
         }
         if (accept("SEQUENCE")) {
+            if (atSeq("IF", "NOT", "EXISTS") && peek(3).isIdentifier()) {
+                pos += 3;
+            }
             if (!peek().isIdentifier()) {
                 return new Statement.Unparsed("CREATE SEQUENCE");
             }
@@ -145,7 +193,7 @@ public final class DdlParser extends TokenCursor {
     }
 
     private SqlParser sub() {
-        SqlParser sub = new SqlParser(tokens);
+        SqlParser sub = new SqlParser(tokens, syntax);
         sub.position(pos);
         return sub;
     }
@@ -169,10 +217,18 @@ public final class DdlParser extends TokenCursor {
         QName name = name();
         List<Ddl.ColumnDef> columns = new ArrayList<>();
         List<Ddl.Constraint> constraints = new ArrayList<>();
+        List<Ddl.ColumnSource> sources = new ArrayList<>();
         Query asQuery = null;
+        if (atSeq("PARTITION", "OF") && peek(2).isIdentifier()) {
+            // PostgreSQL: CREATE TABLE p PARTITION OF 부모 [(컬럼 옵션·제약, ..)] FOR VALUES .. | DEFAULT (F-019-R20).
+            // 뒤의 괄호에 적힌 것은 부모 컬럼의 옵션과 제약이다: 컬럼 정의처럼 읽어 부모에게서 온 컬럼 위에 얹는다
+            Token start = next();
+            next();
+            sources.add(new Ddl.ColumnSource(Ddl.ColumnSource.Kind.PARTITION_OF, name(), 0, true, false, true, Pos.of(start)));
+        }
         if (atSymbol("(") && !(peek(1).is("SELECT") || peek(1).is("WITH"))) {
             open();
-            elementList(columns, constraints);
+            elementList(columns, constraints, sources);
             close();
         }
         while (!atEnd()) {
@@ -183,6 +239,21 @@ public final class DdlParser extends TokenCursor {
                 adopt(sub);
                 break;
             }
+            if (at("INHERITS") && peek(1).isSymbol("(")) {
+                // PostgreSQL: (..) INHERITS (부모, ..)
+                next();
+                open();
+                while (peek().isIdentifier()) {
+                    QName parent = name();
+                    sources.add(new Ddl.ColumnSource(Ddl.ColumnSource.Kind.INHERITS, parent, 0, true, false, false, parent.pos()));
+                    if (!acceptSymbol(",")) {
+                        break;
+                    }
+                }
+                skipToCloseParen();
+                close();
+                continue;
+            }
             if (atSymbol("(")) {
                 skipBalanced();
             } else {
@@ -190,7 +261,7 @@ public final class DdlParser extends TokenCursor {
             }
         }
         pos = tokens.size() - 1;
-        return new Ddl.CreateTable(name, columns, constraints, asQuery, temporary);
+        return new Ddl.CreateTable(name, columns, constraints, asQuery, temporary, sources);
     }
 
     private boolean lookaheadIsQuery(int from) {
@@ -201,11 +272,17 @@ public final class DdlParser extends TokenCursor {
         return peek(i).is("SELECT") || peek(i).is("WITH");
     }
 
-    /** 괄호 안의 컬럼 정의와 테이블 수준 제약 목록. 닫는 괄호는 소비하지 않는다. */
-    private void elementList(List<Ddl.ColumnDef> columns, List<Ddl.Constraint> constraints) {
+    /**
+     * 괄호 안의 컬럼 정의와 테이블 수준 제약 목록. 닫는 괄호는 소비하지 않는다.
+     *
+     * @param sources {@code LIKE 원본 [INCLUDING ..]} 항목을 담을 곳(F-019-R20). null이면 그 항목을 읽지 않고 건너뛴다(ALTER TABLE .. ADD (..))
+     */
+    private void elementList(List<Ddl.ColumnDef> columns, List<Ddl.Constraint> constraints, List<Ddl.ColumnSource> sources) {
         while (!atEnd() && !atSymbol(")")) {
             int before = pos;
-            if (atIndexClause()) {
+            if (sources != null && at("LIKE") && peek(1).isIdentifier()) {
+                sources.add(likeClause(columns.size()));
+            } else if (atIndexClause()) {
                 constraints.add(indexClause());
             } else if (atTableConstraint()) {
                 Ddl.Constraint c = tableConstraint();
@@ -223,6 +300,35 @@ public final class DdlParser extends TokenCursor {
                 next();
             }
         }
+    }
+
+    /**
+     * {@code LIKE 원본 [INCLUDING|EXCLUDING 항목]..}: 원본의 컬럼을 이 자리에 가져온다. 기본값·기본 키·identity는 그 항목(또는 {@code ALL})을
+     * {@code INCLUDING}으로 적었을 때만 따라온다(뒤에 적은 것이 앞의 것을 덮는다).
+     *
+     * @param position 이 절 앞에 적힌 자기 컬럼의 수
+     */
+    private Ddl.ColumnSource likeClause(int position) {
+        Token start = next(); // LIKE
+        QName table = name();
+        boolean defaults = false;
+        boolean keys = false;
+        boolean identity = false;
+        while (atAny("INCLUDING", "EXCLUDING") && peek(1).isIdentifier()) {
+            boolean including = next().is("INCLUDING");
+            Token what = next();
+            boolean all = what.is("ALL");
+            if (all || what.is("DEFAULTS")) {
+                defaults = including;
+            }
+            if (all || what.is("INDEXES")) {
+                keys = including;
+            }
+            if (all || what.is("IDENTITY")) {
+                identity = including;
+            }
+        }
+        return new Ddl.ColumnSource(Ddl.ColumnSource.Kind.LIKE, table, position, defaults, keys, identity, Pos.of(start));
     }
 
     /** 다음 쉼표나 (현재 괄호의) 닫는 괄호 앞까지 건너뛴다. */
@@ -254,10 +360,19 @@ public final class DdlParser extends TokenCursor {
         if (at("FOREIGN") && peek(1).is("KEY")) {
             return true;
         }
-        if (at("UNIQUE") && (peek(1).isSymbol("(") || peek(1).isAny("KEY", "INDEX"))) {
+        if (at("UNIQUE") && (peek(1).isSymbol("(") || peek(1).isAny("KEY", "INDEX") || atUniqueNulls(1))) {
             return true;
         }
         return at("CHECK") && peek(1).isSymbol("(");
+    }
+
+    /** ahead부터 {@code NULLS [NOT] DISTINCT (}인가(PostgreSQL 유일 제약의 수식어). */
+    private boolean atUniqueNulls(int ahead) {
+        if (!peek(ahead).is("NULLS")) {
+            return false;
+        }
+        int distinct = peek(ahead + 1).is("NOT") ? ahead + 2 : ahead + 1;
+        return peek(distinct).is("DISTINCT") && peek(distinct + 1).isSymbol("(");
     }
 
     /**
@@ -318,6 +433,9 @@ public final class DdlParser extends TokenCursor {
         }
         if (accept("UNIQUE")) {
             acceptAny("KEY", "INDEX");
+            if (atUniqueNulls(0)) {
+                pos += peek(1).is("NOT") ? 3 : 2; // PostgreSQL: UNIQUE NULLS [NOT] DISTINCT (cols)
+            }
             if (peek().isIdentifier() && !at("USING")) {
                 Token n = next(); // MySQL: UNIQUE KEY 이름 (cols)
                 if (constraintName == null) {
@@ -355,7 +473,14 @@ public final class DdlParser extends TokenCursor {
         QName ref = name();
         List<String> refColumns = atSymbol("(") ? nameList() : List.of();
         String onDelete = null;
-        while (at("ON") && peek(1).isAny("DELETE", "UPDATE")) {
+        while (true) {
+            if (at("MATCH") && peek(1).isAny("FULL", "PARTIAL", "SIMPLE")) {
+                pos += 2; // 받아 넘긴다(F-019-R18). 뒤의 DEFERRABLE·INITIALLY ..·NOT VALID는 부른 쪽이 넘긴다
+                continue;
+            }
+            if (!(at("ON") && peek(1).isAny("DELETE", "UPDATE"))) {
+                break;
+            }
             next();
             boolean delete = next().is("DELETE");
             String action = null;
@@ -409,7 +534,7 @@ public final class DdlParser extends TokenCursor {
         String defaultValue = null;
         boolean primaryKey = false;
         boolean unique = false;
-        boolean identity = false;
+        boolean identity = dataType != null && SERIAL_TYPES.contains(dataType); // serial 류 타입은 자동 증가다(F-019-R19)
         boolean virtual = false;
         Ddl.Constraint reference = null;
         String constraintName = null;
@@ -555,6 +680,7 @@ public final class DdlParser extends TokenCursor {
             case "CHAR":
             case "NCHAR":
             case "BINARY":
+            case "BIT":
                 if (!accept("VARYING")) {
                     acceptSeq("LARGE", "OBJECT");
                 }
@@ -588,7 +714,22 @@ public final class DdlParser extends TokenCursor {
                 break;
             }
         }
-        return joinTokens(tokens.subList(start, pos));
+        StringBuilder text = new StringBuilder(joinTokens(tokens.subList(start, pos)));
+        // PostgreSQL 배열 타입(F-019-R19): text[], integer[][], text[3], integer ARRAY[4]. 타입 텍스트에 붙여 적는다
+        if (at("ARRAY") && (peek(1).isSymbol("[") || peek(1).isSymbol(",") || peek(1).isSymbol(")") || peek(1).isEof())) {
+            next();
+            text.append(" ARRAY");
+        }
+        while (atSymbol("[") && (peek(1).isSymbol("]") || (peek(1).type() == TokenType.NUMBER && peek(2).isSymbol("]")))) {
+            next();
+            text.append('[');
+            if (!atSymbol("]")) {
+                text.append(next().text());
+            }
+            next();
+            text.append(']');
+        }
+        return text.toString();
     }
 
     /** DEFAULT 뒤의 값. 값이 없으면(DB2 {@code WITH DEFAULT}) null. */
@@ -618,7 +759,19 @@ public final class DdlParser extends TokenCursor {
 
     private Statement alterTable() {
         QName name = name();
+        if (atSeq("OWNER", "TO")) {
+            // PostgreSQL: 소유자 변경. pg_dump는 시퀀스·뷰의 소유자도 ALTER TABLE로 낸다: 테이블에 관한 사실이 없다(F-019-R22)
+            pos = tokens.size() - 1;
+            return new Statement.Other("ALTER", false);
+        }
         List<Ddl.AlterAction> actions = new ArrayList<>();
+        if (syntax == Syntax.POSTGRES && atSeq("ATTACH", "PARTITION") && peek(2).isIdentifier()) {
+            // PostgreSQL: ALTER TABLE [ONLY] 부모 ATTACH PARTITION 자식 { FOR VALUES .. | DEFAULT }. 경계 식은 읽지 않는다(F-019-R20)
+            pos += 2;
+            actions.add(new Ddl.AttachPartition(name()));
+            pos = tokens.size() - 1;
+            return new Ddl.AlterTable(name, actions);
+        }
         while (!atEnd()) {
             int before = pos;
             if (accept("ADD")) {
@@ -626,7 +779,7 @@ public final class DdlParser extends TokenCursor {
                     open();
                     List<Ddl.ColumnDef> columns = new ArrayList<>();
                     List<Ddl.Constraint> constraints = new ArrayList<>();
-                    elementList(columns, constraints);
+                    elementList(columns, constraints, null);
                     close();
                     columns.forEach(c -> actions.add(new Ddl.AddColumn(c)));
                     constraints.forEach(c -> actions.add(new Ddl.AddConstraint(c)));
@@ -638,7 +791,9 @@ public final class DdlParser extends TokenCursor {
                         actions.add(new Ddl.AddConstraint(c));
                     }
                 } else {
-                    accept("COLUMN");
+                    if (accept("COLUMN") && atSeq("IF", "NOT", "EXISTS")) {
+                        pos += 3; // ADD COLUMN IF NOT EXISTS 이름 타입
+                    }
                     if (peek().isIdentifier() && !atAny("PARTITION", "SUPPLEMENTAL", "PERIOD", "RESTRICT", "MATERIALIZED", "VERSIONING")) {
                         actions.add(new Ddl.AddColumn(columnDef(true)));
                     }
@@ -672,6 +827,9 @@ public final class DdlParser extends TokenCursor {
                 }
             } else if (accept("DROP")) {
                 if (accept("COLUMN")) {
+                    if (atSeq("IF", "EXISTS") && peek(2).isIdentifier()) {
+                        pos += 2; // DROP COLUMN IF EXISTS 이름
+                    }
                     if (peek().isIdentifier()) {
                         actions.add(new Ddl.DropColumn(next().text()));
                     }
@@ -709,16 +867,32 @@ public final class DdlParser extends TokenCursor {
         }
     }
 
-    /** DB2 {@code ALTER COLUMN c SET DATA TYPE t | SET NOT NULL | DROP NOT NULL | SET DEFAULT x | DROP DEFAULT}. */
+    /**
+     * DB2 {@code ALTER COLUMN c SET DATA TYPE t | SET NOT NULL | DROP NOT NULL | SET DEFAULT x | DROP DEFAULT}.
+     * PostgreSQL의 {@code ALTER COLUMN c TYPE t [USING 식]}, {@code ADD GENERATED {ALWAYS|BY DEFAULT} AS IDENTITY [(..)]}도 읽는다(F-019-R18).
+     */
     private Ddl.AlterAction alterColumn() {
         Token nameToken = next();
         String dataType = null;
         Boolean notNull = null;
         String defaultValue = null;
+        boolean identity = false;
         while (!atEnd()) {
             int before = pos;
             if (acceptSeq("SET", "DATA", "TYPE")) {
                 dataType = dataType();
+            } else if (at("TYPE") && peek(1).isIdentifier()) {
+                next();
+                dataType = dataType();
+            } else if (at("ADD") && peek(1).is("GENERATED")) {
+                pos += 2;
+                if (!accept("ALWAYS")) {
+                    acceptSeq("BY", "DEFAULT");
+                }
+                if (acceptSeq("AS", "IDENTITY")) {
+                    identity = true;
+                    skipBalanced(); // (SEQUENCE NAME .. START WITH ..)
+                }
             } else if (acceptSeq("SET", "NOT", "NULL")) {
                 notNull = true;
             } else if (acceptSeq("DROP", "NOT", "NULL")) {
@@ -743,7 +917,7 @@ public final class DdlParser extends TokenCursor {
                 next();
             }
         }
-        return new Ddl.ModifyColumn(new Ddl.ColumnDef(nameToken.text(), dataType, notNull, defaultValue, false, false, false, false,
+        return new Ddl.ModifyColumn(new Ddl.ColumnDef(nameToken.text(), dataType, notNull, defaultValue, false, false, identity, false,
                 null, Pos.of(nameToken)));
     }
 
@@ -821,17 +995,37 @@ public final class DdlParser extends TokenCursor {
         return body.replace("''", "'");
     }
 
+    /**
+     * {@code CREATE [UNIQUE] INDEX [CONCURRENTLY] [IF NOT EXISTS] [이름] ON [ONLY] 테이블 [USING 방식] (항목, ..) [INCLUDE (..)] [WITH (..)]
+     * [TABLESPACE ..] [WHERE ..]}(F-019-R21). 항목은 {@code 컬럼 [COLLATE ..] [연산자클래스] [ASC|DESC] [NULLS ..]}거나 식이다.
+     * 연산자 클래스와 인덱스 방식은 컬럼이 아니고, 식 항목은 표시용 텍스트로만 남는다.
+     */
     private Statement createIndex(boolean unique) {
-        if (!peek().isIdentifier()) {
-            return new Statement.Unparsed("CREATE INDEX");
+        if (at("CONCURRENTLY") && (syntax == Syntax.POSTGRES || !peek(1).is("ON"))) {
+            next(); // 기본 읽기 방식에서 바로 뒤가 ON이면 CONCURRENTLY라는 이름의 인덱스다(전과 같다)
         }
-        QName name = name();
+        if (atSeq("IF", "NOT", "EXISTS")) {
+            pos += 3;
+        }
+        QName name = null;
+        if (!(at("ON") && peek(1).isIdentifier() && !peek(1).is("ON"))) {
+            // 이름 없는 CREATE INDEX ON t (..)가 아니다
+            if (!peek().isIdentifier()) {
+                return new Statement.Unparsed("CREATE INDEX");
+            }
+            name = name();
+        }
         if (!accept("ON") || !peek().isIdentifier() || at("CLUSTER")) {
             pos = tokens.size() - 1;
             return new Statement.Other("CREATE INDEX", false);
         }
+        if (at("ONLY") && peek(1).isIdentifier() && !peek(1).is("USING")) {
+            next(); // ON ONLY 테이블
+        }
         QName table = name();
-        if (peek().isIdentifier() && atSymbol("(") == false && peek(1).isSymbol("(")) {
+        if (at("USING") && peek(1).isIdentifier() && peek(2).isSymbol("(")) {
+            pos += 2; // 인덱스 방식(btree, gin, ..)
+        } else if (peek().isIdentifier() && atSymbol("(") == false && peek(1).isSymbol("(")) {
             next(); // 테이블 별칭
         }
         List<String> columns = new ArrayList<>();
@@ -842,6 +1036,9 @@ public final class DdlParser extends TokenCursor {
                 int start = pos;
                 skipToElementEnd();
                 int end = pos;
+                if (end - start > 2 && tokens.get(end - 2).is("NULLS") && tokens.get(end - 1).isAny("FIRST", "LAST")) {
+                    end -= 2;
+                }
                 // 정렬 방향: DESC만 표시에 남긴다(ASC는 기본값이라 적지 않는다)
                 boolean descending = false;
                 while (end > start && tokens.get(end - 1).isAny("ASC", "DESC")) {
@@ -850,7 +1047,7 @@ public final class DdlParser extends TokenCursor {
                 }
                 if (end > start) {
                     String suffix = descending ? " DESC" : "";
-                    if (end - start == 1 && tokens.get(start).isIdentifier()) {
+                    if (isIndexColumn(start, end)) {
                         columns.add(tokens.get(start).text());
                         expressions.add(io.codeatlas.core.model.DbName.normalize(tokens.get(start).text()) + suffix);
                     } else {
@@ -863,11 +1060,71 @@ public final class DdlParser extends TokenCursor {
             }
             close();
         }
+        // 뒤의 INCLUDE (..)·WITH (..)·TABLESPACE는 넘긴다. WHERE가 있으면 부분 인덱스다
+        boolean partial = false;
+        while (!atEnd()) {
+            if (atSymbol("(")) {
+                skipBalanced();
+                continue;
+            }
+            partial |= at("WHERE");
+            next();
+        }
         pos = tokens.size() - 1;
-        return new Ddl.CreateIndex(name, unique, table, columns, expressions);
+        return new Ddl.CreateIndex(name, unique, table, columns, expressions, partial);
+    }
+
+    /**
+     * 인덱스 항목 [start, end)가 컬럼 하나인가(정렬 방향과 NULLS 절은 뗀 뒤다): {@code 컬럼}, {@code 컬럼 연산자클래스}, {@code 컬럼 COLLATE 이름 [연산자클래스]}.
+     * 연산자 클래스는 {@code 스키마.이름}이나 {@code 이름(매개변수)} 꼴일 수 있다. 그 밖은 식이다.
+     */
+    private boolean isIndexColumn(int start, int end) {
+        if (!tokens.get(start).isIdentifier()) {
+            return false;
+        }
+        int i = start + 1;
+        if (i < end && tokens.get(i).is("COLLATE")) {
+            i = skipDottedName(i + 1, end);
+            if (i < 0) {
+                return false;
+            }
+        }
+        if (i < end) {
+            i = skipDottedName(i, end);
+            if (i < 0) {
+                return false;
+            }
+            if (i < end && tokens.get(i).isSymbol("(")) {
+                int depth = 0;
+                for (; i < end; i++) {
+                    if (tokens.get(i).isSymbol("(")) {
+                        depth++;
+                    } else if (tokens.get(i).isSymbol(")") && --depth == 0) {
+                        i++;
+                        break;
+                    }
+                }
+            }
+        }
+        return i == end;
+    }
+
+    /** from에서 {@code 이름[.이름]..}을 읽고 그 뒤 위치를 돌려준다. 이름이 아니면 -1. */
+    private int skipDottedName(int from, int end) {
+        if (from >= end || !tokens.get(from).isIdentifier()) {
+            return -1;
+        }
+        int i = from + 1;
+        while (i + 1 < end && tokens.get(i).isSymbol(".") && tokens.get(i + 1).isIdentifier()) {
+            i += 2;
+        }
+        return i;
     }
 
     private Statement createView(boolean materialized) {
+        if (atSeq("IF", "NOT", "EXISTS") && peek(3).isIdentifier()) {
+            pos += 3; // CREATE MATERIALIZED VIEW IF NOT EXISTS 이름
+        }
         if (!peek().isIdentifier()) {
             return new Statement.Unparsed("CREATE VIEW");
         }

@@ -50,6 +50,11 @@ public final class DdlProcessor {
     private final List<NamedObject> sequences = new ArrayList<>();
     private final List<NamedObject> synonyms = new ArrayList<>();
     private final List<Event> events = new ArrayList<>();
+    /** 다른 테이블에서 컬럼을 가져오는 테이블(F-019-R20): 이름 → 그 CREATE TABLE. 정의를 모두 반영한 뒤 {@link #inheritColumns()}가 푼다. */
+    private final Map<String, Derivation> derivations = new LinkedHashMap<>();
+
+    private record Derivation(Ddl.CreateTable statement, Locator locator) {
+    }
     /** 파일이 처음 나온 순서(경로순으로 들어온다). */
     private final Map<String, Integer> fileOrder = new LinkedHashMap<>();
 
@@ -134,6 +139,139 @@ public final class DdlProcessor {
             pending.add(new PendingQuery(def, s, s.asQuery(), file, unitPos, sql, locator,
                     s.columns().stream().map(c -> DbName.normalize(c.name())).collect(Collectors.toList())));
         }
+        if (s.partitionOf() != null) {
+            def.partitionOf = s.partitionOf().name(); // 구문에 적힌 사실이다: 부모의 정의가 없어도 남긴다
+        }
+        if (!s.sources().isEmpty()) {
+            s.sources().forEach(source -> catalog.addSchema(source.table().qualifier()));
+            derivations.put(name, new Derivation(s, locator));
+        }
+    }
+
+    // ------------------------------------------------------------------ LIKE, INHERITS, PARTITION OF (F-019-R20)
+
+    /**
+     * {@code LIKE}·{@code INHERITS}·{@code PARTITION OF}로 가리킨 테이블의 컬럼을 넣는다. CREATE TABLE을 모두 반영한 뒤(원본·부모의 정의가 뒤나
+     * 다른 파일에 있어도 된다), ALTER TABLE·COMMENT ON·CREATE INDEX를 반영하기 전에 부른다(가져온 컬럼에 붙는 주석·인덱스가 그 컬럼을 찾는다).
+     * 그래서 가져오는 것은 원본의 CREATE TABLE에 적힌 컬럼이다: 원본에 ALTER TABLE로 더한 컬럼은 따라오지 않는다.
+     * 원본·부모의 정의가 없으면 컬럼을 만들지 않고(노드도 관계도 만들지 않는다) 그 테이블의 컬럼 목록을 "다 알지 못함"으로 표시한다.
+     */
+    private void inheritColumns() {
+        java.util.Set<String> done = new java.util.HashSet<>();
+        for (String name : new ArrayList<>(derivations.keySet())) {
+            inheritColumns(name, done, new java.util.HashSet<>());
+        }
+        derivations.clear();
+    }
+
+    private void inheritColumns(String name, java.util.Set<String> done, java.util.Set<String> visiting) {
+        Derivation d = derivations.get(name);
+        Catalog.TableDef def = catalog.table(name);
+        if (d == null || def == null || done.contains(name) || !visiting.add(name)) {
+            return; // 가져올 것이 없거나, 이미 풀었거나, 서로를 가리키는 고리다(고리면 지금 든 컬럼을 그대로 쓴다)
+        }
+        Ddl.CreateTable s = d.statement();
+        Map<String, Catalog.ColumnDef> own = new LinkedHashMap<>(def.columns);
+        Map<String, Catalog.ColumnDef> merged = new LinkedHashMap<>();
+        // 1. 부모(INHERITS, PARTITION OF)의 컬럼이 자기 컬럼보다 앞이다
+        for (Ddl.ColumnSource source : s.sources()) {
+            if (source.kind() != Ddl.ColumnSource.Kind.LIKE) {
+                copyColumns(def, source, d.locator(), merged, done, visiting);
+            }
+        }
+        // 2. 자기 컬럼을 적힌 순서대로. LIKE는 놓인 자리에 원본의 컬럼을 넣는다. 부모에게서 온 것과 같은 이름이면 부모의 자리에 합친다
+        for (int i = 0; i <= s.columns().size(); i++) {
+            for (Ddl.ColumnSource source : s.sources()) {
+                if (source.kind() == Ddl.ColumnSource.Kind.LIKE && Math.min(source.position(), s.columns().size()) == i) {
+                    copyColumns(def, source, d.locator(), merged, done, visiting);
+                }
+            }
+            if (i < s.columns().size()) {
+                String column = DbName.normalize(s.columns().get(i).name());
+                Catalog.ColumnDef declared = own.remove(column);
+                if (declared != null) {
+                    merged.merge(column, declared, DdlProcessor::overlay);
+                }
+            }
+        }
+        // 3. 제약이 이름만 만든 컬럼(UNIQUE (가져온 컬럼))
+        own.forEach((column, stub) -> merged.merge(column, stub, DdlProcessor::overlay));
+        def.columns.clear();
+        def.columns.putAll(merged);
+        visiting.remove(name);
+        done.add(name);
+    }
+
+    /** source가 가리키는 테이블의 컬럼을 into에 더한다. 그 테이블의 정의가 없으면(뷰도 포함: 컬럼을 아직 모른다) 아무것도 더하지 않는다. */
+    private void copyColumns(Catalog.TableDef def, Ddl.ColumnSource source, Locator locator, Map<String, Catalog.ColumnDef> into,
+            java.util.Set<String> done, java.util.Set<String> visiting) {
+        String parentName = source.table().name();
+        Catalog.TableDef parent = catalog.table(parentName);
+        if (parent == null || !parent.declared || parent.view || parent == def) {
+            def.columnsIncomplete = true;
+            return;
+        }
+        inheritColumns(parentName, done, visiting); // 부모가 또 다른 테이블에서 가져오면 그것부터
+        if (parent.columnsIncomplete || visiting.contains(parentName)) {
+            def.columnsIncomplete = true;
+        }
+        SourceLocation location = locator.locate(source.pos());
+        for (Catalog.ColumnDef original : parent.columns.values()) {
+            Catalog.ColumnDef copy = new Catalog.ColumnDef(original.name);
+            copy.dataType = original.dataType;
+            copy.notNull = original.notNull || (source.keys() && parent.primaryKey.contains(original.name));
+            copy.location = location;
+            if (source.defaults()) {
+                copy.defaultValue = original.defaultValue;
+            }
+            if (source.identity()) {
+                copy.identity = original.identity;
+            }
+            if (source.keys()) {
+                copy.primaryKey = original.primaryKey;
+                copy.unique = original.unique;
+            }
+            if (source.kind() != Ddl.ColumnSource.Kind.LIKE) {
+                copy.virtual = original.virtual;
+            }
+            into.merge(copy.name, copy, (first, second) -> {
+                first.notNull |= second.notNull; // 여러 부모의 같은 이름: 앞의 자리에 합친다
+                return first;
+            });
+        }
+        if (source.keys()) {
+            if (def.primaryKey.isEmpty() && !parent.primaryKey.isEmpty()) {
+                def.primaryKey = new ArrayList<>(parent.primaryKey);
+            }
+            for (List<String> key : parent.uniqueKeys) {
+                if (!def.uniqueKeys.contains(key)) {
+                    def.uniqueKeys.add(new ArrayList<>(key));
+                }
+            }
+        }
+    }
+
+    /** 가져온 컬럼 inherited 위에 그 테이블이 스스로 적은 같은 이름의 컬럼 own을 얹는다(자리는 가져온 컬럼의 것). */
+    private static Catalog.ColumnDef overlay(Catalog.ColumnDef inherited, Catalog.ColumnDef own) {
+        if (own.dataType != null) {
+            inherited.dataType = own.dataType;
+        }
+        if (own.defaultValue != null) {
+            inherited.defaultValue = own.defaultValue;
+        }
+        if (own.comment != null) {
+            inherited.comment = own.comment;
+        }
+        if (own.location != null) {
+            inherited.location = own.location;
+        }
+        inherited.notNull |= own.notNull;
+        inherited.primaryKey |= own.primaryKey;
+        inherited.unique |= own.unique;
+        inherited.identity |= own.identity;
+        inherited.indexed |= own.indexed;
+        inherited.virtual |= own.virtual;
+        return inherited;
     }
 
     /** 스키마 한정자(따옴표 안의 채움 공백은 뗀다). 없으면 null. */
@@ -270,6 +408,14 @@ public final class DdlProcessor {
                 def.primaryKey.remove(name);
             } else if (action instanceof Ddl.RenameColumn r) {
                 renameColumn(def, DbName.normalize(r.from()), DbName.normalize(r.to()));
+            } else if (action instanceof Ddl.AttachPartition a) {
+                // pg_dump의 파티션: 자식은 자기 컬럼을 적은 CREATE TABLE로 이미 정의돼 있다. 부모의 이름만 붙인다(F-019-R20).
+                // 자식의 정의가 없으면 노드를 만들지 않는다
+                Catalog.TableDef partition = catalog.table(a.partition().name());
+                catalog.addSchema(a.partition().qualifier());
+                if (partition != null && partition.declared) {
+                    partition.partitionOf = s.name().name();
+                }
             }
         }
     }
@@ -320,7 +466,9 @@ public final class DdlProcessor {
     private void createIndex(Ddl.CreateIndex s) {
         Catalog.TableDef def = catalog.tableOrCreate(s.table().name());
         catalog.addSchema(s.table().qualifier());
-        addIndex(def, s.name().name() + (s.unique() ? " UNIQUE" : "") + "(" + String.join(",", s.expressions()) + ")");
+        // 이름 없는 인덱스(PostgreSQL CREATE INDEX ON t (..))는 이름 자리를 비운다: DB가 붙일 이름을 지어내지 않는다
+        String label = s.name() == null ? (s.unique() ? "UNIQUE" : "") : s.name().name() + (s.unique() ? " UNIQUE" : "");
+        addIndex(def, label + "(" + String.join(",", s.expressions()) + ")");
         List<String> columns = s.columns().stream().map(DbName::normalize).collect(Collectors.toList());
         for (String name : columns) {
             Catalog.ColumnDef column = def.column(name);
@@ -328,7 +476,8 @@ public final class DdlProcessor {
                 column.indexed = true;
             }
         }
-        if (s.unique() && columns.size() == s.expressions().size()) {
+        // 부분 유일 인덱스(.. WHERE 조건)는 조건에 맞는 행끼리만 유일하다: 컬럼·테이블의 유일 키로 올리지 않는다(F-019-R21)
+        if (s.unique() && !s.partial() && columns.size() == s.expressions().size()) {
             if (columns.size() == 1) {
                 Catalog.ColumnDef column = def.column(columns.get(0));
                 if (column != null) {
@@ -473,6 +622,7 @@ public final class DdlProcessor {
                 createView(s, e.file(), e.locator(), e.unitPos(), e.sql());
             }
         }
+        inheritColumns();
         // 5. 나머지는 받은 순서대로
         Map<String, NotApplied> notApplied = new LinkedHashMap<>();
         for (Event e : events) {
@@ -796,6 +946,9 @@ public final class DdlProcessor {
         }
         if (def.temporary) {
             attrs.put("temporary", true);
+        }
+        if (def.partitionOf != null) {
+            attrs.put("partitionOf", def.partitionOf);
         }
         if (def.materialized) {
             attrs.put("materialized", true);

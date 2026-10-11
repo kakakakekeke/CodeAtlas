@@ -11,6 +11,7 @@ import io.codeatlas.sql.ast.Routine;
 import io.codeatlas.sql.ast.Statement;
 import io.codeatlas.sql.ast.TableRef;
 import io.codeatlas.sql.lexer.Lexer;
+import io.codeatlas.sql.lexer.Syntax;
 import io.codeatlas.sql.lexer.Token;
 import io.codeatlas.sql.lexer.TokenType;
 import java.util.ArrayList;
@@ -21,6 +22,11 @@ import java.util.List;
  *
  * <p>어떤 입력에도 예외를 던지지 않는다. 문법에 맞지 않는 곳은 {@link ParseProblem}을 남기고 다음 동기화 지점
  * (절 키워드, 닫는 괄호, 구문 끝)에서 이어 간다. 진행하지 못하는 반복은 토큰을 강제로 소비한다.
+ *
+ * <p>PostgreSQL 문법(F-019-R12~R16)은 방언끼리 겹치지 않는 것이면 읽기 방식과 무관하게 이 합집합 문법에 있다({@code ON CONFLICT},
+ * {@code DELETE … USING}, 데이터 변경 CTE, {@code DISTINCT ON}, {@code ->>} 같은 연산자, {@code ARRAY[..]}, {@code nextval('seq')} 등).
+ * 다른 방언과 겹치는 표기와 PostgreSQL에만 있는 문장만 {@link Syntax#POSTGRES}에서 켠다(ADR-0012): 수식어 {@code ONLY 이름}
+ * ({@code ONLY}라는 테이블과 겹친다), 이름이 든 첨자 {@code a[i]}(MSSQL의 대괄호 이름과 겹친다), {@code COPY}, 트랜잭션 명령 {@code BEGIN}.
  *
  * <p>공개 진입점: {@link #parse(String)}(구문 하나), {@link #parseStatement()}, {@link #parseQuery()},
  * {@link #parseExpression()}, {@link #parseTableRefs()}, {@link #qualifiedName()}.
@@ -36,13 +42,37 @@ public final class SqlParser extends TokenCursor {
     /** MySQL {@code ON DUPLICATE KEY UPDATE} 항목을 읽는 중: {@code VALUES(컬럼)}을 함수로 받는다. */
     private boolean valuesFunction;
 
+    /** 이 구문이 든 텍스트의 읽기 방식(ADR-0012). 안에서 만드는 하위 파서에도 그대로 넘긴다. */
+    private final Syntax syntax;
+
+    /** 기본 읽기 방식으로 읽는다. */
     public SqlParser(List<Token> tokens) {
-        super(tokens);
+        this(tokens, Syntax.DEFAULT);
     }
 
-    /** 구문 하나를 렉싱하고 파싱한다. */
+    /** @param syntax 읽기 방식. 토큰을 만든 렉서와 같은 값이어야 한다. null이면 기본이다 */
+    public SqlParser(List<Token> tokens, Syntax syntax) {
+        super(tokens);
+        this.syntax = syntax == null ? Syntax.DEFAULT : syntax;
+    }
+
+    /** 이 파서의 읽기 방식. */
+    public Syntax syntax() {
+        return syntax;
+    }
+
+    private boolean postgres() {
+        return syntax == Syntax.POSTGRES;
+    }
+
+    /** 구문 하나를 렉싱하고 파싱한다(기본 읽기 방식). */
     public static ParseResult parse(String sql) {
-        return new SqlParser(Lexer.tokenize(sql)).parseStatement();
+        return parse(sql, Syntax.DEFAULT);
+    }
+
+    /** 구문 하나를 주어진 읽기 방식으로 렉싱하고 파싱한다. */
+    public static ParseResult parse(String sql, Syntax syntax) {
+        return new SqlParser(Lexer.tokenize(sql, syntax), syntax).parseStatement();
     }
 
     // ------------------------------------------------------------------ 구문
@@ -55,7 +85,7 @@ public final class SqlParser extends TokenCursor {
         Token first = peek();
         for (Token t : tokens) {
             if (t.unterminated()) {
-                problem("닫히지 않은 문자열 또는 식별자", t, false);
+                problem(t.dollarQuoted() ? "닫히지 않은 달러 인용" : "닫히지 않은 문자열 또는 식별자", t, false);
                 break;
             }
         }
@@ -170,18 +200,77 @@ public final class SqlParser extends TokenCursor {
             case "LOCK":
                 return lockTable();
             case "BEGIN":
-            case "DECLARE":
-                return block();
+            case "DECLARE": {
+                Statement pg = postgres() ? postgresBeginOrDeclare() : null;
+                return pg != null ? pg : block();
+            }
+            case "COPY":
+                return postgres() ? copy() : unparsed();
             case "IF":
                 return ifExistsDrop();
             default:
-                if (Keywords.SILENT_STATEMENTS.contains(t.upper())) {
+                if (postgres() && t.is("REFRESH") && peek(1).is("MATERIALIZED")) {
+                    // PostgreSQL REFRESH MATERIALIZED VIEW: 지원하지 않는 구문이다. DB2의 REFRESH TABLE처럼 조용히 넘기지 않고 드러낸다
+                    return unparsed();
+                }
+                if (Keywords.SILENT_STATEMENTS.contains(t.upper())
+                        || (postgres() && (t.isAny("END", "ABORT") || (t.is("START") && peek(1).is("TRANSACTION"))))) {
+                    // PostgreSQL 읽기 방식에서는 END·ABORT·START TRANSACTION도 트랜잭션 명령이다
                     String keyword = t.upper();
                     pos = tokens.size() - 1;
                     return new Statement.Other(keyword, false);
                 }
                 return unparsed();
         }
+    }
+
+    /**
+     * PostgreSQL 읽기 방식의 {@code BEGIN}·{@code DECLARE}: {@code BEGIN [TRANSACTION|WORK|ISOLATION ..]}은 트랜잭션 명령이라 조용히 넘기고,
+     * {@code DECLARE 이름 .. CURSOR .. FOR 쿼리}는 그 쿼리를 읽는다. 어느 쪽도 아니면 null(익명 블록으로 읽는다).
+     */
+    private Statement postgresBeginOrDeclare() {
+        if (at("BEGIN")) {
+            Token n = peek(1);
+            if (n.isEof() || n.isSymbol(";") || n.isAny("TRANSACTION", "WORK", "ISOLATION", "READ", "DEFERRABLE", "NOT")) {
+                pos = tokens.size() - 1;
+                return new Statement.Other("BEGIN", false);
+            }
+            return null;
+        }
+        if (!peek(1).isIdentifier()) {
+            return null;
+        }
+        for (int i = 2; i <= 6; i++) {
+            if (!peek(i).is("CURSOR")) {
+                continue;
+            }
+            for (int k = i + 1; k <= i + 3; k++) {
+                if (peek(k).is("FOR")) {
+                    pos += k + 1;
+                    return new Statement.Select(parseQuery());
+                }
+            }
+            return null;
+        }
+        return null;
+    }
+
+    /**
+     * PostgreSQL {@code COPY}(F-019-R23). {@code COPY 테이블 [(컬럼, ..)] FROM stdin ..}만 데이터 적재다. 파일에서 읽는 {@code COPY .. FROM '경로'},
+     * {@code COPY .. TO ..}, {@code COPY (쿼리) TO ..}는 조용히 넘긴다.
+     */
+    private Statement copy() {
+        next(); // COPY
+        Statement.Copy copy = null;
+        if (peek().isIdentifier() && !atTableNameStop()) {
+            QName table = qualifiedName();
+            List<QName> columns = atSymbol("(") ? columnNameList() : List.of();
+            if (at("FROM") && peek(1).is("STDIN")) {
+                copy = new Statement.Copy(table, columns);
+            }
+        }
+        pos = tokens.size() - 1;
+        return copy != null ? copy : new Statement.Other("COPY", false);
     }
 
     /**
@@ -263,7 +352,20 @@ public final class SqlParser extends TokenCursor {
             }
             accept("MATERIALIZED");
             Query query;
-            if (atSymbol("(")) {
+            Statement dml = null;
+            if (atSymbol("(") && peek(1).isAny("INSERT", "UPDATE", "DELETE", "MERGE") && !peek(2).isSymbol("(")) {
+                // PostgreSQL의 데이터 변경 CTE: name AS (INSERT|UPDATE|DELETE … [RETURNING ..]) (F-019-R14)
+                query = emptyQuery(peek());
+                open();
+                if (++depth > MAX_DEPTH) {
+                    problem("중첩이 너무 깊어 건너뜀", peek(), false);
+                    skipToCloseParen();
+                } else {
+                    dml = statement();
+                }
+                depth--;
+                close();
+            } else if (atSymbol("(")) {
                 open();
                 query = parseQuery();
                 close();
@@ -281,7 +383,7 @@ public final class SqlParser extends TokenCursor {
                     }
                 }
             }
-            list.add(new Cte(nameToken.text(), columns, query, Pos.of(nameToken)));
+            list.add(new Cte(nameToken.text(), columns, query, Pos.of(nameToken), dml));
             if (!acceptSymbol(",")) {
                 break;
             }
@@ -328,13 +430,22 @@ public final class SqlParser extends TokenCursor {
                 }
             } else if (at("LIMIT")) {
                 next();
-                tail.add(parseAdditive());
+                if (at("ALL") && !peek(1).isSymbol(".") && !peek(1).isSymbol("(")) {
+                    next(); // PostgreSQL LIMIT ALL: 제한 없음
+                } else {
+                    tail.add(parseAdditive());
+                }
                 if (acceptSymbol(",") || accept("OFFSET")) {
                     tail.add(parseAdditive());
                 }
-            } else if (at("FOR") && peek(1).is("UPDATE")) {
+            } else if (atWithData()) {
+                // CREATE TABLE … AS 쿼리 WITH [NO] DATA
                 next();
+                accept("NO");
                 next();
+            } else if (at("FOR") && lockClauseLength() > 0) {
+                // FOR UPDATE, PostgreSQL의 FOR NO KEY UPDATE | SHARE | KEY SHARE
+                pos += lockClauseLength();
                 forUpdate = true;
                 if (accept("OF")) {
                     do {
@@ -409,6 +520,37 @@ public final class SqlParser extends TokenCursor {
             }
         }
         return new Query(ctes, body, orderBy, tail, forUpdate, forUpdateOf, Pos.span(start, previous()));
+    }
+
+    /** 현재 토큰 {@code FOR}에서 시작하는 행 잠금 절의 머리 길이(토큰 수): {@code FOR UPDATE|SHARE}는 2, {@code FOR KEY SHARE}는 3, {@code FOR NO KEY UPDATE}는 4. 아니면 0. */
+    private int lockClauseLength() {
+        if (peek(1).isAny("UPDATE", "SHARE")) {
+            return 2;
+        }
+        if (peek(1).is("KEY") && peek(2).is("SHARE")) {
+            return 3;
+        }
+        return peek(1).is("NO") && peek(2).is("KEY") && peek(3).is("UPDATE") ? 4 : 0;
+    }
+
+    /** 현재 위치가 {@code WITH [NO] DATA}인가({@code DATA}라는 CTE의 {@code WITH data AS (..)}는 아니다). */
+    private boolean atWithData() {
+        if (!at("WITH")) {
+            return false;
+        }
+        if (peek(1).is("NO")) {
+            return peek(2).is("DATA");
+        }
+        return peek(1).is("DATA") && !peek(2).is("AS") && !peek(2).isSymbol("(");
+    }
+
+    /**
+     * 현재 위치가 PostgreSQL {@code ON CONFLICT} 절인가(F-019-R12): {@code ON CONFLICT (}, {@code ON CONFLICT ON CONSTRAINT},
+     * {@code ON CONFLICT DO}. {@code CONFLICT}라는 컬럼으로 시작하는 조인 조건({@code ON conflict = 1})은 아니다.
+     */
+    private boolean atOnConflict() {
+        return at("ON") && peek(1).is("CONFLICT")
+                && (peek(2).isSymbol("(") || peek(2).is("DO") || (peek(2).is("ON") && peek(3).is("CONSTRAINT")));
     }
 
     private void orderItems(List<Expr> into) {
@@ -486,9 +628,17 @@ public final class SqlParser extends TokenCursor {
     private QueryBody selectCore() {
         Token start = next(); // SELECT
         boolean distinct = false;
+        List<Expr> distinctOn = List.of();
         if (atAny("DISTINCT", "UNIQUE")) {
             next();
             distinct = true;
+            if (at("ON") && peek(1).isSymbol("(")) {
+                // PostgreSQL SELECT DISTINCT ON (식, ..): 식은 읽은 것으로 남긴다(F-019-R15)
+                next();
+                open();
+                distinctOn = exprList();
+                close();
+            }
         } else if (at("ALL") && !peek(1).isSymbol(".") && !peek(1).isSymbol(",")) {
             next();
         }
@@ -574,7 +724,7 @@ public final class SqlParser extends TokenCursor {
                 problem("절 밖에 놓인 조건", peek(), false);
                 next();
                 where = and(where, parseExpression());
-            } else if (openParens == 0 && !atSetOperator() && !atQueryTail() && !atSymbol(";")) {
+            } else if (openParens == 0 && !atSetOperator() && !atQueryTail() && !atSymbol(";") && !atOnConflict()) {
                 // 최상위 SELECT 뒤의 해석하지 못한 토큰: 다음 절이나 조인까지 건너뛴다
                 if (atStatementStart()) {
                     break; // 다음 구문이 이어진다: parseStatement가 잘라 따로 파싱한다(F-006-R16)
@@ -600,7 +750,7 @@ public final class SqlParser extends TokenCursor {
                 next();
             }
         }
-        return new Query.Select(distinct, items, into, from, where, startWith, connectBy, groupBy, having, Pos.of(start));
+        return new Query.Select(distinct, items, into, from, where, startWith, connectBy, groupBy, having, Pos.of(start), distinctOn);
     }
 
     private boolean atQueryTail() {
@@ -610,7 +760,10 @@ public final class SqlParser extends TokenCursor {
         if (at("FETCH") && peek(1).isAny("FIRST", "NEXT")) {
             return true;
         }
-        if (at("FOR") && peek(1).isAny("UPDATE", "READ", "FETCH")) {
+        if (at("FOR") && (peek(1).isAny("READ", "FETCH") || lockClauseLength() > 0)) {
+            return true;
+        }
+        if (atWithData()) {
             return true;
         }
         if ((at("SKIP") && peek(1).is("LOCKED") && peek(2).is("DATA")) || (at("WAIT") && peek(1).is("FOR") && peek(2).is("OUTCOME"))
@@ -756,7 +909,7 @@ public final class SqlParser extends TokenCursor {
             TableRef right = tablePrimary();
             Expr on = null;
             List<String> using = List.of();
-            if (accept("ON")) {
+            if (!atOnConflict() && accept("ON")) {
                 on = parseExpression();
             } else if (at("USING") && peek(1).isSymbol("(")) {
                 next();
@@ -765,7 +918,7 @@ public final class SqlParser extends TokenCursor {
             left = new TableRef.Join(left, type, natural, right, on, using);
         }
         // 중첩 조인의 남은 ON
-        while (at("ON") && left instanceof TableRef.Join j) {
+        while (at("ON") && !atOnConflict() && left instanceof TableRef.Join j) {
             next();
             left = new TableRef.Join(j.left(), j.type(), j.natural(), j.right(), and(j.on(), parseExpression()), j.using());
         }
@@ -799,6 +952,11 @@ public final class SqlParser extends TokenCursor {
                 return derived(true);
             }
         }
+        if (t.is("LATERAL") && functionNameAt(1)) {
+            // PostgreSQL LATERAL 함수(..): 왼쪽 테이블의 컬럼을 인자로 받는 테이블 함수(F-019-R15)
+            next();
+            t = peek();
+        }
         if (t.isAny("TABLE", "THE") && peek(1).isSymbol("(")) {
             next();
             if (queryStartsAfterParens()) {
@@ -830,6 +988,10 @@ public final class SqlParser extends TokenCursor {
             }
             return inner;
         }
+        if (bareOnlyAhead()) {
+            next(); // PostgreSQL FROM ONLY 테이블: 수식어다
+            t = peek();
+        }
         if (atTableNameStop()) {
             problem("테이블 이름이 있어야 할 자리: " + describe(t), t, false);
             if (t.type() == TokenType.BIND || t.type() == TokenType.STRING || t.type() == TokenType.NUMBER) {
@@ -842,6 +1004,7 @@ public final class SqlParser extends TokenCursor {
         if (atSymbol("(")) {
             // 테이블 함수: name(args)
             Expr call = functionCall(name);
+            acceptSeq("WITH", "ORDINALITY"); // PostgreSQL: 순번 컬럼을 붙인다
             return new TableRef.Function(call, functionAlias());
         }
         return named(name);
@@ -852,11 +1015,45 @@ public final class SqlParser extends TokenCursor {
      * {@code AS T (C1 INT, C2 VARCHAR(10))})을 둔다. 목록은 건너뛴다(함수 결과의 컬럼은 추적하지 않는다).
      */
     private String functionAlias() {
+        if (at("AS") && peek(1).isSymbol("(")) {
+            // PostgreSQL: 별칭 없이 컬럼 정의 목록만 — FROM f(..) AS (a int, b text)
+            next();
+            skipBalanced();
+            return null;
+        }
         String alias = tableAlias();
         if (alias != null && atSymbol("(")) {
             skipBalanced();
         }
         return alias;
+    }
+
+    /** ahead 위치부터 {@code 이름[.이름] (} 꼴인가(함수 호출의 머리). */
+    private boolean functionNameAt(int ahead) {
+        int i = ahead;
+        if (!peek(i).isIdentifier() || (peek(i).type() == TokenType.IDENT && Keywords.isReservedTableName(peek(i).upper()))) {
+            return false;
+        }
+        i++;
+        while (peek(i).isSymbol(".") && peek(i + 1).isIdentifier()) {
+            i += 2;
+        }
+        return peek(i).isSymbol("(");
+    }
+
+    /**
+     * 현재 토큰이 PostgreSQL의 수식어 {@code ONLY}인가(괄호 없는 {@code ONLY 테이블}, F-019-R15). PostgreSQL 읽기 방식에서만 본다:
+     * 다른 방언에서는 {@code ONLY}라는 테이블과 그 별칭({@code UPDATE ONLY O SET ..})으로 읽는 표기다. 뒤가 테이블 이름이 될 수 있어야 한다.
+     */
+    private boolean bareOnlyAhead() {
+        if (!postgres() || !at("ONLY")) {
+            return false;
+        }
+        Token n = peek(1);
+        if (n.type() == TokenType.QUOTED_IDENT) {
+            return true;
+        }
+        return n.type() == TokenType.IDENT && (peek(2).isSymbol(".") || !Keywords.isReservedTableName(n.upper()));
     }
 
     private TableRef named(QName name) {
@@ -1186,6 +1383,9 @@ public final class SqlParser extends TokenCursor {
             close();
             return inner;
         }
+        if (!insertTarget && bareOnlyAhead()) {
+            next(); // PostgreSQL UPDATE|DELETE [FROM] ONLY 테이블: 수식어다
+        }
         Token t = peek();
         if (atTableNameStop()) {
             problem("테이블 이름이 있어야 할 자리: " + describe(t), t, false);
@@ -1309,11 +1509,38 @@ public final class SqlParser extends TokenCursor {
                 valuesFunction = false;
             }
         }
+        List<Statement.Assignment> conflictAssignments = List.of();
+        List<Expr> conflictConditions = new ArrayList<>();
+        if (atOnConflict()) {
+            // PostgreSQL ON CONFLICT [(컬럼|식, ..) [WHERE ..] | ON CONSTRAINT 이름] DO NOTHING | DO UPDATE SET .. [WHERE ..] (F-019-R12).
+            // 대상 테이블은 같다. DO UPDATE의 대입 항목은 그 테이블에 쓰는 컬럼이다
+            next();
+            next();
+            if (atSymbol("(")) {
+                skipBalanced(); // 충돌 대상(유일 인덱스의 컬럼·식): 읽기도 쓰기도 아니다
+            } else if (acceptSeq("ON", "CONSTRAINT") && peek().isIdentifier()) {
+                next();
+            }
+            if (accept("WHERE")) {
+                conflictConditions.add(parseExpression());
+            }
+            if (!accept("DO")) {
+                problem("ON CONFLICT에 DO가 없음", peek(), false);
+            } else if (accept("UPDATE")) {
+                accept("SET");
+                conflictAssignments = assignments();
+                if (accept("WHERE")) {
+                    conflictConditions.add(parseExpression());
+                }
+            } else if (!accept("NOTHING")) {
+                problem("ON CONFLICT DO 뒤에 NOTHING이나 UPDATE가 없음", peek(), false);
+            }
+        }
         List<Expr> returning = returningClause();
         if (at("LOG") && peek(1).is("ERRORS")) {
             pos = tokens.size() - 1;
         }
-        return new Statement.Insert(targets, source, conditions, returning);
+        return new Statement.Insert(targets, source, conditions, returning, conflictAssignments, conflictConditions);
     }
 
     /**
@@ -1568,10 +1795,22 @@ public final class SqlParser extends TokenCursor {
         accept("FROM");
         TableRef target = dmlTarget();
         includeColumns();
+        List<TableRef> from = new ArrayList<>();
+        if (accept("USING")) {
+            // PostgreSQL DELETE FROM 대상 [별칭] USING 테이블, .. WHERE ..: USING의 테이블은 함께 읽는 테이블이다(F-019-R13).
+            // MySQL의 DELETE FROM a USING a JOIN b ..는 대상을 USING에 다시 적는다: 그 자리는 읽는 테이블이 아니라 대상이다
+            from.addAll(parseTableRefs());
+            if (target instanceof TableRef.Named n && n.alias() == null && !n.name().anyDynamic()) {
+                TableRef.Named real = detach(from, n.name().name());
+                if (real != null) {
+                    target = real;
+                }
+            }
+        }
         Expr where = whereClause();
         dmlTail();
         List<Expr> returning = returningClause();
-        return new Statement.Delete(target, where, returning);
+        return new Statement.Delete(target, from, where, returning);
     }
 
     /** 현재 위치가 {@code 이름[.*], 이름[.*] .. FROM} 꼴인가(MySQL 다중 테이블 DELETE). */
@@ -1705,13 +1944,25 @@ public final class SqlParser extends TokenCursor {
     private Statement truncate() {
         next(); // TRUNCATE
         accept("TABLE");
+        if (bareOnlyAhead()) {
+            next();
+        }
         if (!peek().isIdentifier()) {
             problem("테이블 이름이 있어야 할 자리: " + describe(peek()), peek(), false);
             return unparsed();
         }
-        QName name = qualifiedName();
+        // PostgreSQL TRUNCATE [TABLE] [ONLY] t, .. [RESTART IDENTITY] [CASCADE]: 쉼표로 이은 테이블을 모두 비운다(F-019-R15)
+        List<Statement> list = new ArrayList<>();
+        list.add(new Statement.Truncate(qualifiedName()));
+        while (atSymbol(",") && (peek(1).isIdentifier())) {
+            next();
+            if (bareOnlyAhead()) {
+                next();
+            }
+            list.add(new Statement.Truncate(qualifiedName()));
+        }
         pos = tokens.size() - 1;
-        return new Statement.Truncate(name);
+        return list.size() == 1 ? list.get(0) : new Statement.Sequence(list);
     }
 
     private Statement lockTable() {
@@ -1743,7 +1994,7 @@ public final class SqlParser extends TokenCursor {
         int end = tokens.size() - 1;
         if (depth + 1 < MAX_DEPTH) {
             List<Token> sub = new ArrayList<>(tokens.subList(pos, end));
-            RoutineParser parser = new RoutineParser(sub, peek(1).is("ATOMIC"), depth + 1);
+            RoutineParser parser = new RoutineParser(sub, RoutineLanguage.of(syntax, peek(1).is("ATOMIC")), depth + 1);
             Routine.Block body = parser.parseBody(false);
             problems.addAll(parser.problems());
             Routine.visit(body, new Routine.Visitor() {
@@ -1781,7 +2032,7 @@ public final class SqlParser extends TokenCursor {
         if (sub.isEmpty()) {
             return;
         }
-        SqlParser parser = new SqlParser(new ArrayList<>(sub));
+        SqlParser parser = new SqlParser(new ArrayList<>(sub), syntax);
         parser.depth = depth + 1;
         if (parser.depth > MAX_DEPTH) {
             return;
@@ -1951,7 +2202,8 @@ public final class SqlParser extends TokenCursor {
             }
             boolean not = false;
             if (t.is("NOT") && (peek(1).isAny("IN", "BETWEEN", "LIKE", "LIKEC", "LIKE2", "LIKE4", "REGEXP", "RLIKE")
-                    || (peek(1).isAny("MEMBER", "SUBMULTISET") && peek(2).is("OF")))) {
+                    || (peek(1).isAny("MEMBER", "SUBMULTISET") && peek(2).is("OF"))
+                    || (peek(1).is("ILIKE") && operandStartsAt(2)) || (peek(1).is("SIMILAR") && peek(2).is("TO")))) {
                 next();
                 not = true;
             }
@@ -1986,8 +2238,14 @@ public final class SqlParser extends TokenCursor {
                 left = new Expr.Binary(not ? "NOT LIKE" : "LIKE", left, parseAdditive());
                 continue;
             }
-            if (atAny("LIKE", "LIKEC", "LIKE2", "LIKE4")) {
+            // PostgreSQL x [NOT] SIMILAR TO 패턴 [ESCAPE ..]과 x [NOT] ILIKE 패턴: LIKE처럼 읽는다(F-019-R15).
+            // ILIKE는 뒤에 피연산자가 올 때만 연산자다(ILIKE라는 별칭과 가린다)
+            boolean similarTo = at("SIMILAR") && peek(1).is("TO");
+            if (similarTo || atAny("LIKE", "LIKEC", "LIKE2", "LIKE4") || (at("ILIKE") && operandStartsAt(1))) {
                 next();
+                if (similarTo) {
+                    next();
+                }
                 Expr right = parseAdditive();
                 if (accept("ESCAPE")) {
                     parseAdditive();
@@ -2108,11 +2366,131 @@ public final class SqlParser extends TokenCursor {
         }
     }
 
-    /** 비교·논리 연산을 뺀 산술 식. */
+    /**
+     * 비교·논리 연산을 뺀 식. 산술·연결 연산 위에 PostgreSQL의 그 밖의 연산자({@code -> ->> #> #>> @> <@ && ~ ~* !~ !~* @@})를 둔다(F-019-R15):
+     * 비교보다 먼저, 덧셈보다 나중에 묶인다.
+     */
     public Expr parseAdditive() {
+        Expr left = parseSum();
+        while (true) {
+            String op = postgresOperator();
+            if (op == null) {
+                break;
+            }
+            left = new Expr.Binary(op, left, parseSum());
+        }
+        return left;
+    }
+
+    /** t 바로 뒤에 공백 없이 next가 붙어 있는가. */
+    private static boolean adjacent(Token t, Token next) {
+        return !next.isEof() && next.offset() == t.endOffset() && next.endOffset() > next.offset();
+    }
+
+    /**
+     * 현재 위치가 PostgreSQL 연산자면 소비하고 그 연산자를 돌려준다. 아니면 null(아무것도 소비하지 않는다).
+     * PostgreSQL 읽기 방식의 렉서는 이 연산자들을 기호 하나로 낸다. 다른 읽기 방식의 렉서는 붙어 있는 기호 둘·셋으로 내므로
+     * ({@code -}{@code >>}, {@code @}{@code >}, {@code ~}{@code *}) 여기서 붙여 읽는다: 이 연산자들은 다른 방언의 문법과 겹치지 않는다.
+     * {@code #>}·{@code #>>}는 PostgreSQL 읽기 방식에서만 있다(다른 방식에서는 {@code #}이 이름의 글자다).
+     * MySQL의 사용자 변수 비교({@code a<@v})와 시스템 변수({@code @@v})는 연산자가 아니다.
+     */
+    private String postgresOperator() {
+        Token t = peek();
+        if (t.type() != TokenType.SYMBOL) {
+            return null;
+        }
+        Token n = peek(1);
+        boolean glued = adjacent(t, n);
+        switch (t.text()) {
+            case "->": case "->>": case "#>": case "#>>": case "@>": case "<@": case "&&": case "~*": case "!~": case "!~*": case "@@":
+                next();
+                return t.text();
+            case "~":
+                next();
+                if (glued && n.isSymbol("*")) {
+                    next();
+                    return "~*";
+                }
+                return "~";
+            case "-":
+                if (glued && (n.isSymbol(">") || n.isSymbol(">>"))) {
+                    next();
+                    next();
+                    return "-" + n.text();
+                }
+                return null;
+            case "@":
+                if (glued && n.isSymbol(">")) {
+                    next();
+                    next();
+                    return "@>";
+                }
+                if (glued && n.isSymbol("@") && !variableFollows(n)) {
+                    next();
+                    next();
+                    return "@@";
+                }
+                return null;
+            case "<":
+                if (glued && n.isSymbol("@") && !variableFollows(n)) {
+                    next();
+                    next();
+                    return "<@";
+                }
+                return null;
+            case "&":
+                // SQL*Plus의 치환 변수(&&이름)는 이름이 붙어 있다: 그 꼴은 연산자가 아니다
+                if (glued && n.isSymbol("&") && !adjacent(n, peek(2))) {
+                    next();
+                    next();
+                    return "&&";
+                }
+                return null;
+            case "!":
+                if (glued && n.isSymbol("~")) {
+                    next();
+                    next();
+                    if (atSymbol("*") && adjacent(n, peek())) {
+                        next();
+                        return "!~*";
+                    }
+                    return "!~";
+                }
+                return null;
+            default:
+                return null;
+        }
+    }
+
+    /** at({@code @}) 바로 뒤에 이름이나 {@code @}가 붙어 있는가: MySQL의 변수({@code @v}, {@code @@v})다. at은 현재 토큰의 다음 토큰이다. */
+    private boolean variableFollows(Token at) {
+        Token after = peek(2);
+        return adjacent(at, after) && (after.isIdentifier() || after.isSymbol("@"));
+    }
+
+    /** ahead 위치의 토큰이 피연산자를 열 수 있는가(문자열, 수, 바인드, 여는 괄호, 절 키워드가 아닌 이름). */
+    private boolean operandStartsAt(int ahead) {
+        Token x = peek(ahead);
+        switch (x.type()) {
+            case STRING: case NUMBER: case BIND: case QUOTED_IDENT:
+                return true;
+            case SYMBOL:
+                return x.isSymbol("(");
+            case IDENT:
+                return !Keywords.EXPR_STOP.contains(x.upper()) || peek(ahead + 1).isSymbol(".");
+            default:
+                return false;
+        }
+    }
+
+    /** 산술·연결 연산. */
+    private Expr parseSum() {
         Expr left = parseMultiplicative();
         while (true) {
             String op;
+            if (atSymbol("-") && adjacent(peek(), peek(1)) && (peek(1).isSymbol(">") || peek(1).isSymbol(">>"))) {
+                break; // 붙여 쓴 -> 와 ->> 는 뺄셈이 아니라 PostgreSQL·MySQL의 JSON 연산자다(postgresOperator가 읽는다)
+            }
             if (atSymbol("+") || atSymbol("-") || atSymbol("||")) {
                 op = next().text();
             } else if (at("CONCAT") && !peek(1).isSymbol("(")) {
@@ -2162,11 +2540,17 @@ public final class SqlParser extends TokenCursor {
             return new Expr.Unary("CONNECT_BY_ROOT", parseUnary());
         }
         Expr e = parsePrimary();
-        while (atSymbol("::")) {
-            // PostgreSQL 캐스트 expr::type: 식이 낀 것으로 본다(CAST와 같게 다룬다, F-006-R18)
-            next();
-            castType();
-            e = new Expr.FuncCall(QName.of("CAST"), List.of(e), List.of());
+        while (true) {
+            if (atSymbol("::")) {
+                // PostgreSQL 캐스트 expr::type: 식이 낀 것으로 본다(CAST와 같게 다룬다, F-006-R18)
+                next();
+                castType();
+                e = new Expr.FuncCall(QName.of("CAST"), List.of(e), List.of());
+            } else if (subscriptAhead(e)) {
+                e = subscript(e);
+            } else {
+                break;
+            }
         }
         while (at("AT") && (peek(1).is("LOCAL") || (peek(1).is("TIME") && peek(2).is("ZONE")))) {
             next();
@@ -2179,6 +2563,98 @@ public final class SqlParser extends TokenCursor {
         }
         return e;
     }
+
+    /**
+     * 현재 위치가 방금 읽은 식 e의 PostgreSQL 첨자({@code a[1]}, {@code a[1:2]}, {@code (ARRAY[..])[i]})인가(F-019-R15).
+     * PostgreSQL 읽기 방식이면 대괄호가 오면 첨자다. 그 밖의 읽기 방식에서는 대괄호 안이 수나 바인드로 시작할 때만 첨자다:
+     * MSSQL은 대괄호로 이름을 감싸므로({@code SELECT a [별칭]}) 이름이 든 대괄호를 첨자로 읽으면 그 이름이 컬럼으로 둔갑한다.
+     */
+    private boolean subscriptAhead(Expr e) {
+        if (!atSymbol("[") || e instanceof Expr.Missing || e instanceof Expr.Unparsed || e instanceof Expr.Star) {
+            return false;
+        }
+        return postgres() || peek(1).type() == TokenType.NUMBER || peek(1).type() == TokenType.BIND;
+    }
+
+    /** {@code [식]}, {@code [식:식]}을 읽어 첨자 접근(op {@code []})으로 만든다. 첨자 식 안의 컬럼은 읽은 것으로 남는다. */
+    private Expr subscript(Expr base) {
+        next(); // [
+        Expr e = base;
+        while (!atEnd() && !atSymbol("]")) {
+            int before = pos;
+            if (acceptSymbol(":")) {
+                continue; // 구간 a[1 : 2], a[:2]
+            }
+            if (peek().type() == TokenType.BIND && peek().text().length() > 1 && peek().text().charAt(0) == ':'
+                    && Character.isDigit(peek().text().charAt(1))) {
+                next(); // 구간의 위쪽 끝이 붙은 꼴 a[1:2] — 렉서가 :2를 바인드로 낸다
+                continue;
+            }
+            e = new Expr.Binary("[]", e, parseExpression());
+            if (pos == before) {
+                break;
+            }
+        }
+        if (!acceptSymbol("]")) {
+            problem("닫는 대괄호가 없음", peek(), false);
+        }
+        return e;
+    }
+
+    /** PostgreSQL 배열 생성자 {@code ARRAY[식, ..]}(중첩 {@code [[1, 2], [3, 4]]} 포함). 현재 토큰은 {@code [}다. */
+    private Expr arrayConstructor() {
+        next(); // [
+        List<Expr> items = new ArrayList<>();
+        if (++depth > MAX_DEPTH) {
+            depth--;
+            problem("중첩이 너무 깊어 건너뜀", peek(), false);
+            return new Expr.Unparsed("...");
+        }
+        try {
+            while (!atEnd() && !atSymbol("]")) {
+                int before = pos;
+                items.add(atSymbol("[") ? arrayConstructor() : parseExpression());
+                if (!acceptSymbol(",") || pos == before) {
+                    break;
+                }
+            }
+        } finally {
+            depth--;
+        }
+        if (!acceptSymbol("]")) {
+            problem("닫는 대괄호가 없음", peek(), false);
+        }
+        return new Expr.Tuple(items);
+    }
+
+    /**
+     * PostgreSQL 시퀀스 함수의 첫 인자로 온 문자열 리터럴({@code 'seq'}, {@code 'public.seq'}, {@code '"Seq"'})에서 시퀀스 이름을 읽는다.
+     * 이름 꼴이 아니면 null. 문자열 안의 이름은 PostgreSQL이 읽는 이름이므로 PostgreSQL 읽기 방식의 렉서와 같은 규칙을 쓴다:
+     * 대문자가 없는 따옴표 이름({@code '"orders_id_seq"'})은 따옴표 없는 이름과 같다({@link Lexer#foldedQuotedName}).
+     */
+    public static QName sequenceName(Token string) {
+        String text = string.text();
+        if (text.length() < 3 || text.charAt(0) != '\'' || text.charAt(text.length() - 1) != '\'') {
+            return null;
+        }
+        String inner = text.substring(1, text.length() - 1).trim();
+        if (!SEQUENCE_NAME.matcher(inner).matches()) {
+            return null;
+        }
+        List<String> parts = new ArrayList<>();
+        java.util.regex.Matcher m = NAME_PART.matcher(inner);
+        while (m.find()) {
+            String part = m.group();
+            String folded = part.startsWith("\"") ? Lexer.foldedQuotedName(part.substring(1, part.length() - 1)) : null;
+            parts.add(folded == null ? part : "\"" + folded + "\"");
+        }
+        return new QName(parts, null, Pos.of(string));
+    }
+
+    private static final String NAME_PART_PATTERN = "(?:\"[^\"]+\"|[\\p{L}_][\\p{L}\\p{N}_$]*)";
+    private static final java.util.regex.Pattern NAME_PART = java.util.regex.Pattern.compile(NAME_PART_PATTERN);
+    private static final java.util.regex.Pattern SEQUENCE_NAME = java.util.regex.Pattern.compile(
+            NAME_PART_PATTERN + "(?:\\." + NAME_PART_PATTERN + ")*");
 
     /** {@code ::} 뒤의 타입 이름을 건너뛴다: {@code numeric(10,2)}, {@code character varying}, {@code timestamp without time zone}, {@code varchar[]}. */
     private void castType() {
@@ -2477,6 +2953,10 @@ public final class SqlParser extends TokenCursor {
                 case "CURSOR":
                 case "MULTISET":
                 case "ARRAY":
+                    if (t.is("ARRAY") && n.isSymbol("[")) {
+                        next();
+                        return arrayConstructor(); // PostgreSQL ARRAY[..]
+                    }
                     if (n.isSymbol("(") && (peek(2).is("SELECT") || peek(2).is("WITH"))) {
                         next();
                         open();
@@ -2518,7 +2998,7 @@ public final class SqlParser extends TokenCursor {
         }
         String link = dbLink();
         QName name = new QName(parts, link, Pos.span(first, last));
-        if (parts.size() >= 2 && last.isAny("NEXTVAL", "CURRVAL")) {
+        if (parts.size() >= 2 && last.isAny("NEXTVAL", "CURRVAL") && !atSymbol("(")) {
             return new Expr.SequenceRef(name.parent(), last.upper());
         }
         if (atSymbol("(")) {
@@ -2610,6 +3090,25 @@ public final class SqlParser extends TokenCursor {
                     genericArgs(args, fn);
                 }
                 break;
+            case "NEXTVAL":
+            case "CURRVAL":
+            case "SETVAL": {
+                // PostgreSQL nextval('seq')·currval('seq')·setval('seq', ..): 첫 인자가 문자열 리터럴이면 그 시퀀스의 참조다(F-019-R16).
+                // 리터럴이 아니거나(이름을 받는 MariaDB의 NEXTVAL(seq), 변수) 이름 꼴이 아니면 보통의 인자로 둔다
+                Token first = peek();
+                QName sequence = first.type() == TokenType.STRING && !first.unterminated()
+                        && (peek(1).isSymbol(")") || peek(1).isSymbol(",") || peek(1).isSymbol("::")) ? sequenceName(first) : null;
+                if (sequence != null) {
+                    next();
+                    while (atSymbol("::")) {
+                        next();
+                        castType(); // 'seq'::regclass
+                    }
+                    args.add(new Expr.SequenceRef(sequence, fn));
+                }
+                genericArgs(args, fn);
+                break;
+            }
             case "TRIM":
                 acceptAny("LEADING", "TRAILING", "BOTH");
                 if (!at("FROM") && !atSymbol(")")) {

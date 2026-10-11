@@ -22,9 +22,16 @@ public final class Token {
     private final boolean unterminated;
     private final boolean firstOnLine;
     private final boolean blankLineBefore;
+    /** {@code COPY … FROM stdin}의 데이터 구간이면 그 데이터 줄 수, 아니면 -1. */
+    private final int dataRows;
 
     Token(TokenType type, String text, String upper, int offset, int endOffset, int line, int column,
             int endLine, int endColumn, boolean unterminated, boolean firstOnLine, boolean blankLineBefore) {
+        this(type, text, upper, offset, endOffset, line, column, endLine, endColumn, unterminated, firstOnLine, blankLineBefore, -1);
+    }
+
+    Token(TokenType type, String text, String upper, int offset, int endOffset, int line, int column,
+            int endLine, int endColumn, boolean unterminated, boolean firstOnLine, boolean blankLineBefore, int dataRows) {
         this.type = type;
         this.text = text;
         this.upper = upper != null ? upper : (type == TokenType.IDENT ? text.toUpperCase(Locale.ROOT) : text);
@@ -37,6 +44,7 @@ public final class Token {
         this.unterminated = unterminated;
         this.firstOnLine = firstOnLine;
         this.blankLineBefore = blankLineBefore;
+        this.dataRows = dataRows;
     }
 
     /**
@@ -49,7 +57,16 @@ public final class Token {
     Token moved(int offsetDelta, int lineDelta, int firstLineColumnDelta) {
         return new Token(type, text, upper, offset + offsetDelta, endOffset + offsetDelta, line + lineDelta,
                 line == 1 ? column + firstLineColumnDelta : column, endLine + lineDelta,
-                endLine == 1 ? endColumn + firstLineColumnDelta : endColumn, unterminated, firstOnLine, blankLineBefore);
+                endLine == 1 ? endColumn + firstLineColumnDelta : endColumn, unterminated, firstOnLine, blankLineBefore, dataRows);
+    }
+
+    /**
+     * 같은 위치에 글자만 바꾼 이름 토큰. PL/pgSQL의 {@code PERFORM 쿼리}를 {@code SELECT 쿼리}로 바꿔 구문 파서에 넘길 때 쓴다(F-019-R26):
+     * 구문의 위치는 원문 그대로 남는다.
+     */
+    public Token renamed(String identifier) {
+        return new Token(TokenType.IDENT, identifier, null, offset, endOffset, line, column, endLine, endColumn, unterminated, firstOnLine,
+                blankLineBefore, dataRows);
     }
 
     /** 위치 없는 합성 토큰(테스트, 복구용). */
@@ -110,6 +127,60 @@ public final class Token {
     /** 앞 토큰과 이 토큰 사이에 빈 줄이 있다. */
     public boolean blankLineBefore() {
         return blankLineBefore;
+    }
+
+    /**
+     * {@code COPY … FROM stdin} 뒤의 데이터 구간을 나타내는 토큰이면 그 데이터 줄 수(줄 처음의 {@code \.} 앞까지), 아니면 -1(F-019-R11).
+     * 이 토큰은 주석과 같은 종류({@link TokenType#COMMENT})라 주석을 빼는 {@link Lexer#tokenize}에서는 나오지 않는다. 본문은 쥐고 있지 않다.
+     */
+    public int copyDataRows() {
+        return dataRows;
+    }
+
+    // ---- 달러 인용 문자열(PostgreSQL 읽기 방식, F-019-R9) ----
+
+    /** PostgreSQL 달러 인용 문자열({@code $$..$$}, {@code $태그$..$태그$})인가. PostgreSQL 읽기 방식의 렉서만 이런 토큰을 낸다. */
+    public boolean dollarQuoted() {
+        return type == TokenType.STRING && text.length() >= 2 && text.charAt(0) == '$' && text.indexOf('$', 1) > 0;
+    }
+
+    /** 여는 구분자({@code $태그$})의 길이. 달러 인용이 아니면 0. */
+    private int dollarDelimiterLength() {
+        return dollarQuoted() ? text.indexOf('$', 1) + 1 : 0;
+    }
+
+    /** 달러 인용의 태그({@code $body$}면 {@code body}, {@code $$}면 빈 문자열). 달러 인용이 아니면 null. */
+    public String dollarTag() {
+        return dollarQuoted() ? text.substring(1, dollarDelimiterLength() - 1) : null;
+    }
+
+    /** 달러 인용의 안쪽 본문(구분자 제외, 원문 그대로). 닫히지 않았으면 여는 구분자 뒤 전부다. 달러 인용이 아니면 null. */
+    public String dollarBody() {
+        if (!dollarQuoted()) {
+            return null;
+        }
+        int open = dollarDelimiterLength();
+        boolean closed = !unterminated && text.length() >= open * 2;
+        return text.substring(open, closed ? text.length() - open : text.length());
+    }
+
+    /**
+     * 달러 인용 본문의 첫 글자가 원문에서 놓인 위치(0부터). 본문을 {@link Lexer#tokenizeAt}으로 다시 토큰으로 만들 때
+     * {@link #bodyLine()}, {@link #bodyColumn()}과 함께 넘기면 토큰의 위치가 원문 기준이 된다({@link Lexer#tokenizeBody}가 그렇게 한다).
+     * 달러 인용이 아니면 토큰의 시작 위치다.
+     */
+    public int bodyOffset() {
+        return offset + dollarDelimiterLength();
+    }
+
+    /** 달러 인용 본문의 첫 글자가 놓인 줄(1부터). 여는 구분자에는 줄바꿈이 없으므로 토큰의 줄과 같다. */
+    public int bodyLine() {
+        return line;
+    }
+
+    /** 달러 인용 본문의 첫 글자가 놓인 열(1부터). */
+    public int bodyColumn() {
+        return column + dollarDelimiterLength();
     }
 
     /** 따옴표 없는 이름이 주어진 키워드(대문자)와 같은가. */

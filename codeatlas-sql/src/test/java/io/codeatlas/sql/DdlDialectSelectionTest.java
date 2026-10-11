@@ -133,18 +133,27 @@ class DdlDialectSelectionTest {
     }
 
     @Test
-    @DisplayName("F-007-AC18 Oracle·DB2가 없으면 Oracle 계열(Tibero, Altibase)이 먼저고, 그것도 없으면 그 밖의 방언의 순서(이름의 사전순, F-007-R28)로 첫 방언을 프로젝트 전체에 먼저 쓴다")
+    @DisplayName("F-007-AC18 F-019-AC4 Oracle·DB2가 없으면 PostgreSQL, 그다음 Oracle 계열(Tibero, Altibase)이 먼저고, 그것도 없으면 그 밖의 방언의 순서(이름의 사전순, F-007-R28)로 첫 방언을 프로젝트 전체에 먼저 쓴다")
     void oracleFamilyThenPathOrder() {
+        // PostgreSQL은 대상 방언이라 Oracle 계열보다 먼저다(F-019-R4. 전에는 tibero를 골랐다)
         try (TestProject project = TestProject.create()
                 .file("ddl/mysql/a.sql", "CREATE TABLE T_A (ID int, MYSQL_COL int);\n")
                 .file("ddl/postgres/a.sql", "CREATE TABLE T_A (ID int, PG_COL int);\n")
                 .file("ddl/tibero/a.sql", "CREATE TABLE T_A (ID NUMBER, TIBERO_COL NUMBER);\n")) {
             GraphModel g = project.run(new SqlAnalyzer()).graph();
+            assertThat(node(g, "db:table:T_A").location().file()).isEqualTo("ddl/postgres/a.sql");
+            assertThat(summary(g).get(0).message()).contains("postgres 파일을 사용(테이블 1개)");
+        }
+        // 대상 방언이 없으면 Oracle 계열이 그 밖의 방언보다 먼저다
+        try (TestProject project = TestProject.create()
+                .file("ddl/mysql/a.sql", "CREATE TABLE T_A (ID int, MYSQL_COL int);\n")
+                .file("ddl/tibero/a.sql", "CREATE TABLE T_A (ID NUMBER, TIBERO_COL NUMBER);\n")) {
+            GraphModel g = project.run(new SqlAnalyzer()).graph();
             assertThat(node(g, "db:table:T_A").location().file()).isEqualTo("ddl/tibero/a.sql");
             assertThat(summary(g).get(0).message()).contains("tibero 파일을 사용(테이블 1개)");
         }
-        // 선호 방언이 하나도 없다: 그 밖의 방언의 순서(이름의 사전순, F-007-R28)가 가장 앞인 mysql이 프로젝트의 방언이다.
-        // T_B는 postgres 파일이 경로상 먼저지만(aa_postgres.sql) mysql 파일에 정의가 있으므로 mysql 것을 쓰고, mysql에 없는 T_C만 postgres에서 가져온다
+        // 대상 방언 postgres가 프로젝트의 방언이다(F-019-R4. 전에는 그 밖의 방언의 사전순으로 mysql이었다).
+        // T_A는 mysql 파일이 경로상 먼저지만(a_mysql.sql) postgres 것을 쓰고, T_B·T_C도 postgres 파일에 정의가 있으므로 다른 방언에서 가져오지 않는다
         try (TestProject project = TestProject.create()
                 .file("ddl/a_mysql.sql", "CREATE TABLE T_A (ID int, MYSQL_COL int);\n")
                 .file("ddl/a_postgres.sql", "CREATE TABLE T_A (ID int, PG_COL int);\n")
@@ -152,11 +161,26 @@ class DdlDialectSelectionTest {
                 .file("ddl/b/zz_mysql.sql", "CREATE TABLE T_B (ID int, MYSQL_COL int);\n")
                 .file("ddl/b/zz_sqlite.sql", "CREATE TABLE T_C (ID int, SQLITE_COL int);\n")) {
             GraphModel g = project.run(new SqlAnalyzer()).graph();
+            assertThat(node(g, "db:table:T_A").location().file()).isEqualTo("ddl/a_postgres.sql");
+            assertThat(node(g, "db:table:T_B").location().file()).isEqualTo("ddl/b/aa_postgres.sql");
+            assertThat(node(g, "db:table:T_C").location().file()).isEqualTo("ddl/b/aa_postgres.sql");
+            assertThat(summary(g).get(0).message()).contains("방언별 DDL 3벌 감지").contains("postgres 파일을 사용(테이블 3개)")
+                    .contains("다른 방언에서 보충 0개").contains("제외한 파일 3개");
+        }
+        // 선호 방언이 하나도 없다: 그 밖의 방언의 순서(이름의 사전순, F-007-R28)가 가장 앞인 mysql이 프로젝트의 방언이다.
+        // T_B는 sybase 파일이 경로상 먼저지만(aa_sybase.sql) mysql 파일에 정의가 있으므로 mysql 것을 쓰고, mysql에 없는 T_C만 다음 순위(sqlite)에서 가져온다
+        try (TestProject project = TestProject.create()
+                .file("ddl/a_mysql.sql", "CREATE TABLE T_A (ID int, MYSQL_COL int);\n")
+                .file("ddl/a_sybase.sql", "CREATE TABLE T_A (ID int, SYB_COL int);\n")
+                .file("ddl/b/aa_sybase.sql", "CREATE TABLE T_B (ID int, SYB_COL int);\nCREATE TABLE T_C (ID int, SYB_COL int);\n")
+                .file("ddl/b/zz_mysql.sql", "CREATE TABLE T_B (ID int, MYSQL_COL int);\n")
+                .file("ddl/b/zz_sqlite.sql", "CREATE TABLE T_C (ID int, SQLITE_COL int);\n")) {
+            GraphModel g = project.run(new SqlAnalyzer()).graph();
             assertThat(node(g, "db:table:T_A").location().file()).isEqualTo("ddl/a_mysql.sql");
             assertThat(node(g, "db:table:T_B").location().file()).isEqualTo("ddl/b/zz_mysql.sql");
-            assertThat(node(g, "db:table:T_C").location().file()).isEqualTo("ddl/b/aa_postgres.sql");
+            assertThat(node(g, "db:table:T_C").location().file()).isEqualTo("ddl/b/zz_sqlite.sql");
             assertThat(summary(g).get(0).message()).contains("방언별 DDL 3벌 감지").contains("mysql 파일을 사용(테이블 2개)")
-                    .contains("다른 방언에서 보충 1개(postgres 1개)").contains("제외한 파일 2개");
+                    .contains("다른 방언에서 보충 1개(sqlite 1개)").contains("제외한 파일 2개");
         }
     }
 

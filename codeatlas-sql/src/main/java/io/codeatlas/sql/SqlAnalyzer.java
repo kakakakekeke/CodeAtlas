@@ -31,6 +31,7 @@ import io.codeatlas.sql.ast.Ddl;
 import io.codeatlas.sql.ast.Pos;
 import io.codeatlas.sql.ast.Statement;
 import io.codeatlas.sql.lexer.Lexer;
+import io.codeatlas.sql.lexer.Syntax;
 import io.codeatlas.sql.lexer.Token;
 import io.codeatlas.sql.parser.DdlParser;
 import io.codeatlas.sql.parser.ParseProblem;
@@ -94,14 +95,14 @@ public final class SqlAnalyzer implements Analyzer {
     /** 파일 하나를 나눈 결과. 데이터 적재 묶음에 들어간 INSERT 단위는 여기 남기지 않는다(F-006-R15). */
     private static final class FileUnits {
         final String path;
-        /** 구문 노드의 dialect에 적을 방언(옵션, 경로의 Oracle·DB2 이름, 구문 특징 순). 모르면 null. */
+        /** 구문 노드의 dialect에 적을 방언(파일의 방언이 대상 방언이면 그것, 아니면 구문 특징). 모르면 null. */
         Dialect dialect;
         /** 파일의 방언 이름(표준 이름): 경로에서 읽고, 경로에 없으면 내용 특징으로 읽는다(F-007-R24). 없으면 null. */
         String token;
         /** 판정이 없을 때 루틴·블록의 문법을 고르는 힌트({@code --dialect}). 구문의 dialect로는 적지 않는다(F-006-R37). */
         Dialect hint;
-        /** MySQL로 판정한 파일: 줄 처음의 #을 주석으로 읽는다(F-006-R27). */
-        boolean mysql;
+        /** 파일의 읽기 방식(ADR-0012). MySQL로 판정한 파일이면 줄 처음의 #을 주석으로 읽는다(F-006-R27). */
+        Syntax syntax = Syntax.DEFAULT;
         /** 대상 외 방언으로 판정한 파일: 구문 특징으로 Oracle·DB2를 추측해 적지 않는다(F-006-R28). */
         boolean foreign;
         /** 묶음을 모두 버린 적재 파일(F-007-R20·R29): 초기화 구문도 노드로 만들지 않는다. */
@@ -150,11 +151,11 @@ public final class SqlAnalyzer implements Analyzer {
         boolean reset;
         /** 초기화 구문이 비우는 테이블(묶음의 열쇠와 같은 꼴). 초기화 구문이 아니면 null. */
         String resetTable;
-        /** MySQL로 판정한 파일의 단위(다시 렉싱할 때 줄 처음의 #을 주석으로 읽는다). */
-        private final boolean mysql;
+        /** 단위가 든 파일의 읽기 방식(다시 렉싱할 때 처음 읽은 방식 그대로 읽는다). */
+        private final Syntax syntax;
 
-        UnitWork(ScriptUnit unit, boolean mysql) {
-            this.mysql = mysql;
+        UnitWork(ScriptUnit unit, Syntax syntax) {
+            this.syntax = syntax;
             this.unit = unit;
             this.kind = unit.kind();
             this.text = unit.text();
@@ -169,7 +170,7 @@ public final class SqlAnalyzer implements Analyzer {
         /** 단위(토큰 포함). 놓아 준 뒤면 본문을 다시 렉싱해 만든다. */
         ScriptUnit unit() {
             if (unit == null) {
-                List<Token> tokens = Lexer.tokenizeAt(text, offset, pos.line(), pos.column(), mysql);
+                List<Token> tokens = Lexer.tokenizeAt(text, offset, pos.line(), pos.column(), syntax);
                 unit = new ScriptUnit(kind, tokens.subList(0, tokens.size() - 1), text);
             }
             return unit;
@@ -192,6 +193,8 @@ public final class SqlAnalyzer implements Analyzer {
         // 1. 파일을 단위로 흘려 읽는다: DDL과 루틴 헤더 → 카탈로그, 데이터 적재 INSERT → 묶음(단위는 놓아 준다)
         List<FileUnits> files = new ArrayList<>();
         DdlProcessor ddl = new DdlProcessor(catalog, graph, selection);
+        // 옵션과 프로젝트 설정이 정하는 읽기 방식. 스크립트에서 고른 방언은 파일을 다 읽어야 알므로 여기에는 없다
+        Syntax declaredSyntax = selection.declaredSyntax();
         for (SourceFile file : ctx.files().ofType(FileType.SQL)) {
             String path = file.relativePath();
             ctx.progress(path); // 힙이 모자랄 때 어느 파일을 읽던 중이었는지 알린다(F-006-R23)
@@ -207,17 +210,16 @@ public final class SqlAnalyzer implements Analyzer {
                 fu.token = token;
                 selection.registerFile(path, token);
                 // 구문 노드에 적을 방언은 파일에서 판정한 것만이다: --dialect 옵션은 찍지 않는다(F-006-R37)
-                Dialect pathDialect = "oracle".equals(token) ? Dialect.ORACLE : "db2".equals(token) ? Dialect.DB2 : null;
+                Dialect pathDialect = DialectDetector.targetOf(token);
                 fu.dialect = pathDialect;
-                // MySQL 파일인가: 경로의 방언 이름이 먼저고, 이름이 없으면 옵션(--dialect면 아니다), 그다음 본문의 MySQL 특징이다
-                fu.mysql = pathToken != null ? DialectTokens.isMySql(pathToken)
-                        : optionDialect == null && (selection.mySqlProject() || DialectDetector.mysqlFeatures(text));
-                // 대상 외 방언의 파일이면 구문 특징으로 Oracle·DB2를 추측하지 않는다(dialect를 비워 둔다)
-                fu.foreign = pathDialect == null && (token != null || fu.mysql);
+                // 파일의 읽기 방식(F-019-R7): 경로의 방언 이름이 먼저고, 이름이 없으면 옵션(--dialect), 프로젝트 방언, 그다음 본문 특징이다
+                fu.syntax = DialectDetector.syntaxOfFile(pathToken, optionDialect, text, declaredSyntax);
+                // 대상 외 방언의 파일이면 구문 특징으로 대상 방언을 추측하지 않는다(dialect를 비워 둔다)
+                fu.foreign = pathDialect == null && (token != null || fu.syntax == Syntax.MYSQL);
                 // 옵션과 경로로 방언을 모르면 같은 훑기에서 구문 특징으로 판정한다
                 DialectDetector.Scorer scorer = pathDialect == null && !fu.foreign ? new DialectDetector.Scorer() : null;
                 fu.shape = ScriptSplitter.forEach(text, unit -> firstPass(graph, catalog, ddl, fu, unit), scorer == null ? null : scorer::accept,
-                        fu.mysql);
+                        fu.syntax);
                 if (scorer != null) {
                     fu.dialect = scorer.result();
                 }
@@ -282,12 +284,21 @@ public final class SqlAnalyzer implements Analyzer {
                 ScriptUnit unit = null;
                 try {
                     unit = work.unit();
-                    if (work.header != null) {
+                    boolean doBlock = work.header == null && fu.syntax == Syntax.POSTGRES && unit.first().is("DO");
+                    Token openQuote = work.header == null && !doBlock ? null : unterminatedDollarQuote(unit);
+                    if (openQuote != null) {
+                        // 닫히지 않은 달러 인용(F-019-R9): 파일 끝까지가 본문으로 읽혔다. 본문은 믿을 수 없으므로 분석하지 않고 진단 하나만 남긴다
+                        fu.obtained++;
+                        graph.report(Diagnostic.warn(DiagnosticCodes.PARSE_FAILED,
+                                "닫히지 않은 달러 인용: " + openQuote.text().substring(0, openQuote.text().indexOf('$', 1) + 1)
+                                        + "의 짝이 없어 파일 끝까지를 본문으로 읽음. " + (doBlock ? "DO 블록을" : "루틴 본문을") + " 분석하지 않음",
+                                locator.locate(Pos.of(openQuote))));
+                    } else if (work.header != null) {
                         String nodeId = routineNodeIds.get(work);
                         if (nodeId != null) {
                             fu.obtained++;
                             routineHandler.handle(new RoutineUnit(unit, work.header, fu.path, nodeId),
-                                    new RoutineContext(graph, catalog, fu.dialect, fu.path, locator).fallbackDialect(fu.hint));
+                                    new RoutineContext(graph, catalog, fu.dialect, fu.path, locator).fallbackDialect(fu.hint).syntax(fu.syntax));
                         } else {
                             graph.report(Diagnostic.info(DiagnosticCodes.UNSUPPORTED_SYNTAX,
                                     "지원하지 않는 루틴 단위: " + firstWords(unit), locator.locate(unit.pos())));
@@ -299,6 +310,8 @@ public final class SqlAnalyzer implements Analyzer {
                             fu.silentContentUnits++;
                         }
                         ddlUnit(graph, catalog, extractor, fu, work, pending.get(unit.pos()), locator);
+                    } else if (dumpHousekeeping(fu, unit)) {
+                        fu.silentContentUnits++; // 덤프의 뒷정리: 조용히 넘긴다
                     } else if (dmlUnit(graph, catalog, extractor, fu, unit, locator)) {
                         fu.obtained++;
                         if (work.reset && fu.loads.loadFile()) {
@@ -326,11 +339,13 @@ public final class SqlAnalyzer implements Analyzer {
         for (EmbeddedSource source : ctx.embedded(EmbeddedSource.SQL)) {
             byOwner.computeIfAbsent(source.ownerNodeId(), k -> new ArrayList<>()).add(source);
         }
+        // 프로젝트 방언이 정하는 읽기 방식(옵션, 설정, 스크립트에서 고른 방언). SQL 파일을 다 읽은 뒤라 스크립트에서 고른 방언까지 안다(F-019-R7)
+        Syntax projectSyntax = selection.projectSyntax();
         for (Map.Entry<String, List<EmbeddedSource>> entry : byOwner.entrySet()) {
             SourceLocation origin = entry.getValue().get(0).origin();
             ctx.progress(origin == null || origin.file() == null ? entry.getKey() : origin.file());
             try {
-                embedded(graph, catalog, extractor, optionDialect, selection, entry.getKey(), entry.getValue());
+                embedded(graph, catalog, extractor, optionDialect, projectSyntax, entry.getKey(), entry.getValue());
             } catch (RuntimeException | StackOverflowError e) {
                 SourceLocation where = entry.getValue().get(0).origin();
                 graph.report(Diagnostic.error(DiagnosticCodes.PARSE_FAILED, "내장 SQL을 분석하지 못함(" + entry.getKey() + "): " + e, where));
@@ -350,21 +365,32 @@ public final class SqlAnalyzer implements Analyzer {
 
     /** 단위 하나를 처음 본다: 루틴 헤더와 DDL은 카탈로그에, 데이터 적재 INSERT는 묶음에 넣는다. 나중에 볼 단위만 fu.units에 남긴다. */
     private static void firstPass(GraphModel graph, Catalog catalog, DdlProcessor ddl, FileUnits fu, ScriptUnit unit) {
-        UnitWork work = new UnitWork(unit, fu.mysql);
+        UnitWork work = new UnitWork(unit, fu.syntax);
         Locator locator = Locator.ofFile(fu.path, unit.pos());
         try {
             if (unit.kind() == ScriptUnit.Kind.ROUTINE) {
                 fu.loads.noteOther();
-                work.header = RoutineHeader.parse(unit.tokens());
+                work.header = RoutineHeader.parse(unit.tokens(), fu.syntax);
                 registerRoutine(catalog, work.header, unit);
             } else if (unit.kind() == ScriptUnit.Kind.STATEMENT && DdlParser.isDdl(unit.tokens())) {
                 if (!DataLoadGrouper.isSessionCommand(unit)) {
                     fu.loads.noteOther();
                 }
-                work.ddl = new DdlParser(new ArrayList<>(unit.tokens())).parse();
+                work.ddl = new DdlParser(new ArrayList<>(unit.tokens()), fu.syntax).parse();
                 ddl.apply(work.ddl.statement(), fu.path, locator, unit.pos(), unit.text());
+            } else if (unit.kind() == ScriptUnit.Kind.STATEMENT && fu.syntax == Syntax.POSTGRES && unit.first().is("COPY")) {
+                // PostgreSQL COPY 테이블 FROM stdin과 그 데이터 줄: 그 테이블의 데이터 적재 묶음이다(F-019-R23).
+                // 파일에서 읽는 COPY와 COPY … TO는 적재가 아니다: 남겨 두면 뒤에서 조용히 넘어간다
+                if (new SqlParser(new ArrayList<>(unit.tokens()), fu.syntax).parseStatement().statement() instanceof Statement.Copy copy
+                        && !copy.table().anyDynamic()) {
+                    fu.loads.offerCopy(unit, copy, unit.dataRows());
+                    for (Object released : fu.loads.takeReleased()) {
+                        ((UnitWork) released).grouped = true;
+                    }
+                    return; // 묶음에 더했다: 단위를 쥐고 있지 않는다
+                }
             } else if (unit.kind() == ScriptUnit.Kind.STATEMENT && unit.first().is("INSERT")) {
-                DataLoadGrouper.Candidate candidate = DataLoadGrouper.candidate(new SqlParser(new ArrayList<>(unit.tokens())).parseStatement());
+                DataLoadGrouper.Candidate candidate = DataLoadGrouper.candidate(new SqlParser(new ArrayList<>(unit.tokens()), fu.syntax).parseStatement());
                 if (candidate != null) {
                     DataLoadGrouper.Offer offer = fu.loads.offer(work, unit, candidate);
                     for (Object released : fu.loads.takeReleased()) {
@@ -377,10 +403,10 @@ public final class SqlAnalyzer implements Analyzer {
                     fu.loads.noteOther();
                 }
             } else if (unit.kind() == ScriptUnit.Kind.STATEMENT && (unit.first().is("DELETE") || unit.first().is("TRUNCATE"))
-                    && (work.resetTable = DataLoadGrouper.resetTable(new SqlParser(new ArrayList<>(unit.tokens())).parseStatement())) != null) {
+                    && (work.resetTable = DataLoadGrouper.resetTable(new SqlParser(new ArrayList<>(unit.tokens()), fu.syntax).parseStatement())) != null) {
                 work.reset = true; // 테이블을 비우는 초기화 구문: 적재 파일이면 dataLoad를 붙인다
                 fu.loads.noteReset();
-            } else if (!DataLoadGrouper.isSessionCommand(unit)) {
+            } else if (!DataLoadGrouper.isSessionCommand(unit) && !dumpHousekeeping(fu, unit)) {
                 fu.loads.noteOther();
             }
         } catch (RuntimeException | StackOverflowError e) {
@@ -394,6 +420,38 @@ public final class SqlAnalyzer implements Analyzer {
             }
         }
         fu.units.add(work);
+    }
+
+    /**
+     * pg_dump가 내는 뒷정리 구문인가(F-019-R22): {@code SELECT pg_catalog.set_config(..);}, {@code SELECT pg_catalog.setval(..);}.
+     * {@code pg_catalog.}을 붙여 그 함수 하나만 부르는 구문이어야 한다. 애플리케이션의 구문이 아니라서 구문 노드도 시퀀스 참조도 만들지 않는다.
+     * PostgreSQL 읽기 방식의 SQL 파일에서만 본다(매퍼·루틴의 구문은 그 주인의 것이다).
+     */
+    private static boolean dumpHousekeeping(FileUnits fu, ScriptUnit unit) {
+        if (fu.syntax != Syntax.POSTGRES || unit.kind() != ScriptUnit.Kind.STATEMENT) {
+            return false;
+        }
+        List<Token> t = unit.tokens();
+        if (t.size() < 6 || !t.get(0).is("SELECT") || !t.get(1).is("PG_CATALOG") || !t.get(2).isSymbol(".")
+                || !t.get(3).isAny("SET_CONFIG", "SETVAL") || !t.get(4).isSymbol("(")) {
+            return false;
+        }
+        int depth = 0;
+        for (int i = 4; i < t.size(); i++) {
+            Token token = t.get(i);
+            if (token.isSymbol("(")) {
+                depth++;
+            } else if (token.isSymbol(")") && --depth == 0) {
+                // 닫는 괄호 뒤에는 종결자뿐이어야 한다
+                for (int k = i + 1; k < t.size(); k++) {
+                    if (!t.get(k).isEof() && !t.get(k).isSymbol(";")) {
+                        return false;
+                    }
+                }
+                return true;
+            }
+        }
+        return false;
     }
 
     /** 카탈로그에 반영을 맡긴 DDL 구문의 자리 표시(구문 트리를 쥐고 있지 않으려고 쓴다). */
@@ -415,8 +473,16 @@ public final class SqlAnalyzer implements Analyzer {
         }
         fu.loads.write(graph, catalog, fu.dialect, !fu.foreign);
         fu.obtained += fu.loads.groupCount();
-        StringBuilder message = new StringBuilder("데이터 적재 파일: 리터럴 INSERT ").append(fu.loads.statementCount()).append("건을 테이블별 구문 ")
-                .append(fu.loads.groupCount()).append("개로 묶음");
+        int copies = fu.loads.copyCount();
+        int inserts = fu.loads.statementCount() - copies;
+        StringBuilder message = new StringBuilder("데이터 적재 파일: ");
+        if (inserts > 0 || copies == 0) {
+            message.append("리터럴 INSERT ").append(inserts).append("건");
+        }
+        if (copies > 0) {
+            message.append(inserts > 0 ? "과 " : "").append("COPY ").append(copies).append("건"); // PostgreSQL COPY … FROM stdin(F-019-R23)
+        }
+        message.append("을 테이블별 구문 ").append(fu.loads.groupCount()).append("개로 묶음");
         if (fu.loads.smallGroupCount() > 0) {
             message.append("(").append(DataLoadGrouper.MIN_STATEMENTS).append("건 미만인 테이블 ").append(fu.loads.smallGroupCount()).append("개 포함)");
         }
@@ -426,6 +492,16 @@ public final class SqlAnalyzer implements Analyzer {
             message.append(", 초기화 구문(조건 없는 DELETE·TRUNCATE) ").append(resets).append("건도 dataLoad로 표시");
         }
         graph.report(Diagnostic.info(SqlDiagnosticCodes.DATA_LOAD_GROUPED, message.toString(), SourceLocation.ofFile(fu.path)));
+    }
+
+    /** 단위에 닫히지 않은 달러 인용 문자열이 있으면 그 토큰, 없으면 null. */
+    private static Token unterminatedDollarQuote(ScriptUnit unit) {
+        for (Token t : unit.tokens()) {
+            if (t.unterminated() && t.dollarQuoted()) {
+                return t;
+            }
+        }
+        return null;
     }
 
     /** 정의나 DML로 보이는 줄이 있는데 테이블도 구문도 얻지 못한 파일이면 WARN 진단을 남긴다(F-006-R22). */
@@ -555,6 +631,7 @@ public final class SqlAnalyzer implements Analyzer {
         }
         String statementId = Ids.sqlStatement(fu.path, unit.startLine());
         boolean view = result.statement() instanceof Ddl.CreateView;
+        extractor.syntax(fu.syntax); // 이 파일을 읽은 방식 그대로(F-019-R17)
         StatementFacts facts = view ? extractor.extract(pending.query()) : extractor.extract(result.statement());
         declareStatement(graph, statementId, fu, unit, locator);
         String container = view ? SqlIds.view(pending.target().name) : Ids.file(fu.path);
@@ -571,11 +648,28 @@ public final class SqlAnalyzer implements Analyzer {
             graph.addEdge(Edge.of(Ids.file(fu.path), statementId, EdgeKind.CONTAINS));
             FactsWriter writer = new FactsWriter(graph, catalog, statementId);
             Dialect dialect = dialectOf(fu, unit);
-            RoutineBodyHandler.analyzeBlock(unit.tokens(), unit.text(), graph, catalog, dialect != null ? dialect : fu.hint, writer, locator, false, new HashSet<>());
+            RoutineBodyHandler.analyzeBlock(unit.tokens(), unit.text(), graph, catalog, dialect != null ? dialect : fu.hint, fu.syntax, writer, locator, false,
+                    new HashSet<>());
             writer.finish(dialect);
             return true;
         }
-        ParseResult result = new SqlParser(new ArrayList<>(unit.tokens())).parseStatement();
+        RoutineBodyHandler.DoBlock block = fu.syntax == Syntax.POSTGRES && unit.first().is("DO") ? RoutineBodyHandler.doBlock(unit.tokens()) : null;
+        if (block != null) {
+            if (!block.plpgsql()) {
+                fu.silentContentUnits++; // plpgsql이 아닌 언어의 블록: 루틴과 같이 본문을 분석하지 않고 조용히 넘긴다(F-019-R24)
+                return false;
+            }
+            // PostgreSQL DO 블록: 익명 블록과 같이 블록의 구문 노드 하나에 모은다(F-019-R30)
+            String statementId = Ids.sqlStatement(fu.path, unit.startLine());
+            declareStatement(graph, statementId, fu, unit, locator);
+            graph.addEdge(Edge.of(Ids.file(fu.path), statementId, EdgeKind.CONTAINS));
+            FactsWriter writer = new FactsWriter(graph, catalog, statementId);
+            Dialect dialect = dialectOf(fu, unit);
+            RoutineBodyHandler.analyzeDoBlock(block, graph, catalog, dialect != null ? dialect : fu.hint, writer, locator, false, new HashSet<>());
+            writer.finish(dialect);
+            return true;
+        }
+        ParseResult result = new SqlParser(new ArrayList<>(unit.tokens()), fu.syntax).parseStatement();
         Statement statement = result.statement();
         if (statement instanceof Statement.Empty || statement instanceof Statement.Other) {
             return false;
@@ -584,7 +678,7 @@ public final class SqlAnalyzer implements Analyzer {
             graph.report(Diagnostic.info(DiagnosticCodes.UNSUPPORTED_SYNTAX, "지원하지 않는 구문: " + DynamicText.display(u.keyword()), locator.locate(unit.pos())));
             return false;
         }
-        StatementFacts facts = extractor.extract(result);
+        StatementFacts facts = extractor.syntax(fu.syntax).extract(result);
         if (hasDynamic(unit.tokens())) {
             facts.markDynamic();
         }
@@ -787,7 +881,7 @@ public final class SqlAnalyzer implements Analyzer {
 
     // ------------------------------------------------------------------ 내장 소스
 
-    private void embedded(GraphModel graph, Catalog catalog, FactExtractor extractor, Dialect optionDialect, DialectSelection selection,
+    private void embedded(GraphModel graph, Catalog catalog, FactExtractor extractor, Dialect optionDialect, Syntax projectSyntax,
             String ownerId, List<EmbeddedSource> sources) {
         FactsWriter writer = new FactsWriter(graph, catalog, ownerId);
         Set<String> reported = new HashSet<>();
@@ -802,20 +896,34 @@ public final class SqlAnalyzer implements Analyzer {
             }
             foreign |= dialect == null && DialectTokens.canonical(source.attrs().get("dialect")) != null;
             Locator locator = Locator.ofEmbedded(source);
-            // MySQL의 SQL인가(줄 처음 # 주석, F-006-R27): 생산자가 넘긴 방언 이름이 먼저고, 없으면 옵션, 그다음 본문의 MySQL 특징이다
-            String hint = DialectTokens.canonical(source.attrs().get("dialect"));
-            boolean mysql = hint != null ? DialectTokens.isMySql(hint)
-                    : optionDialect == null && (selection.mySqlProject() || DialectDetector.mysqlFeatures(source.text()));
+            // 읽기 방식(F-019-R7): 생산자가 넘긴 방언 이름이 먼저고, 없으면 프로젝트 방언(옵션, 설정, 스크립트에서 고른 방언), 그다음 본문 특징이다.
+            // MySQL이면 줄 처음의 #이 주석이다(F-006-R27)
+            Syntax syntax = DialectDetector.syntaxOfEmbedded(source.attrs().get("dialect"), projectSyntax, source.text());
             // 생산자가 치환 목록을 넘겼으면 ${…} 자리의 내부 표식을 원문으로 되돌려 읽는다: 메시지와 미해결 원문에 원문이 나온다(F-006-R26)
             String text = DynamicText.restore(source.text(), source.attrs().get(DynamicText.PARTS_KEY), source.exactPositions());
-            for (ScriptUnit unit : ScriptSplitter.splitEmbedded(text, mysql)) {
+            for (ScriptUnit unit : ScriptSplitter.splitEmbedded(text, syntax)) {
                 allTokens.addAll(unit.tokens());
                 if (unit.kind() == ScriptUnit.Kind.BLOCK) {
-                    RoutineBodyHandler.analyzeBlock(unit.tokens(), unit.text(), graph, catalog, dialect != null ? dialect : optionDialect, writer, locator, true, reported);
+                    RoutineBodyHandler.analyzeBlock(unit.tokens(), unit.text(), graph, catalog, dialect != null ? dialect : optionDialect, syntax, writer, locator,
+                            true, reported);
                     continue;
                 }
                 List<Token> tokens = new ArrayList<>(unit.tokens());
-                ParseResult result = DdlParser.isDdl(tokens) ? new DdlParser(tokens).parse() : new SqlParser(tokens).parseStatement();
+                RoutineBodyHandler.DoBlock block = syntax == Syntax.POSTGRES && unit.first().is("DO") ? RoutineBodyHandler.doBlock(tokens) : null;
+                if (block != null) {
+                    // PostgreSQL DO 블록(F-019-R30). plpgsql이 아닌 언어의 본문은 분석하지 않는다
+                    if (block.body().unterminated()) {
+                        SourceLocation where = locator.locate(Pos.of(block.body()));
+                        if (reported.add("do-unterminated@" + where)) {
+                            graph.report(Diagnostic.warn(DiagnosticCodes.PARSE_FAILED,
+                                    "닫히지 않은 문자열: DO 블록의 본문이 닫히지 않아 분석하지 않음 (" + ownerId + ")", where));
+                        }
+                    } else if (block.plpgsql()) {
+                        RoutineBodyHandler.analyzeDoBlock(block, graph, catalog, dialect != null ? dialect : optionDialect, writer, locator, true, reported);
+                    }
+                    continue;
+                }
+                ParseResult result = DdlParser.isDdl(tokens) ? new DdlParser(tokens, syntax).parse() : new SqlParser(tokens, syntax).parseStatement();
                 Statement statement = result.statement();
                 if (statement instanceof Statement.Empty) {
                     continue;
@@ -826,7 +934,7 @@ public final class SqlAnalyzer implements Analyzer {
                         graph.report(Diagnostic.info(DiagnosticCodes.UNSUPPORTED_SYNTAX, "지원하지 않는 구문: " + DynamicText.display(u.keyword()) + " (" + ownerId + ")", where));
                     }
                 }
-                StatementFacts facts = extractor.extract(result);
+                StatementFacts facts = extractor.syntax(syntax).extract(result);
                 if (hasDynamic(tokens)) {
                     facts.markDynamic(); // 건너뛴 ${} 조각만 있어도 정적으로 다 알 수 없는 구문이다(F-006-R25)
                 }
