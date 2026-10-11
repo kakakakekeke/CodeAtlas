@@ -52,13 +52,27 @@
     var current = null;
     var viewsBox = h('div', { class: 'views' });
     var drawerBody = h('div', { class: 'pane-body' });
+    // 서랍 안에서 엣지를 따라 옮겨 간 노드의 자취. 서랍을 닫아도 남는다.
+    var drawerNav = ui.createTrailNav(index, renderDrawer);
     var drawer = h('div', { class: 'drawer' }, [
-      h('div', { class: 'pane-head' }, [h('span', { class: 'pane-title', text: '노드 상세' }), h('span', { class: 'spacer' }),
+      h('div', { class: 'pane-head' }, [h('span', { class: 'pane-title', text: '노드 상세' }), drawerNav.back, drawerNav.forward, h('span', { class: 'spacer' }),
         h('button', { class: 'btn small', type: 'button', text: '닫기', title: 'Esc', on: { click: closeDrawer } })]),
       drawerBody
     ]);
 
     function closeDrawer() { drawer.classList.remove('open'); }
+
+    function renderDrawer(id) {
+      ui.renderDetail(drawerBody, app, id, { inDrawer: true, follow: function (to) { openInDrawer(to, false); } });
+    }
+
+    /** 서랍에 노드를 연다. fromView: 화면의 줄을 눌러 온 것(연달아 누른 줄은 자취에 쌓지 않는다). */
+    function openInDrawer(id, fromView) {
+      drawerNav.trail.visit(id, fromView);
+      drawerNav.update();
+      renderDrawer(id);
+      drawer.classList.add('open');
+    }
 
     function activate(name, params) {
       if (!views[name]) {
@@ -84,6 +98,12 @@
         }
         activate(view, params);
       },
+      /** 화면은 그대로 두고 주소에 새 항목을 쌓는다: 브라우저의 뒤로 가기가 이전 주소로 돌아간다. file:에서도 되는 location.hash만 쓴다. */
+      pushHash: function (view, params) {
+        var hash = formatHash(view, params);
+        if (root.location.hash === hash) return;
+        try { root.location.hash = hash; } catch (e) { /* 주소를 못 바꿔도 화면은 그대로 쓴다 */ }
+      },
       /** 화면은 그대로 두고 주소만 맞춘다. */
       setHash: function (view, params) {
         var hash = formatHash(view, params);
@@ -93,8 +113,7 @@
       /** 노드 상세를 연다. 탐색 화면에서는 그 자리에서, 다른 화면에서는 오른쪽 서랍에서. */
       showDetail: function (id) {
         if (current === 'explore') { views.explore.showDetail(id); return; }
-        ui.renderDetail(drawerBody, app, id, { inDrawer: true });
-        drawer.classList.add('open');
+        openInDrawer(id, true);
       }
     };
     CA.app = app;

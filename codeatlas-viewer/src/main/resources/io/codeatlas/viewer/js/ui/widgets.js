@@ -153,7 +153,36 @@
     container.replaceChildren.apply(container, chips);
   }
 
+  /**
+   * 상세의 뒤로·앞으로 단추와 그 자취. 단추를 누르면 자취를 옮기고 go(id)를 부른다(그 노드를 다시 그리는 일은 부르는 쪽이 한다).
+   * 자취를 바꾼 뒤에는 update()로 단추를 맞춘다. 결과: { trail, back, forward, update }.
+   */
+  function createTrailNav(index, go) {
+    var trail = CA.trail.create();
+    function button(cls, text, step) {
+      return h('button', { class: 'btn small ' + cls, type: 'button', text: text, on: { click: function () {
+        var id = step < 0 ? trail.back() : trail.forward();
+        if (id == null) return;
+        update();
+        go(id);
+      } } });
+    }
+    var back = button('nav-back', '← 뒤로', -1);
+    var forward = button('nav-forward', '앞으로 →', 1);
+    function set(el, word, id) {
+      el.disabled = id == null;
+      el.setAttribute('title', id == null ? word + ' 갈 노드가 없다' : word + ': ' + index.label(id));
+    }
+    function update() {
+      set(back, '뒤로', trail.peek(-1));
+      set(forward, '앞으로', trail.peek(1));
+    }
+    update();
+    return { trail: trail, back: back, forward: forward, update: update };
+  }
+
   ui.ROW_HEIGHT = ROW_HEIGHT;
+  ui.createTrailNav = createTrailNav;
   ui.createVirtualList = createVirtualList;
   ui.nodeRow = nodeRow;
   ui.createPicker = createPicker;
