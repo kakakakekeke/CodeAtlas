@@ -12,6 +12,9 @@ import java.util.stream.Collectors;
 /**
  * 테이블·컬럼 영향도 리포트. 계층마다 항목은 노드 ID 순이다. 추론한 관계를 거쳐서만 닿은 항목은 Markdown에서 이름 앞에 {@code ~}가,
  * 경로 끝에 {@code (추론: <엣지>: <까닭>)}이 붙고 JSON에는 {@code inferred}·{@code inference}가 들어간다.
+ * forward로 넘어간 다른 엔드포인트의 핸들러를 거쳐서만 닿은 항목은 이름 앞에 {@code [forward]}가(추론 표시와 함께면 {@code ~ [forward]}),
+ * 경로의 넘어간 대상 핸들러 앞에 {@code [forward]}가, 경로 끝에 {@code (forward: <넘어간 경로>)}가 붙고 개수 요약과 계층 제목에
+ * 직접·forward 경유의 수가 나뉘어 나온다. JSON에는 {@code viaForward}·{@code forward}가 들어간다.
  *
  * @param targetId 대상 노드 ID. 찾지 못했으면 요청한 문자열 그대로
  * @param targetKind 대상 종류. 찾지 못했으면 null
@@ -84,6 +87,17 @@ public record ImpactReport(String targetId, NodeKind targetKind, String targetLa
     }
 
     /**
+     * 항목의 경로가 거치는 forward({@code callType=forward}인 {@code CALLS}: {@code forward:}·{@code RequestDispatcher}로 다른 엔드포인트의
+     * 핸들러로 넘어감).
+     *
+     * @param from 넘기는 핸들러의 노드 ID
+     * @param to 넘어간 핸들러의 노드 ID
+     * @param target 넘어간 경로(엣지의 {@code path}). 예: {@code /memo/list.do}. 모르면 null
+     */
+    public record Forward(String from, String to, String target) {
+    }
+
+    /**
      * 리포트의 한 항목.
      *
      * @param type 종류 표시. 예: {@code method}, {@code sql}, {@code endpoint}, {@code jsp}
@@ -92,16 +106,24 @@ public record ImpactReport(String targetId, NodeKind targetKind, String targetLa
      * @param tableLevelOnly 컬럼 대상일 때, 컬럼을 해석하지 못한 구문을 통해서만 닿는 항목이면 true
      * @param distance 구문에서 이 항목까지의 걸음 수(구문은 0)
      * @param path 이 항목에서 구문까지의 노드 ID(호출 방향 순서)
-     * @param pathLabels path의 표시 이름
+     * @param pathLabels path의 표시 이름. forward로 넘어간 대상 핸들러는 {@code [forward] MemoController#list()}처럼 표식이 붙는다
      * @param inference 추론한 관계를 거쳐서만 닿은 항목이면 그 근거: path에서 (이 항목 쪽부터) 처음 만나는 추론 엣지와 까닭.
      *        예: {@code OrderController#save() → Codec#encode(String): 후보 여럿(ambiguous)}. 확정 경로가 하나라도 있으면 null이고
      *        path는 그 확정 경로다
+     * @param forward forward로 넘어간 다른 핸들러를 거쳐서만 닿은 항목이면 path에서 (이 항목 쪽부터) 처음 만나는 forward. 같은 확실함의
+     *        경로 가운데 forward를 거치지 않는 것이 하나라도 있으면 null이고 path는 그 경로다
      */
     public record Item(String id, NodeKind kind, String label, String type, String location, String access, boolean tableLevelOnly,
-            int distance, List<String> path, List<String> pathLabels, String inference) {
+            int distance, List<String> path, List<String> pathLabels, String inference, Forward forward) {
         public Item {
             path = List.copyOf(path);
             pathLabels = List.copyOf(pathLabels);
+        }
+
+        /** forward 경유가 아닌 항목. */
+        public Item(String id, NodeKind kind, String label, String type, String location, String access, boolean tableLevelOnly,
+                int distance, List<String> path, List<String> pathLabels, String inference) {
+            this(id, kind, label, type, location, access, tableLevelOnly, distance, path, pathLabels, inference, null);
         }
 
         /** 추론 표시가 없는 항목. */
@@ -113,6 +135,11 @@ public record ImpactReport(String targetId, NodeKind targetKind, String targetLa
         /** 추론한 관계를 거쳐서만 닿은 항목인지(Markdown의 {@code ~}). */
         public boolean inferred() {
             return inference != null;
+        }
+
+        /** forward로 넘어간 다른 핸들러를 거쳐서만 닿은 항목인지(Markdown의 {@code [forward]}). */
+        public boolean viaForward() {
+            return forward != null;
         }
     }
 
@@ -174,9 +201,8 @@ public record ImpactReport(String targetId, NodeKind targetKind, String targetLa
         if (columnTarget()) {
             out.append(" (테이블 수준에서만 확인됨 ").append(tableLevelStatements.size()).append("개 별도)");
         }
-        out.append(", 실행 주체 ").append(executors.size()).append("개, 호출 사슬 ").append(callers.size()).append("개, 엔드포인트 ")
-                .append(endpoints.size()).append("개, 화면 ").append(screens.size()).append("개, 배치 ").append(batch.size())
-                .append("개\n");
+        out.append(", 실행 주체 ").append(count(executors)).append(", 호출 사슬 ").append(count(callers)).append(", 엔드포인트 ")
+                .append(count(endpoints)).append(", 화면 ").append(count(screens)).append(", 배치 ").append(count(batch)).append('\n');
         if (!dynamicStatements.isEmpty()) {
             out.append("- 대상 테이블을 정적으로 알 수 없는 구문 ").append(dynamicStatements.size())
                     .append("개(아래 별도 절). 이 대상에 닿는지는 구문을 직접 봐야 안다\n");
@@ -189,6 +215,12 @@ public record ImpactReport(String targetId, NodeKind targetKind, String targetLa
         if (inferred > 0) {
             out.append("- `~`는 추론한 관계를 거쳐서만 닿은 항목이다(").append(inferred)
                     .append("개. 확정 경로가 하나라도 있으면 붙지 않는다). 경로 끝의 `추론:`은 그 경로에서 처음 만나는 추론 엣지와 까닭이다\n");
+        }
+        long forwarded = all().stream().filter(Item::viaForward).count();
+        if (forwarded > 0) {
+            out.append("- `[forward]`는 forward로 넘어간 다른 엔드포인트의 핸들러를 거쳐서만 닿은 항목이다(").append(forwarded)
+                    .append("개. 핸들러 자신의 호출 사슬로 닿는 경로가 있으면 붙지 않는다). 경로에서 `[forward]`가 붙은 핸들러가 넘어간 대상이고, ")
+                    .append("경로 끝의 `forward:`는 넘어간 경로다\n");
         }
 
         out.append("\n## 구문 (").append(statements.size()).append(")\n\n");
@@ -227,8 +259,25 @@ public record ImpactReport(String targetId, NodeKind targetKind, String targetLa
         }
     }
 
+    /** {@code 43개}. forward 경유 항목이 있으면 {@code 43개(직접 39, forward 경유 4)}. */
+    private static String count(List<Item> items) {
+        String split = split(items);
+        return items.size() + "개" + (split.isEmpty() ? "" : "(" + split + ")");
+    }
+
+    /** {@code 직접 39, forward 경유 4}. forward 경유 항목이 없으면 빈 문자열, 전부 forward 경유면 {@code forward 경유 4}. */
+    private static String split(List<Item> items) {
+        long forwarded = items.stream().filter(Item::viaForward).count();
+        if (forwarded == 0) {
+            return "";
+        }
+        long direct = items.size() - forwarded;
+        return (direct > 0 ? "직접 " + direct + ", " : "") + "forward 경유 " + forwarded;
+    }
+
     private void layer(StringBuilder out, String title, List<Item> items) {
-        out.append("\n## ").append(title).append(" (").append(items.size()).append(")\n\n");
+        String split = split(items);
+        out.append("\n## ").append(title).append(" (").append(items.size()).append(split.isEmpty() ? "" : ": " + split).append(")\n\n");
         if (items.isEmpty()) {
             out.append("없음\n");
             return;
@@ -237,9 +286,12 @@ public record ImpactReport(String targetId, NodeKind targetKind, String targetLa
         out.append("| 이름 | 종류 | 위치 | 경로 |").append(column ? " 확인 수준 |" : "").append("\n|---|---|---|---|").append(column ? "---|" : "")
                 .append('\n');
         for (Item item : items) {
-            out.append("| ").append(item.inferred() ? "~ " : "").append(Texts.mdCode(item.label())).append(" | ").append(item.type()).append(" | ")
+            String target = item.viaForward() ? item.forward().target() : null;
+            out.append("| ").append(item.inferred() ? "~ " : "").append(item.viaForward() ? ImpactAnalysis.FORWARD_MARK + " " : "")
+                    .append(Texts.mdCode(item.label())).append(" | ").append(item.type()).append(" | ")
                     .append(Texts.mdCode(item.location())).append(" | ")
                     .append(item.pathLabels().stream().map(Texts::mdCode).collect(Collectors.joining(" → ")))
+                    .append(target == null ? "" : " (forward: " + Texts.mdCell(target) + ")")
                     .append(item.inferred() ? " (추론: " + Texts.mdCell(item.inference()) + ")" : "").append(" |");
             if (column) {
                 out.append(item.tableLevelOnly() ? " 테이블 수준 |" : " 컬럼 |");
@@ -304,6 +356,15 @@ public record ImpactReport(String targetId, NodeKind targetKind, String targetLa
             m.put("path", item.path());
             m.put("inferred", item.inferred());
             m.put("inference", item.inference());
+            m.put("viaForward", item.viaForward());
+            Map<String, Object> forward = null;
+            if (item.viaForward()) {
+                forward = new LinkedHashMap<>();
+                forward.put("from", item.forward().from());
+                forward.put("to", item.forward().to());
+                forward.put("target", item.forward().target());
+            }
+            m.put("forward", forward);
             list.add(m);
         }
         return list;

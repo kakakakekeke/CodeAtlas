@@ -31,6 +31,9 @@ import java.util.TreeSet;
  * <p>추론한 관계를 거쳐서만 닿은 항목에는 근거가 붙는다({@link Item#inference()}: 리포트의 {@code ~}). 확정 경로가 하나라도 있으면
  * 붙지 않고 그 경로를 적는다. 무엇이 추론 걸음인지는 {@link FlowNavigator}의 설명을 본다.
  *
+ * <p>forward로 넘어간 다른 핸들러를 거쳐서만 닿은 항목에는 그 forward가 붙는다({@link Item#forward()}: 리포트의 {@code [forward]}).
+ * 같은 확실함의 경로 가운데 forward를 거치지 않는 것이 하나라도 있으면 붙지 않고 그 경로를 적는다. redirect는 따라가지 않는다.
+ *
  * <pre>{@code
  * ImpactReport report = ImpactAnalysis.analyze(graph, "ORDERS.STATUS");
  * Files.writeString(out, report.toMarkdown());
@@ -195,15 +198,47 @@ public final class ImpactAnalysis {
      * @param rank {@link #CERTAIN}, {@link #PENDING}, {@link #INFERRED}
      * @param inference 확정이 아니면 그 근거: 이 방문에서 구문 쪽으로 가는 경로에서 처음 만나는 추론 엣지와 까닭
      * @param place 방문의 자리(노드와 도착 문맥). 같은 자리의 더 확실한 방문이 생기면 이 방문은 더 올라가지 않는다
+     * @param forwarded 이 방문에서 구문 쪽으로 가는 경로가 forward를 거치는지
+     * @param forwards 직전 방문(구문 쪽)으로 가는 걸음이 forward인지(이 노드가 넘기는 핸들러다)
      */
-    private record Reached(String nodeId, int distance, String next, int rank, String inference, String place) {
+    private record Reached(String nodeId, int distance, String next, int rank, String inference, String place, boolean forwarded,
+            boolean forwards) {
+    }
+
+    /**
+     * 자리마다 닿은 방문의 확실함. forward를 거치지 않은 방문과 거친 방문을 따로 적는다: 같은 자리에 같거나 더 확실하게 닿았더라도
+     * forward를 거쳐서 닿은 것이면 forward를 거치지 않는 방문이 위를 다시 올라가야 한다("forward로만 닿은" 항목을 가리려면 그렇지 않은
+     * 경로가 하나라도 있는지 알아야 한다).
+     */
+    private static final class Ranks {
+        private final Map<String, Integer> direct = new java.util.HashMap<>();
+        private final Map<String, Integer> forwarded = new java.util.HashMap<>();
+
+        void put(String place, int rank, boolean viaForward) {
+            (viaForward ? forwarded : direct).put(place, rank);
+        }
+
+        /** 그 자리에 같거나 더 나은 방문(더 확실하거나 같고, forward를 더 거치지 않는)이 이미 있는지. */
+        boolean covered(String place, int rank, boolean viaForward) {
+            return atMost(direct.get(place), rank) || (viaForward && atMost(forwarded.get(place), rank));
+        }
+
+        /** 그 자리에 이 방문보다 나은 방문이 생겼는지(이 방문 자신은 빼고 본다). */
+        boolean surpassed(String place, int rank, boolean viaForward) {
+            return viaForward ? atMost(direct.get(place), rank) || atMost(forwarded.get(place), rank - 1)
+                    : atMost(direct.get(place), rank - 1);
+        }
+
+        private static boolean atMost(Integer seen, int rank) {
+            return seen != null && seen <= rank;
+        }
     }
 
     /**
      * 거슬러 올라간 결과.
      *
      * @param visits 방문 키 → 방문
-     * @param best 노드 → 가장 확실한(같으면 가장 먼저, 곧 가장 짧게 닿은) 방문의 키
+     * @param best 노드 → 가장 확실한(같으면 forward를 거치지 않은, 그것도 같으면 가장 먼저 곧 가장 짧게 닿은) 방문의 키
      * @param shortest 노드 → 구문에서의 가장 짧은 걸음 수(확실함과 무관)
      */
     private record Climb(Map<String, Reached> visits, Map<String, String> best, Map<String, Integer> shortest) {
@@ -229,28 +264,31 @@ public final class ImpactAnalysis {
      * <p>방문마다 확실함을 싣는다: 추론 걸음({@link Step#inference()})을 거치면 추론, 상속 매퍼 메서드로 올라가면 확인 대기이고
      * 수신자가 맞는 호출자({@code CALLS})를 만나면 확정으로 돌아온다. 추론으로 먼저 닿은 자리에 확정 경로로 다시 닿으면 그 위를 다시 올라간다
      * ("추론 경로로만 닿은" 항목을 가리려면 확정 경로가 하나라도 있는지 알아야 한다).
+     *
+     * <p>방문마다 forward를 거쳤는지도 싣는다: forward({@link Step#forward()})로 올라간 넘기는 핸들러와 그 위는 forward 경유다.
+     * forward를 거쳐 먼저 닿은 자리에 그렇지 않은 경로로 다시 닿으면 그 위를 다시 올라간다.
      */
     private static Climb climb(FlowNavigator navigator, Set<String> seeds, int maxDepth) {
         GraphModel graph = navigator.graph();
         Map<String, Reached> visits = new LinkedHashMap<>();
         Map<String, String> best = new LinkedHashMap<>();
         Map<String, Integer> shortest = new LinkedHashMap<>();
-        Map<String, Integer> rankAt = new java.util.HashMap<>();
+        Ranks ranks = new Ranks();
         Map<String, Step> arrivals = new LinkedHashMap<>();
         List<String> frontier = new ArrayList<>(seeds);
         frontier.sort(Comparator.naturalOrder());
         for (String seed : frontier) {
-            visits.put(seed, new Reached(seed, 0, null, CERTAIN, null, seed));
+            visits.put(seed, new Reached(seed, 0, null, CERTAIN, null, seed, false, false));
             best.put(seed, seed);
             shortest.put(seed, 0);
-            rankAt.put(seed, CERTAIN);
+            ranks.put(seed, CERTAIN, false);
         }
         for (int depth = 1; depth <= maxDepth && !frontier.isEmpty(); depth++) {
             List<String> next = new ArrayList<>();
             for (String key : frontier) {
                 Reached current = visits.get(key);
-                // 같은 자리에 더 확실한 방문이 생겼으면 그쪽이 위를 맡는다.
-                if (rankAt.get(current.place()) < current.rank()) {
+                // 같은 자리에 더 나은 방문(더 확실하거나, forward를 거치지 않는)이 생겼으면 그쪽이 위를 맡는다.
+                if (ranks.surpassed(current.place(), current.rank(), current.forwarded())) {
                     continue;
                 }
                 Reached below = current.next() == null ? null : visits.get(current.next());
@@ -286,22 +324,21 @@ public final class ImpactAnalysis {
                             || (step.via() == EdgeKind.ROUTES_TO && navigator.severalHandlers(step.nodeId()));
                     String place = (perOrigin ? step.nodeId() + "|" + current.nodeId() : step.nodeId())
                             + navigator.arrivalKey(step.nodeId(), step);
-                    Integer seen = rankAt.get(place);
-                    if (seen != null && seen <= rank) {
+                    boolean forwarded = current.forwarded() || step.forward();
+                    if (ranks.covered(place, rank, forwarded)) {
                         continue;
                     }
                     // 다른 트리거를 거쳐 이미 닿은 구문은 다시 올라가지 않는다(그 위는 같다).
                     // 조건 없이 이미 닿은 메서드도 다시 올라가지 않는다(조건 없는 쪽의 호출자가 전부를 포함한다).
-                    Integer plain = rankAt.get(step.nodeId());
-                    if (!perOrigin && plain != null && plain <= rank) {
+                    if (!perOrigin && ranks.covered(step.nodeId(), rank, forwarded)) {
                         continue;
                     }
-                    String visitKey = place + "\u0001" + rank;
-                    visits.put(visitKey, new Reached(step.nodeId(), depth, key, rank, inference, place));
-                    rankAt.put(place, rank);
+                    String visitKey = place + "\u0001" + rank + (forwarded ? "\u0001forward" : "");
+                    visits.put(visitKey, new Reached(step.nodeId(), depth, key, rank, inference, place, forwarded, step.forward()));
+                    ranks.put(place, rank, forwarded);
                     shortest.putIfAbsent(step.nodeId(), depth);
                     Reached known = visits.get(best.get(step.nodeId()));
-                    if (known == null || rank < known.rank()) {
+                    if (known == null || rank < known.rank() || (rank == known.rank() && known.forwarded() && !forwarded)) {
                         best.put(step.nodeId(), visitKey);
                     }
                     arrivals.put(visitKey, step);
@@ -328,10 +365,18 @@ public final class ImpactAnalysis {
             path.add(id);
             labels.add(NodeLabels.tagged(graph, id));
         }
+        ImpactReport.Forward forward = null;
+        boolean arrivedByForward = false;
         for (int guard = 0; current != null && guard <= distance; guard++) {
             path.add(current.nodeId());
-            labels.add(NodeLabels.tagged(graph, current.nodeId()));
-            current = current.next() == null ? null : climb.visits().get(current.next());
+            // forward로 넘어간 대상 핸들러에는 콜트리의 줄처럼 표식을 붙인다.
+            labels.add((arrivedByForward ? FORWARD_MARK + " " : "") + NodeLabels.tagged(graph, current.nodeId()));
+            Reached below = current.next() == null ? null : climb.visits().get(current.next());
+            arrivedByForward = current.forwards() && below != null;
+            if (arrivedByForward && forward == null) {
+                forward = new ImpactReport.Forward(current.nodeId(), below.nodeId(), forwardTarget(graph, current.nodeId(), below.nodeId()));
+            }
+            current = below;
         }
         String tag = NodeLabels.kindTag(graph, id);
         // 다른 방언 파일에서 남긴 데이터 적재 묶음은 이름 뒤에 밝힌다(--include-data-load로 넣었을 때만 구문 목록에 든다).
@@ -339,7 +384,23 @@ public final class ImpactAnalysis {
         return new Item(id, NodeLabels.kindOf(graph, id), NodeLabels.label(graph, id) + (borrowed == null ? "" : " (" + borrowed + ")"),
                 tag.isEmpty() ? "method" : tag,
                 NodeLabels.location(graph, id), access, tableLevelOnly, distance, path, labels,
-                r == null || r.rank() == CERTAIN ? null : r.inference());
+                r == null || r.rank() == CERTAIN ? null : r.inference(), forward);
+    }
+
+    /** 경로에서 forward로 넘어간 대상 핸들러의 이름 앞에 붙는 표식(콜트리의 {@code [forward]}와 같다). */
+    static final String FORWARD_MARK = "[forward]";
+
+    /** 넘기는 핸들러에서 넘어간 핸들러로 가는 forward 엣지의 경로({@code path}). 엣지가 여럿이면 사전순으로 앞선 것, 모르면 null. */
+    private static String forwardTarget(GraphModel graph, String fromId, String toId) {
+        String target = null;
+        for (Edge e : graph.outgoing(fromId, EdgeKind.CALLS)) {
+            String path = e.attrString("path");
+            if (e.to().equals(toId) && FlowNavigator.CALL_FORWARD.equals(e.attrString("callType")) && path != null && !path.isBlank()
+                    && (target == null || path.compareTo(target) < 0)) {
+                target = path;
+            }
+        }
+        return target;
     }
 
     /** 노드 ID, {@code 테이블.컬럼}, 테이블·뷰 이름 순으로 맞춰 본다. 찾지 못하면 null. */

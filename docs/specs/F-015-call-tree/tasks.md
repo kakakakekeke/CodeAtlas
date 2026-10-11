@@ -89,6 +89,11 @@ updated: 2026-10-11
 - [x] T57. 실제 그래프(S5, 고치기 전 분석기의 그래프)에서 본 것: zheng `GET /manage/index`의 위 방향 요청 6줄에 `(모듈 zheng-cms/zheng-cms-admin)` 3, `(모듈 zheng-upms/zheng-upms-server)` 3. enterprise `ANY /cop/com/selectBBSUseInfsByTrget.do`의 위 방향이 빈 트리 → `~ [forward]` 2줄. 공통컴포넌트 report.md `미해결 참조 (1227)`에 각주(1228건 가운데 1건), 미해결 selfSubmit 1건의 대상이 `POST /uss/ion/mtg/selectMtgPlaceImage.do (자기 페이지로 제출: …)`
 - [x] design.md 3.4 반영(직접 고침)
 
+## 6차 수정: 영향도의 forward 경유 구분 (2026-10-11)
+- [x] T58. F-015-AC90 테스트(`ForwardImpactTest` 3개) → 빈 API(`ImpactReport.Forward`, `Item.forward`·`viaForward`)만 넣고 실행해 3개 모두 단언 실패 확인 → `ImpactAnalysis.climb`의 forward 경유 추적(`Reached.forwarded`·`forwards`, 자리별 확실함을 forward를 거친 방문과 아닌 방문으로 나눠 적는 `Ranks`, 가장 나은 방문 고르기), `item`의 경로 표식과 `forwardTarget`, `ImpactReport`의 `[forward]`·`(forward: …)`·개수 표기·안내 줄, JSON `viaForward`·`forward` → 통과 (F-015-R77). 기존 테스트의 기대값은 바꾸지 않았다
+- [x] T59. cli `help impact`, 루트 `README.md`의 "테이블 영향도" 절, `CHANGELOG.md`, design.md 3.4 "영향도의 forward 경유 표시" (F-001-R61·AC87: `QueryCommandsTest.impactMarksForwardOnlyItems`, 도움말 단언에서 실패 확인)
+- [x] T60. 공통컴포넌트(`egovframe-common-components`)를 다시 분석해 `impact COMTNGNRLMBER`를 전후 비교: 머리 요약이 `호출 사슬 111개(직접 106, forward 경유 5), 엔드포인트 43개(직접 39, forward 경유 4), 화면 247개(직접 237, forward 경유 10)`가 됐고, `[forward]` 엔드포인트는 `insertMemoReprt.do`(forward: `/cop/smt/mrm/selectMemoReprtList.do`), `insertMemoTodo.do`(`/cop/smt/mtm/selectMemoTodoList.do`), `EgovAuthorGroupInsert.do`·`EgovAuthorGroupDelete.do`(`/sec/rgm/EgovAuthorGroupList.do`) 넷뿐이다(소스로 확인한 값과 같다). 호출 사슬의 5개는 넘기는 핸들러 넷과 그 하나를 부르는 테스트 메서드, 화면의 10개는 그 엔드포인트의 요청 6개와 JS 함수 4개다. 항목 수는 전과 같고(구문 33, 실행 주체 31, 호출 사슬 111, 엔드포인트 43, 화면 247), 표시 없이 경로만 바뀐 행은 둘이다(`EgovMemoReprtRegist.jsp`, `EgovMemoTodoRegist.jsp`: 전에는 등록 요청 → forward 경로가 적혔고, 이제는 같은 화면의 목록 요청으로 직접 닿는 경로가 적힌다). JSON은 엔드포인트 43개 가운데 `viaForward: true` 4개다. redirect인 `/uat/uia/actionLogout.do`는 전에도 지금도 없다
+
 ## 마무리
 - [x] 모든 수용 기준 통과 확인
 - [x] spec.md의 status를 implemented로 변경

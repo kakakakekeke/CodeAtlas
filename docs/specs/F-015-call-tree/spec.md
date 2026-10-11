@@ -95,6 +95,7 @@ PRD 목표 1(IDE 수준의 콜트리와 관계 분석)과 시나리오 3(메서�
 | F-015-R74 | 화면 요청 통계(R54)는 조회 API(`SummaryReport.requestStats`)로도 줘야 한다: 전체, 확정·추론 연결, 미연결 요청(위치순), 외부 URL, 정적 페이지 링크, 클라이언트 라우트, 서버 요청 수. cli의 힌트가 리포트와 같은 수를 쓰는 데 쓴다(F-001-R60). |
 | F-015-R75 | `dataLoad=true`인 구문의 `borrowedFrom=<방언>`(고른 방언의 파일에 그 테이블의 적재가 없어 다른 방언 파일의 묶음을 쓴 것. sql 5차 수정)은 매퍼 구문의 보충(R59)과 구분해야 한다: 리포트의 "다른 방언 파일에서 보충한 구문" 절에 넣지 않고, "데이터 적재 스크립트" 절에 ``이 가운데 묶음 n개는 고른 방언에 그 테이블의 적재가 없어 다른 방언 파일의 것이다(mysql 2개, …. 파일 이름 뒤에 `(다른 방언 파일: <방언>)`)`` 한 줄을 적고 그 파일 행의 이름 뒤에 `(다른 방언 파일: <방언>)`을 붙인다(표가 `export.report.maxItems`에 잘려 그 파일이 빠지면 `외 n개 파일.` 뒤에 `표에 없는 다른 방언 파일: …`로 이름을 남긴다). 콜트리의 구문 줄(R59의 자리)과 영향도(`includeDataLoad`)의 구문 이름에도 같은 표시를 붙인다. |
 | F-015-R76 | 링커가 동적 뷰의 후보를 근거로 좁힌 화면(`RENDERS`의 `dynamicSegment=true` + `narrowedBy`)은 "후보"라 부르지 않고 근거를 적어야 한다: `narrowedBy=property`는 `(동적 뷰 이름: 프로퍼티 값으로 정함)`, `moduleName`은 `(동적 뷰 이름: 모듈 이름으로 정함)`(추론 표식 `~`는 그대로. 까닭은 `동적 조각이 든 뷰 이름을 프로퍼티 값으로 정함(narrowedBy=property)` 등). `narrowedBy`가 없는 `dynamicSegment`만 R64의 `(동적 뷰 이름 후보)`다. 동적 자리의 글자(`{*}`, `${app.name}`)가 아니라 `dynamicSegment` attr로 판단한다. |
+| F-015-R77 | 영향도 리포트는 forward(`callType=forward`인 `CALLS`: `forward:`·`RequestDispatcher`로 다른 엔드포인트의 핸들러로 넘어감)를 **거쳐서만** 닿은 항목을 핸들러 자신의 호출 사슬로 닿은 항목과 구분해야 한다. Markdown: 항목의 이름 앞에 `[forward]`(추론 표시와 함께면 `~ [forward]`), 경로에서 forward로 넘어간 대상 핸들러의 이름 앞에 `[forward]`(콜트리의 `[forward]` 줄과 같은 자리), 넘어간 경로를 알면(엣지의 `path`) 경로 끝에 `(forward: <경로>)`, 머리의 개수 요약과 계층 제목에 직접·forward 경유의 수(`엔드포인트 43개(직접 39, forward 경유 4)`, `## 엔드포인트 (43: 직접 39, forward 경유 4)`), 머리에 안내 한 줄(``- `[forward]`는 forward로 넘어간 다른 엔드포인트의 핸들러를 거쳐서만 닿은 항목이다(n개. …)``). JSON: 항목마다 `viaForward`(boolean)와 `forward`(그 경로에서 항목 쪽부터 처음 만나는 forward. `from`: 넘기는 핸들러의 노드 ID, `to`: 넘어간 핸들러의 노드 ID, `target`: 넘어간 경로 또는 null. forward 경유가 아니면 null). 같은 확실함(R53의 확정·추론)의 경로 가운데 forward를 거치지 않는 것이 하나라도 있으면 붙이지 않고 그 경로를 적는다. 확정 경로와 추론 경로가 함께 있으면 R53대로 확정 경로가 먼저다(확정 경로가 forward 경유뿐이면 `[forward]`이고 `~`는 없다). forward 경유 항목이 없는 계층의 개수 표기와 그런 항목이 없는 리포트의 Markdown은 전과 같다. redirect는 R42대로 따라가지 않으므로 항목 자체가 없다. | 실험(2026-10-11: 공통컴포넌트 `impact COMTNGNRLMBER`의 엔드포인트 43개 가운데 4개가 forward 경유인데 구분이 없었다) |
 
 ## 4. 수용 기준
 
@@ -466,7 +467,21 @@ PRD 목표 1(IDE 수준의 콜트리와 관계 분석)과 시나리오 3(메서�
 - Then 줄은 `~ [jsp] … (동적 뷰 이름: 프로퍼티 값으로 정함)`, `~ [jsp] … (동적 뷰 이름 후보)`, `~ [jsp] … (동적 뷰 이름: 모듈 이름으로 정함)`이고 위 방향도 같은 표시다. `crud/README.md`의 추론 까닭 목록에 `narrowedBy`가 있다.
 - 테스트: `Round7Test.narrowedDynamicViewsNameTheirEvidence`.
 
+### F-015-AC90 (대상: F-015-R77)
+- Given `POST /memo/insert.do`의 핸들러 `insert`가 `forward:/memo/list.do`로 `list`에 넘어가고(`callType=forward`, `path=/memo/list.do`) `list`만 구문(`TB_MEMO` 조회)에 닿는 그래프. `GET /memo/both.do`의 핸들러 `both`는 `list`로 forward도 하고 같은 서비스를 다른 메서드 둘을 거쳐(forward 경로보다 길게) 부르기도 한다. `POST /memo/guess.do`의 핸들러 `guess`는 `list`로 forward하고, 같은 구문에 닿는 다른 메서드를 `ambiguous` 호출로도 부른다. `insert.do`를 요청하는 JSP가 있다
+- Then `TB_MEMO`의 영향도에서 `list.do`·`both.do`는 forward 경유가 아니고(`both.do`의 경로는 더 길어도 forward를 거치지 않는 경로다) `insert.do`·`guess.do`와 그 핸들러, `insert.do`를 요청하는 요청·JSP는 forward 경유다. `guess.do`는 추론 표시가 없다(확정 경로가 forward 경유로 있다). forward 경유 항목의 `forward()`는 넘기는 핸들러 → 넘어간 핸들러와 경로 `/memo/list.do`다
+- Markdown: 머리 요약에 `호출 사슬 7개(직접 5, forward 경유 2)`, `엔드포인트 4개(직접 2, forward 경유 2)`, `화면 2개(forward 경유 2)`, 제목 `## 엔드포인트 (4: 직접 2, forward 경유 2)`, 행 ``| [forward] `POST /memo/insert.do` | endpoint |``, 경로에 ``→ `MemoController#insert()` → `[forward] MemoController#list()` →``와 끝의 `(forward: /memo/list.do)`, 머리의 안내 줄이 있다. 직접 닿는 행에는 표시가 없다. JSON에 `"viaForward": true`와 `"forward": {"from": …, "to": …, "target": "/memo/list.do"}`, 직접 닿는 항목에 `"viaForward": false`·`"forward": null`이 있다
+- forward가 없는 그래프의 Markdown에는 `forward`라는 글자가 없다(전과 같다). redirect로만 이어진 엔드포인트는 영향도에 없다(AC53 그대로)
+- 추론한 forward(대상 매칭이 `ambiguous`)로만 닿은 엔드포인트의 행은 ``| ~ [forward] `…` |``이다
+- 테스트: `ForwardImpactTest`.
+
 ## 5. 가정
+- 6차 수정(2026-10-11, forward 경유의 구분. R77):
+  - 확인한 것: 영향도의 JSON에는 forward 여부를 알 수 있는 필드가 없었다(`inferred`·`inference`·`path`의 노드 ID뿐이고 forward는 R52대로 확정 걸음이라 `inferred`에도 드러나지 않는다). redirect는 R42대로 영향도가 올라가지 않는다(`ImpactAnalysis.climb`이 `Step.redirect()`를 건너뛴다. AC53). 뷰어(F-016)에는 영향도 화면이 없어 맞출 표시가 없다(뷰어의 콜트리는 `[forward]`를 이미 보이고, 테이블 × 엔드포인트 CRUD는 cli와 같은 규칙이다).
+  - 표기는 기존 것에 맞췄다: 이름 앞의 `[forward]`는 `calltree --callers`가 넘어오는 쪽 핸들러에 붙이는 표식과 같은 글자이고 놓는 자리는 추론 표시 `~`(R53)와 같다. 경로(호출 방향으로 적는다)에서는 아래 방향 콜트리처럼 넘어간 대상 핸들러에 붙인다. 표의 열은 늘리지 않았다(컬럼 대상일 때의 "확인 수준" 열은 그대로다).
+  - "forward 경유"는 적힌 경로의 성질이다: 가장 확실한 경로들(R53) 가운데 forward를 거치지 않는 것이 없을 때 붙는다. 직접 닿는 길이 추론뿐이고 확정으로 닿는 길이 forward 경유뿐이면 확정 경로를 적고 `[forward]`를 붙인다(`~`의 뜻 "확정 경로가 하나도 없다"를 바꾸지 않으려는 선택이다). 계층(실행 주체·호출 사슬 등)을 정하는 가장 짧은 걸음 수는 전과 같다.
+  - 한 경로에 forward가 여럿이면 경로에는 전부 표식이 붙고 `forward`(JSON)와 `(forward: <경로>)`는 항목 쪽에서 처음 만나는 것이다. 넘기는 핸들러에서 넘어간 핸들러로 가는 forward 엣지가 여럿이면 `path`가 사전순으로 앞선 것을 적는다.
+  - 테이블 × 엔드포인트 CRUD의 칸에는 forward 경유 표시를 더하지 않았다(범위 밖. README와 `crud/README.md`가 forward 대상의 접근을 넣는다고 밝히고 있다).
 - 5차 수정(2026-10-11, 4차 재검증 후속. R68~R76):
   - 모듈 표식(R68)은 "엔드포인트가 시작일 때"만 붙인다: 핸들러에서 올라온 엔드포인트는 R62로 이미 그 모듈의 요청만 남아 표식이 군더더기다(기존 AC75의 기대값도 그대로다). 선언이 여러 모듈에 있는지는 `ROUTES_TO` 대상 메서드의 파일과 뷰 컨트롤러 `RENDERS`의 위치에서 읽은 모듈 루트가 둘 이상인지로 본다.
   - 미해결 selfSubmit(R70): 그리는 엔드포인트는 링커(F-012-R40)와 같은 방식으로 찾는다(포함하는 쪽을 거슬러 올라가지 않는다). 경로를 알았는데 미해결이면 까닭은 "그 경로에 그 메서드로 맞는 엔드포인트가 없다"이고(모듈 경계 규칙으로 잇지 않은 드문 경우도 같은 문구가 된다), 모르면 "그리는 엔드포인트를 찾지 못함"이다: 지시의 예시 문구("…엔드포인트에 POST 매핑 없음")는 경로를 모르는 경우에 맞지 않아 둘로 나눴다. 진단 `UNRESOLVED_REFERENCE`의 메시지(`diagnostics.md`)는 분석기가 남긴 원문(`POST (selfSubmit)`) 그대로다.
@@ -528,6 +543,8 @@ PRD 목표 1(IDE 수준의 콜트리와 관계 분석)과 시나리오 3(메서�
 - 관련 ADR: 없음
 
 ## 8. design.md에 반영할 것
+design.md 반영됨(6차 수정, 2026-10-11. 직접 고쳤다): R77은 3.4 "소비자가 지키는 규칙"의 "영향도의 forward 경유 표시"에 넣었다.
+
 design.md 반영됨(5차 수정, 2026-10-11. 직접 고쳤다): R68·R69·R72는 3.4 "핸들러가 여러 모듈에 있는 엔드포인트", R70·R71은 "요청의 표시 이름", R73은 "풀린 미해결 `EXECUTES`는 숨길 수 있다", R74·R75는 "화면 요청 통계", R76은 "추론의 근거 표시"에 넣었다.
 
 design.md 반영됨(2026-10-11): 첫 항목(R62~R67)은 F-001 design.md 3.4 "소비자가 지키는 규칙"의 "핸들러가 여러 모듈에 있는 엔드포인트", "풀린 미해결 `EXECUTES`는 숨길 수 있다", "추론의 근거 표시", "요청의 표시 이름", "추론 경로의 표시"에 넣었다. 둘째 항목(읽는 쪽 설명)은 3.5 표에 따로 열을 두지 않고 그 3.4 항목들과 3.5의 각 attr 행(`module`, `viaArgument`, `prefixMatch`, `dynamicSegment`, `dynamicDecorator`, `resolvedBy`, `httpMethods`, `selfSubmit`)에 적었다. 셋째 항목은 3.8에 산출물 표가 없어 3.4 "추론의 근거 표시"에 `crud/README.md`를 적는 것으로 대신했다.
