@@ -23,12 +23,13 @@ import java.util.function.Function;
  *   <li>방언은 파일 이름의 토큰(글자·숫자가 아닌 문자로 나눈 것. 뒤에서부터)이나 폴더 이름에서 읽는다. 토큰 표(표준 이름, 별칭, 끝의 버전 숫자)와
  *       읽는 규칙은 sql 모듈의 {@code DialectTokens}(방언별 DDL 고르기, F-007-R18)와 <b>같은 목록·같은 규칙</b>이어야 한다. 두 모듈은 코드를
  *       공유하지 않으므로 양쪽 테스트({@code DialectTokenTableTest}, sql의 {@code DialectTokensTest})에 같은 표를 둔다. 여기를 고치면 sql 쪽도 고친다.</li>
- *   <li>선호 순서(F-009-R24. sql 모듈의 DDL 선택 F-007-R23과 같되 맨 앞 둘의 순서만 다르다 — DDL은 {@code --dialect}가 먼저):
- *       ① {@code mybatis.dialectVariant}로 준 방언, {@code --dialect}의 방언 ② 프로젝트 설정({@link ProjectDialect})이 대상 방언(oracle, db2)을
- *       가리키면 그것 ③ Oracle ④ DB2 ⑤ Oracle 계열(Tibero, Altibase. 설정이 이 가운데 하나를 가리키면 그것이 먼저)
- *       ⑥ 프로젝트 설정이 가리키는 대상 외 방언 ⑦ 그 밖의 방언: 매퍼 파일과 SQL 스크립트 파일 양쪽의 경로에 다 나오는 방언이 이름의
- *       사전순으로 먼저, 나머지가 사전순으로 그 뒤({@link #otherOrder}, F-009-R26. sql 모듈도 같은 파일 목록에서 같은 순서를 얻는다:
- *       F-007-R28). 설정이 대상 외 방언(전자정부 템플릿의 {@code Globals.DbType=mysql})이어도 대상 방언의 파일이 있으면 그쪽을 고른다.</li>
+ *   <li>선호 순서(F-019-R4. F-009-R24의 순위에 PostgreSQL을 넣은 것이다. sql 모듈의 DDL 선택과 같되 맨 앞 둘의 순서만 다르다 — DDL은
+ *       {@code --dialect}가 먼저): ① {@code mybatis.dialectVariant}로 준 방언, {@code --dialect}의 방언 ② 프로젝트 설정({@link ProjectDialect})이
+ *       대상 방언(oracle, db2, postgres)을 가리키면 그것 ③ Oracle ④ DB2 ⑤ PostgreSQL ⑥ Oracle 계열(Tibero, Altibase. 설정이 이 가운데
+ *       하나를 가리키면 그것이 먼저) ⑦ 프로젝트 설정이 가리키는 대상 외 방언 ⑧ 그 밖의 방언: 매퍼 파일과 SQL 스크립트 파일 양쪽의 경로에 다
+ *       나오는 방언이 이름의 사전순으로 먼저, 나머지가 사전순으로 그 뒤({@link #otherOrder}, F-009-R26. sql 모듈도 같은 파일 목록에서 같은
+ *       순서를 얻는다: F-007-R28). 설정이 대상 외 방언(전자정부 템플릿의 {@code Globals.DbType=mysql})이어도 대상 방언의 파일이 있으면
+ *       그쪽을 고른다. PostgreSQL을 Oracle·DB2 뒤에 둔 것은 Oracle·DB2 파일이 있는 프로젝트의 기존 선택을 바꾸지 않기 위해서다.</li>
  *   <li>한 namespace가 서로 다른 방언의 파일 둘 이상에 정의돼 있으면 "방언 변형 namespace"다.</li>
  *   <li>그 안에서 id(구문, 조각, resultMap)마다, 그 id를 정의한 방언 파일 중 선호 순서가 가장 앞인 방언의 정의만 남긴다.
  *       방언을 읽지 못한 파일의 정의는 건드리지 않는다.</li>
@@ -40,14 +41,14 @@ final class DialectVariants {
     static final String OPTION = "mybatis.dialectVariant";
 
     /**
-     * 방언 표준 이름. 앞의 넷은 기본 선호 순서다: Oracle, DB2, Oracle 계열(Tibero, Altibase). 그 뒤(그 밖의 방언)는 이름의 목록일 뿐이고
-     * 고르는 순서는 {@link #otherOrder}가 정한다. sql 모듈의 {@code DialectTokens.NAMES}와 같다.
+     * 방언 표준 이름. 앞의 다섯은 기본 선호 순서다(F-019-R4): Oracle, DB2, PostgreSQL, Oracle 계열(Tibero, Altibase). 그 뒤(그 밖의 방언)는
+     * 이름의 목록일 뿐이고 고르는 순서는 {@link #otherOrder}가 정한다. sql 모듈의 {@code DialectTokens.NAMES}와 같다.
      */
-    static final List<String> NAMES = List.of("oracle", "db2", "tibero", "altibase", "postgres", "mysql",
+    static final List<String> NAMES = List.of("oracle", "db2", "postgres", "tibero", "altibase", "mysql",
             "mariadb", "mssql", "cubrid", "goldilocks", "hsql", "h2", "derby", "sqlite", "sybase", "informix");
 
-    /** 이 도구의 대상 방언과 그 계열: Oracle, DB2, Tibero, Altibase. */
-    static final List<String> PREFERRED = NAMES.subList(0, 4);
+    /** 이 도구의 대상 방언과 그 계열: Oracle, DB2, PostgreSQL, Tibero, Altibase. 이 가운데 하나를 골랐으면 요약 진단이 WARN이 아니다. */
+    static final List<String> PREFERRED = NAMES.subList(0, 5);
 
     private static final Map<String, String> ALIASES = Map.ofEntries(
             Map.entry("ora", "oracle"),
@@ -157,8 +158,8 @@ final class DialectVariants {
     private final ProjectDialect.Setting setting;
     /** 서로 다른 방언을 가리켜 쓰지 않은 프로젝트 설정들. */
     private final List<ProjectDialect.Setting> conflicting;
-    /** 이 도구의 대상 방언. */
-    private static final List<String> TARGETS = List.of("oracle", "db2");
+    /** 이 도구의 대상 방언(F-019-R4). 순서가 기본 선호 순서다. */
+    static final List<String> TARGETS = List.of("oracle", "db2", "postgres");
 
     /**
      * @param forced 옵션으로 강제한 방언(표준 이름). 없으면 null
@@ -185,7 +186,7 @@ final class DialectVariants {
             preferred.add(forced);
             requests.add(new Request(forced, OPTION));
         }
-        String optionDialect = dialect == Dialect.ORACLE ? "oracle" : dialect == Dialect.DB2 ? "db2" : null;
+        String optionDialect = requestOf(dialect);
         if (optionDialect != null && !preferred.contains(optionDialect)) {
             preferred.add(optionDialect);
             requests.add(new Request(optionDialect, "--dialect"));
@@ -232,6 +233,19 @@ final class DialectVariants {
                 }
             }
         });
+    }
+
+    /** {@code --dialect} 값이 요청하는 방언(표준 이름). 방언을 정하지 않았으면({@code auto}, null) null. */
+    static String requestOf(Dialect dialect) {
+        if (dialect == null) {
+            return null;
+        }
+        return switch (dialect) {
+            case ORACLE -> "oracle";
+            case DB2 -> "db2";
+            case POSTGRES -> "postgres";
+            default -> null;
+        };
     }
 
     private int rank(String dialect) {

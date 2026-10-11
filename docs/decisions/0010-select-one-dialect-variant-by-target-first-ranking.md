@@ -27,15 +27,18 @@ Chosen option: "한 벌만 쓰고 대상 방언을 먼저 고르는 순위", bec
 
 방언의 순위는 프로젝트에 하나다.
 
-1. 명시한 값: `--dialect oracle|db2`, `--opt mybatis.dialectVariant=<방언>`. sql은 `--dialect`가 먼저고 mybatis는 `mybatis.dialectVariant`가 먼저다
-2. 프로젝트 설정(`Globals.DbType`, `jdbc.type`, JDBC URL, 드라이버 클래스 등)이 대상 방언(oracle, db2)을 가리키면 그 방언
+(2026-10-11 고침, 아직 제안 상태: PostgreSQL이 대상 방언이 되면서(F-019) 순위에 PostgreSQL이 들어갔다. 아래 목록은 그 뒤의 순위이고, 문맥·대안의 "대상 방언은 Oracle과 DB2"는 처음 쓴 때의 서술이다.)
+
+1. 명시한 값: `--dialect oracle|db2|postgres`, `--opt mybatis.dialectVariant=<방언>`. sql은 `--dialect`가 먼저고 mybatis는 `mybatis.dialectVariant`가 먼저다
+2. 프로젝트 설정(`Globals.DbType`, `jdbc.type`, JDBC URL, 드라이버 클래스 등)이 대상 방언(oracle, db2, postgres)을 가리키면 그 방언
 3. Oracle
 4. DB2
-5. Oracle 계열(Tibero, Altibase). 프로젝트 설정이 이 가운데 하나를 가리키면 그것이 먼저다
-6. 프로젝트 설정이 가리키는 대상 외 방언
-7. 그 밖의 방언: 매퍼 파일과 SQL 스크립트 파일 양쪽의 경로에 다 나오는 방언이 이름의 사전순으로 먼저, 나머지가 사전순으로 그 뒤(F-007-R28, F-009-R26. 처음에는 sql이 경로순으로 처음 만난 방언, mybatis가 방언 이름 표의 순서여서 대상 방언 파일이 없는 프로젝트에서 서로 다른 방언을 골랐다)
+5. PostgreSQL (F-019-R4. Oracle·DB2 파일이 있는 프로젝트의 결과를 바꾸지 않도록 그 뒤에 둔다)
+6. Oracle 계열(Tibero, Altibase). 프로젝트 설정이 이 가운데 하나를 가리키면 그것이 먼저다
+7. 프로젝트 설정이 가리키는 대상 외 방언
+8. 그 밖의 방언: 매퍼 파일과 SQL 스크립트 파일 양쪽의 경로에 다 나오는 방언이 이름의 사전순으로 먼저, 나머지가 사전순으로 그 뒤(F-007-R28, F-009-R26. 처음에는 sql이 경로순으로 처음 만난 방언, mybatis가 방언 이름 표의 순서여서 대상 방언 파일이 없는 프로젝트에서 서로 다른 방언을 골랐다)
 
-매퍼는 id마다, DDL은 테이블마다 그 정의가 있는 방언 파일 가운데 순위가 가장 앞선 것을 쓴다. 순위가 프로젝트에 하나이므로, 가장 앞선 방언의 파일에 정의가 없는 것만 다음 순위에서 가져온다(매퍼 구문에는 `borrowedFrom`을 남긴다). `--dialect`는 `oracle`·`db2`·`auto`만 받고, 대상 외 방언으로 분석하려면 `--opt mybatis.dialectVariant=<방언>`을 준다(mybatis와 sql이 둘 다 읽는다). `mybatis.dialectVariant=all`은 매퍼를 전처럼 전부 합친다. 방언은 파일 이름의 토큰과 폴더 이름에서 읽고, sql은 경로에 이름이 없으면 내용 특징으로 읽는다. 규칙의 전문은 계약 3.5 공통 규칙 "방언 변형 선택"에 있다.
+매퍼는 id마다, DDL은 테이블마다 그 정의가 있는 방언 파일 가운데 순위가 가장 앞선 것을 쓴다. 순위가 프로젝트에 하나이므로, 가장 앞선 방언의 파일에 정의가 없는 것만 다음 순위에서 가져온다(매퍼 구문에는 `borrowedFrom`을 남긴다). `--dialect`는 `oracle`·`db2`·`postgres`·`auto`만 받고, 대상 외 방언으로 분석하려면 `--opt mybatis.dialectVariant=<방언>`을 준다(mybatis와 sql이 둘 다 읽는다). `mybatis.dialectVariant=all`은 매퍼를 전처럼 전부 합친다. 방언은 파일 이름의 토큰과 폴더 이름에서 읽고, sql은 경로에 이름이 없으면 내용 특징으로 읽는다. 규칙의 전문은 계약 3.5 공통 규칙 "방언 변형 선택"에 있다.
 
 ### Consequences
 - Good, because 옵션 없이 돌려도 Oracle·DB2 파일이 있는 프로젝트는 그 방언의 구문과 테이블 정의만 그래프에 들어간다. 전자정부 simple backend 템플릿은 6벌 가운데 oracle 한 벌이 뽑힌다(루트 README의 힌트 예시).

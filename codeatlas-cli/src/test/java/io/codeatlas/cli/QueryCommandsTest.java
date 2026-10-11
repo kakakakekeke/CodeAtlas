@@ -909,7 +909,7 @@ class QueryCommandsTest {
     }
 
     @Test
-    @DisplayName("F-001-AC74 impact는 데이터 적재 구문을 기본으로 빼고 뺀 수를 알리며 --include-data-load를 주면 넣는다. analyze 도움말은 대상 외 방언을 --opt mybatis.dialectVariant로 안내한다")
+    @DisplayName("F-001-AC74 F-019-AC32 impact는 데이터 적재 구문을 기본으로 빼고 뺀 수를 알리며 --include-data-load를 주면 넣는다. analyze 도움말은 --dialect oracle|db2|postgres|auto를 적고 대상 외 방언을 --opt mybatis.dialectVariant로 안내한다")
     void impactIncludeDataLoad() throws IOException {
         String screens = ShopGraphFixture.save(ShopGraphFixture.screens(), work.resolve("screens")).toString();
         GraphModel g = GraphJson.read(Path.of(screens));
@@ -929,9 +929,9 @@ class QueryCommandsTest {
         assertOk("--help");
         assertThat(out()).contains("codeatlas impact <테이블 | 테이블.컬럼 | 노드 ID> [--depth <n>] [--include-data-load]");
 
-        // --dialect는 oracle, db2, auto만 받는다: 그 밖의 방언은 --opt mybatis.dialectVariant로 안내한다
+        // --dialect는 oracle, db2, postgres, auto만 받는다: 그 밖의 방언은 --opt mybatis.dialectVariant로 안내한다
         assertOk("help", "analyze");
-        assertThat(out()).contains("--dialect oracle|db2|auto").contains("--opt mybatis.dialectVariant=<방언>").contains("프로젝트 설정");
+        assertThat(out()).contains("--dialect oracle|db2|postgres|auto").contains("--opt mybatis.dialectVariant=<방언>").contains("프로젝트 설정");
         assertThat(run("analyze", work.toString(), "--dialect", "mysql")).isEqualTo(2);
         assertThat(err()).contains("mysql").contains("mybatis.dialectVariant");
     }

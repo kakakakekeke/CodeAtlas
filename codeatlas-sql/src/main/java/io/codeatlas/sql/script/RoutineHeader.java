@@ -2,7 +2,9 @@ package io.codeatlas.sql.script;
 
 import io.codeatlas.sql.ast.Pos;
 import io.codeatlas.sql.ast.QName;
+import io.codeatlas.sql.lexer.Syntax;
 import io.codeatlas.sql.lexer.Token;
+import io.codeatlas.sql.lexer.TokenType;
 import io.codeatlas.sql.parser.TokenCursor;
 import java.util.ArrayList;
 import java.util.List;
@@ -16,10 +18,38 @@ import java.util.List;
  * @param triggerTable 트리거 대상 테이블(트리거가 아니면 null)
  * @param triggerEvent 트리거 시점·사건(예: {@code AFTER UPDATE OF ORDER_STATUS})
  * @param members 패키지 명세·본문 안의 프로시저·함수(중첩 서브프로그램 제외)
- * @param bodyStart 본문(선언부 포함)이 시작하는 토큰 인덱스: IS/AS 다음 또는 DECLARE/BEGIN. 못 찾으면 -1
+ * @param bodyStart 본문(선언부 포함)이 시작하는 토큰 인덱스: IS/AS 다음 또는 DECLARE/BEGIN. 못 찾으면 -1.
+ *                  PostgreSQL 루틴이면 본문 문자열 토큰(달러 인용·작은따옴표)이나 SQL 표준 본문({@code RETURN 식}, {@code BEGIN ATOMIC})의 첫 토큰이다
+ * @param postgres PostgreSQL 읽기 방식으로 읽은 프로시저·함수·트리거의 헤더에만 있는 것(F-019-R24·R29). 그 밖에는 null
  */
 public record RoutineHeader(Kind kind, QName name, List<String> parameters, QName triggerTable, String triggerEvent,
-        List<Member> members, int bodyStart) {
+        List<Member> members, int bodyStart, Postgres postgres) {
+
+    /**
+     * PostgreSQL 루틴 헤더에서 읽은 것(F-019-R24·R29).
+     *
+     * @param language {@code LANGUAGE x}의 x(대문자: {@code PLPGSQL}, {@code SQL}, {@code C} ..). 적지 않았으면 SQL 표준 본문일 때 {@code SQL}, 아니면 null
+     * @param bodyToken 본문 문자열 토큰({@code AS $$..$$}, {@code AS '..'})의 인덱스. 문자열 본문이 없으면 -1
+     * @param returnType {@code RETURNS} 뒤의 타입 표기({@code INTEGER}, {@code SETOF ORDERS}, {@code TABLE(ID BIGINT, NAME TEXT)}). 없으면 null
+     * @param variables 본문에서 변수로 보이는 이름: 이름 있는 매개변수(IN·OUT·INOUT·VARIADIC 모두)와 {@code RETURNS TABLE}의 컬럼
+     * @param triggerFunction 트리거가 실행하는 함수({@code EXECUTE FUNCTION|PROCEDURE f(..)}). 트리거가 아니거나 못 찾았으면 null
+     */
+    public record Postgres(String language, int bodyToken, String returnType, List<String> variables, QName triggerFunction) {
+        public Postgres {
+            variables = List.copyOf(variables);
+        }
+
+        /** 트리거 함수인가({@code RETURNS trigger}): 본문에서 {@code NEW}·{@code OLD}·{@code TG_*}가 변수다. */
+        public boolean returnsTrigger() {
+            return returnType != null && (returnType.equals("TRIGGER") || returnType.equals("EVENT_TRIGGER")
+                    || returnType.endsWith(".TRIGGER") || returnType.endsWith(".EVENT_TRIGGER"));
+        }
+    }
+
+    /** PostgreSQL 정보가 없는 헤더. */
+    public RoutineHeader(Kind kind, QName name, List<String> parameters, QName triggerTable, String triggerEvent, List<Member> members, int bodyStart) {
+        this(kind, name, parameters, triggerTable, triggerEvent, members, bodyStart, null);
+    }
 
     public enum Kind {
         PROCEDURE, FUNCTION, TRIGGER, PACKAGE, PACKAGE_BODY, TYPE_BODY, ANONYMOUS_BLOCK, UNKNOWN;
@@ -51,6 +81,20 @@ public record RoutineHeader(Kind kind, QName name, List<String> parameters, QNam
     public RoutineHeader {
         parameters = List.copyOf(parameters);
         members = List.copyOf(members);
+    }
+
+    /**
+     * 루틴 단위의 헤더를 그 단위가 든 텍스트의 읽기 방식으로 읽는다. PostgreSQL이면 {@code CREATE FUNCTION|PROCEDURE|TRIGGER}를 PostgreSQL 꼴로 읽고
+     * ({@link #postgres()}가 채워진다), 그 밖에는 {@link #parse(List)}와 같다. 어떤 입력에도 예외를 던지지 않는다.
+     */
+    public static RoutineHeader parse(List<Token> tokens, Syntax syntax) {
+        if (syntax == Syntax.POSTGRES) {
+            RoutineHeader header = PostgresHeader.parse(tokens);
+            if (header != null) {
+                return header;
+            }
+        }
+        return parse(tokens);
     }
 
     /** 루틴 단위({@link ScriptUnit#tokens()})의 헤더를 읽는다. 어떤 입력에도 예외를 던지지 않는다. */
@@ -263,7 +307,7 @@ public record RoutineHeader(Kind kind, QName name, List<String> parameters, QNam
         return new Member(kind, io.codeatlas.core.model.DbName.normalize(nameToken.text()), parameters, start, end, hasBody, Pos.of(keyword));
     }
 
-    private static QName qualifiedName(List<Token> tokens, int[] cursor) {
+    static QName qualifiedName(List<Token> tokens, int[] cursor) {
         int i = cursor[0];
         Token first = tokens.get(i);
         Token last = first;
@@ -280,7 +324,7 @@ public record RoutineHeader(Kind kind, QName name, List<String> parameters, QNam
     }
 
     /** open 위치의 여는 괄호와 짝인 닫는 괄호의 인덱스. 없으면 끝. */
-    private static int matching(List<Token> tokens, int open) {
+    static int matching(List<Token> tokens, int open) {
         int depth = 0;
         for (int k = open; k < tokens.size(); k++) {
             Token t = tokens.get(k);

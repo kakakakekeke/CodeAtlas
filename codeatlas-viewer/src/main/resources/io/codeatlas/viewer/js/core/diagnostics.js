@@ -438,7 +438,7 @@
         index.in(c.id).forEach(function (e) { if (e.kind === 'READS' || e.kind === 'WRITES') add(t.id, e); });
       });
     });
-    // DB가 제공하는 시스템 카탈로그(systemCatalog=true: Oracle 데이터 사전, DB2 카탈로그)는 뒤에 따로 묶고 의심으로 치지 않는다(report.md와 같다).
+    // DB가 제공하는 시스템 카탈로그(systemCatalog=true: Oracle 데이터 사전, DB2 카탈로그, PostgreSQL pg_catalog·information_schema)는 뒤에 따로 묶고 의심으로 치지 않는다(report.md와 같다).
     var catalog = function (t) { return t.attrs.systemCatalog === true; };
     return undeclared.slice().sort(function (a, b) { return (catalog(a) ? 1 : 0) - (catalog(b) ? 1 : 0) || G.compareText(a.id, b.id); }).map(function (t) {
       var statements = Array.from(statementsByTable.get(t.id) || []).sort(G.compareText);

@@ -11,17 +11,20 @@ import org.junit.jupiter.params.provider.CsvSource;
 /**
  * 경로에서 DB 방언을 읽는 토큰 표(F-009-R20). sql 모듈의 {@code DialectTokens}(방언별 DDL 고르기, F-007-R18)와 같은 목록·같은 규칙이어야 한다:
  * 두 모듈은 코드를 공유하지 않으므로 sql 쪽 {@code DialectTokensTest}(F-009-AC38)에 <b>같은 표</b>를 둔다.
- * 표를 고칠 때는 두 테스트를 함께 고친다.
+ * 표를 고칠 때는 두 테스트를 함께 고친다. PostgreSQL이 대상 방언이 되면서 순서가 바뀌었다(F-019-R4, F-019-AC30).
  */
 class DialectTokenTableTest {
 
     @Test
-    @DisplayName("F-009-AC38 방언 표준 이름과 기본 선호 순서: oracle, db2, tibero, altibase, 그다음 postgres … informix (sql과 같은 목록)")
+    @DisplayName("F-009-AC38 F-019-AC4 F-019-AC30 방언 표준 이름과 기본 선호 순서: oracle, db2, postgres, tibero, altibase, 그다음 mysql … informix. "
+            + "대상 방언은 oracle, db2, postgres다(sql과 같은 목록)")
     void namesAndOrder() {
-        assertThat(DialectVariants.NAMES).containsExactly("oracle", "db2", "tibero", "altibase", "postgres", "mysql", "mariadb", "mssql",
+        assertThat(DialectVariants.NAMES).containsExactly("oracle", "db2", "postgres", "tibero", "altibase", "mysql", "mariadb", "mssql",
                 "cubrid", "goldilocks", "hsql", "h2", "derby", "sqlite", "sybase", "informix");
-        assertThat(DialectVariants.PREFERRED).containsExactly("oracle", "db2", "tibero", "altibase");
-        assertThat(DialectVariants.NAMES.subList(0, 4)).isEqualTo(List.copyOf(DialectVariants.PREFERRED));
+        assertThat(DialectVariants.PREFERRED).containsExactly("oracle", "db2", "postgres", "tibero", "altibase");
+        assertThat(DialectVariants.NAMES.subList(0, 5)).isEqualTo(List.copyOf(DialectVariants.PREFERRED));
+        assertThat(DialectVariants.TARGETS).containsExactly("oracle", "db2", "postgres");
+        assertThat(DialectVariants.PREFERRED).startsWith(DialectVariants.TARGETS.toArray(String[]::new));
     }
 
     // 아래 두 표는 sql 모듈 DialectTokensTest와 글자 그대로 같다.
@@ -73,17 +76,19 @@ class DialectTokenTableTest {
     // 아래 표는 sql 모듈 DialectTokensTest와 글자 그대로 같다(매퍼 경로들 ; SQL 스크립트 경로들 ; 그 밖의 방언의 순서. 경로는 |로 나눈다).
 
     @ParameterizedTest(name = "[{index}] 매퍼 {0} / 스크립트 {1}")
-    @DisplayName("F-009-AC47 그 밖의 방언(대상 방언과 그 계열이 아닌 것)의 순서: 매퍼와 SQL 스크립트 양쪽의 경로에 다 있는 방언이 이름의 사전순으로 먼저, 나머지가 사전순으로 그 뒤(sql과 같은 표)")
+    @DisplayName("F-009-AC47 F-019-AC4 F-019-AC30 그 밖의 방언(대상 방언과 그 계열이 아닌 것)의 순서: 매퍼와 SQL 스크립트 양쪽의 경로에 다 있는 방언이 이름의 사전순으로 먼저, 나머지가 사전순으로 그 뒤. postgres는 대상 방언이라 이 목록에 없다(sql과 같은 표)")
     @CsvSource(delimiter = ';', nullValues = "-", value = {
-            "- ; - ; cubrid derby goldilocks h2 hsql informix mariadb mssql mysql postgres sqlite sybase",
+            "- ; - ; cubrid derby goldilocks h2 hsql informix mariadb mssql mysql sqlite sybase",
             "mapper/A_SQL_postgres.xml|mapper/A_SQL_mysql.xml ; db/postgres/ddl.sql|db/mysql/ddl.sql"
-                    + " ; mysql postgres cubrid derby goldilocks h2 hsql informix mariadb mssql sqlite sybase",
+                    + " ; mysql cubrid derby goldilocks h2 hsql informix mariadb mssql sqlite sybase",
             "mapper/A_SQL_cubrid.xml|mapper/A_SQL_mysql.xml|mapper/A_SQL_postgres.xml ; db/a.mysql55.create.sql|db/postgresql/a.sql|db/hsqldb/a.sql"
-                    + " ; mysql postgres cubrid derby goldilocks h2 hsql informix mariadb mssql sqlite sybase",
+                    + " ; mysql cubrid derby goldilocks h2 hsql informix mariadb mssql sqlite sybase",
             "mapper/A_SQL_postgres.xml|mapper/A_SQL_mysql.xml ; db/schema.sql"
-                    + " ; cubrid derby goldilocks h2 hsql informix mariadb mssql mysql postgres sqlite sybase",
+                    + " ; cubrid derby goldilocks h2 hsql informix mariadb mssql mysql sqlite sybase",
             "mapper/A_SQL_oracle.xml|mapper/sqlite/A.xml|mapper/tibero/A.xml ; db/oracle/a.sql|db/tibero/a.sql|db/a_sqlite.sql|db/a_sybase.sql"
-                    + " ; sqlite cubrid derby goldilocks h2 hsql informix mariadb mssql mysql postgres sybase"})
+                    + " ; sqlite cubrid derby goldilocks h2 hsql informix mariadb mssql mysql sybase",
+            "mapper/A_SQL_mysql.xml|mapper/A_SQL_cubrid.xml ; db/mysql/ddl.sql|db/cubrid/ddl.sql"
+                    + " ; cubrid mysql derby goldilocks h2 hsql informix mariadb mssql sqlite sybase"})
     void otherDialectOrder(String mapperPaths, String scriptPaths, String expected) {
         List<String> mappers = mapperPaths == null ? List.of() : List.of(mapperPaths.split("\\|"));
         List<String> scripts = scriptPaths == null ? List.of() : List.of(scriptPaths.split("\\|"));

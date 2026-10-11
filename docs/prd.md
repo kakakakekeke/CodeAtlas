@@ -23,7 +23,7 @@ Spring과 MyBatis로 만든 웹·배치 Java 시스템은 하나의 처리 흐�
 - 분석 대상 코드를 고치거나 리팩터링하지 않는다. (제안)
 - 코드 품질 검사, 취약점 탐지는 하지 않는다. (제안)
 - 정적 분석으로 알 수 없는 관계를 추측으로 채우지 않는다. 알 수 없는 지점은 "미해결"로 남긴다. (제안)
-- Oracle, DB2 외의 DBMS와 Spring, MyBatis 외의 프레임워크(JPA 등)는 다루지 않는다. (제안)
+- Oracle, DB2, PostgreSQL 외의 DBMS와 Spring, MyBatis 외의 프레임워크(JPA 등)는 다루지 않는다. (제안) (2026-10-11 변경: 사용자 요청으로 PostgreSQL을 대상에 넣었다. F-019)
 
 ## 4. 사용자와 시나리오
 주 사용자: [확인 필요] 본인 한 명인지, 다른 개발자에게도 배포하는지.
@@ -38,12 +38,13 @@ Spring과 MyBatis로 만든 웹·배치 Java 시스템은 하나의 처리 흐�
 - DDL에 있는 테이블과 SQL에서 참조한 테이블이 ERD에 빠짐없이 나온다.
 - 분석하지 못한 파일과 해석하지 못한 참조가 전부 리포트에 나온다. 조용히 누락되는 것이 없다.
 - 검증에는 정답 관계 목록을 함께 둔 직접 만든 샘플 프로젝트(`samples/`)를 쓴다. 공개 오픈소스로 하는 검증은 아직 하지 않았다. (2026-10-11 변경: 공개 프로젝트 8개로 검증을 시작했다. `docs/architecture.md` 11절 참조)
+  - PostgreSQL은 따로 만든 `samples/sample-pg`로 같은 방식의 정답 대조를 한다(F-019).
   - 검증 방법: 루트에서 `mvn -q -pl codeatlas-cli verify`를 돌리면 `samples/sample-shop`을 분석해 정답(`expected/`)과 대조하고, 있어야 할 관계의 통과율 100%와 있으면 안 되는 관계(함정) 위반 0을 단언한다. `-Dsample.verify=report`를 붙이면 단언 없이 `codeatlas-cli/target/sample-shop-report.md`에 종류별 통과율과 실패 목록을 쓴다.
 
 ## 6. 제약
 - 정적 분석만 쓴다.
 - 분석 대상: Spring 기반 웹 프로그램과 Spring Batch 기반 배치 프로그램, MyBatis.
-- DB: Oracle, DB2. SQL과 프로시저 모두 대상이다.
+- DB: Oracle, DB2, PostgreSQL. SQL과 프로시저 모두 대상이다. (2026-10-11 변경: PostgreSQL 추가. F-019)
 - 화면: JSP와 JavaScript(React 등) 양쪽을 다루는 범용 도구여야 한다.
 - DDL은 파일로 받는다.
 - 테스트용 실제 프로젝트가 없다.
@@ -59,6 +60,7 @@ Spring과 MyBatis로 만든 웹·배치 Java 시스템은 하나의 처리 흐�
 - 가정: 대상 소스는 Java 21 문법까지. 의존 jar는 옵션으로 받거나 프로젝트 안에서 찾고, 없으면 해석 못한 호출을 미해결로 남긴다.
 - 가정: 소스 인코딩은 UTF-8을 먼저 시도하고 실패하면 MS949로 읽는다.
 - 가정: DB2는 LUW 문법을 기준으로 한다.
+- 가정: PostgreSQL은 현재 지원되는 버전대(13 이상)의 문법과 PL/pgSQL, pg_dump 평문 출력을 기준으로 한다. 지원 수준(대상 방언), 방언 순위에서의 자리(Oracle → DB2 → PostgreSQL), 이름 표기(대문자 유지)는 F-019 spec 5절의 가정이다. (F-019)
 - 가정: TypeScript도 대상에 넣는다.
 - 가정: iBatis 2.x(sqlMap)는 범위에서 뺀다.
 - [확인 필요] 대상 프로젝트의 규모(파일 수). 성능 목표를 정하지 못했다.

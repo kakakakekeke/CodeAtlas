@@ -17,7 +17,7 @@ class RoutineParserTest {
 
     private static RoutineParser parser(String text, boolean sqlPl) {
         List<Token> tokens = Lexer.tokenize(text);
-        return new RoutineParser(tokens.subList(0, tokens.size() - 1), sqlPl);
+        return new RoutineParser(tokens.subList(0, tokens.size() - 1), sqlPl ? RoutineLanguage.SQLPL : RoutineLanguage.PLSQL);
     }
 
     private static Routine.Block plsql(String text) {

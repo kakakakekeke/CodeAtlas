@@ -100,9 +100,10 @@ class LoadDialectByTableTest {
     }
 
     @Test
-    @DisplayName("F-007-AC30 테이블마다 고른다: 고른 방언의 파일에 적재가 있는 테이블은 그 묶음만, 없는 테이블은 순위가 가장 앞선 다른 방언의 묶음만 남고, 초기화 구문도 남은 묶음의 것만 노드가 된다")
+    @DisplayName("F-007-AC30 F-019-AC4 테이블마다 고른다: 고른 방언의 파일에 적재가 있는 테이블은 그 묶음만, 없는 테이블은 순위가 가장 앞선 다른 방언(oracle 다음은 mysql이 아니라 postgres)의 묶음만 남고, 초기화 구문도 남은 묶음의 것만 노드가 된다")
     void perTableSelection() {
-        // jeesite의 배치: 업무 테이블의 초기 데이터는 mysql 파일에만, 일부 테이블은 oracle 파일에도 있다
+        // jeesite의 배치: 업무 테이블의 초기 데이터는 mysql·postgres 파일에만, 일부 테이블은 oracle 파일에도 있다.
+        // oracle 파일에 적재가 없는 테이블은 다음 순위인 postgres 파일의 것을 쓴다(F-019-R4. 전에는 사전순으로 앞선 mysql 파일의 것이었다)
         String ddl = "CREATE TABLE SYS_A (ID VARCHAR(10), NM VARCHAR(60));\nCREATE TABLE CMS_A (ID VARCHAR(10), NM VARCHAR(60));\n"
                 + "CREATE TABLE OA_A (ID VARCHAR(10), NM VARCHAR(60));\n";
         try (TestProject project = TestProject.create()
@@ -118,26 +119,26 @@ class LoadDialectByTableTest {
             assertThat(statements(g)).containsExactly(
                     "sql:stmt:db/cms/data_oracle.sql:1", "sql:stmt:db/cms/data_oracle.sql:2", // oracle: 초기화 구문과 CMS_A
                     "sql:stmt:db/common_data.sql:1", // 방언을 읽지 못한 파일: 고르는 대상이 아니다
-                    "sql:stmt:db/jeesite_mysql.sql:15", // SYS_A 묶음
-                    "sql:stmt:db/jeesite_mysql.sql:2", // SYS_A 초기화 구문(CMS_A의 초기화 구문 1행은 묶음과 함께 빠진다)
-                    "sql:stmt:db/jeesite_mysql.sql:26"); // OA_A 묶음
+                    "sql:stmt:db/jeesite_postgres.sql:1", // SYS_A 초기화 구문
+                    "sql:stmt:db/jeesite_postgres.sql:13", // OA_A 묶음
+                    "sql:stmt:db/jeesite_postgres.sql:2"); // SYS_A 묶음. mysql 파일의 묶음과 초기화 구문은 모두 빠진다
             assertThat(node(g, "sql:stmt:db/cms/data_oracle.sql:2").attr("borrowedFrom")).isNull();
             assertThat(node(g, "sql:stmt:db/common_data.sql:1").attr("borrowedFrom")).isNull();
-            for (String id : List.of("sql:stmt:db/jeesite_mysql.sql:15", "sql:stmt:db/jeesite_mysql.sql:2", "sql:stmt:db/jeesite_mysql.sql:26")) {
+            for (String id : List.of("sql:stmt:db/jeesite_postgres.sql:1", "sql:stmt:db/jeesite_postgres.sql:13", "sql:stmt:db/jeesite_postgres.sql:2")) {
                 assertThat(node(g, id).attr("dataLoad")).as(id).isEqualTo(true);
-                assertThat(node(g, id).attrString("borrowedFrom")).as(id).isEqualTo("mysql");
+                assertThat(node(g, id).attrString("borrowedFrom")).as(id).isEqualTo("postgres");
             }
-            assertThat(node(g, "sql:stmt:db/jeesite_mysql.sql:2").attr("rowCount")).isEqualTo(0);
+            assertThat(node(g, "sql:stmt:db/jeesite_postgres.sql:1").attr("rowCount")).isEqualTo(0);
             assertThat(g.incoming("db:table:CMS_A", EdgeKind.WRITES)).extracting(e -> e.from())
                     .containsExactlyInAnyOrder("sql:stmt:db/cms/data_oracle.sql:1", "sql:stmt:db/cms/data_oracle.sql:2", "sql:stmt:db/common_data.sql:1");
-            // 만들지 않은 묶음: mysql의 CMS_A, postgres의 SYS_A·OA_A. 묶음을 모두 버린 파일은 postgres 하나
+            // 만들지 않은 묶음: mysql의 CMS_A·SYS_A·OA_A. 묶음을 모두 버린 파일은 mysql 하나
             assertThat(summary(g).message()).contains("다른 방언 파일의 묶음 3개를 만들지 않음")
-                    .contains("oracle 파일에 적재가 없는 테이블의 묶음 2개는 다른 방언 파일의 것을 씀(mysql 2개)");
+                    .contains("oracle 파일에 적재가 없는 테이블의 묶음 2개는 다른 방언 파일의 것을 씀(postgres 2개)");
             List<Diagnostic> grouped = diagnostics(g, SqlDiagnosticCodes.DATA_LOAD_GROUPED);
             assertThat(grouped).extracting(d -> d.location().file())
-                    .containsExactlyInAnyOrder("db/cms/data_oracle.sql", "db/jeesite_mysql.sql", "db/common_data.sql");
-            Diagnostic mysql = grouped.stream().filter(d -> d.location().file().equals("db/jeesite_mysql.sql")).findFirst().orElseThrow();
-            assertThat(mysql.message()).contains("리터럴 INSERT 14건을 테이블별 구문 2개로 묶음").contains("초기화 구문(조건 없는 DELETE·TRUNCATE) 1건도 dataLoad로 표시");
+                    .containsExactlyInAnyOrder("db/cms/data_oracle.sql", "db/jeesite_postgres.sql", "db/common_data.sql");
+            Diagnostic postgres = grouped.stream().filter(d -> d.location().file().equals("db/jeesite_postgres.sql")).findFirst().orElseThrow();
+            assertThat(postgres.message()).contains("리터럴 INSERT 14건을 테이블별 구문 2개로 묶음").contains("초기화 구문(조건 없는 DELETE·TRUNCATE) 1건도 dataLoad로 표시");
             assertThat(diagnostics(g, io.codeatlas.core.model.DiagnosticCodes.PARSE_FAILED)).isEmpty();
         }
     }

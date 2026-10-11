@@ -38,7 +38,7 @@ final class AnalyzeCommand implements Command {
     public String synopsis() {
         return """
                 codeatlas analyze <projectDir> [--ddl <파일 또는 폴더>]... [--classpath <jar 또는 폴더>]...
-                                  [--out <dir>] [--encoding <이름>] [--dialect oracle|db2|auto] [--exclude <glob>]...
+                                  [--out <dir>] [--encoding <이름>] [--dialect oracle|db2|postgres|auto] [--exclude <glob>]...
                                   [--exclude-tests] [--opt <key>=<value>]... [--no-export] [--quiet]""";
     }
 
@@ -51,9 +51,10 @@ final class AnalyzeCommand implements Command {
                                        ('<폴더>/*'로 적어도 된다). 여러 번 주거나 경로 구분자로 이어 줄 수 있다.
                   --out <dir>          출력 폴더. 기본값은 ./codeatlas-out
                   --encoding <이름>    소스 인코딩. 주지 않으면 파일마다 UTF-8, MS949 순으로 판별한다.
-                  --dialect <이름>     SQL 방언. oracle, db2, auto(기본값). 방언별 매퍼·DDL이 여러 벌이면 어느 것을 쓸지도 이 값으로 고른다.
-                                       주지 않으면 프로젝트 설정이 가리키는 대상 방언(oracle, db2) → Oracle → DB2 → 그 계열 순으로 고르고,
-                                       대상 방언 파일이 없을 때만 그 밖의 방언을 쓴다. 그 밖의 방언(mysql 등)으로 분석하려면
+                  --dialect <이름>     SQL 방언. oracle, db2, postgres(별칭 postgresql, pgsql), auto(기본값). 방언별 매퍼·DDL이 여러 벌이면
+                                       어느 것을 쓸지도 이 값으로 고른다. 주지 않으면 프로젝트 설정이 가리키는 대상 방언(oracle, db2, postgres)
+                                       → Oracle → DB2 → PostgreSQL → 그 계열(Tibero, Altibase) 순으로 고르고, 대상 방언 파일이 없을 때만
+                                       그 밖의 방언을 쓴다. 그 밖의 방언(mysql 등)으로 분석하려면
                                        --opt mybatis.dialectVariant=<방언>을 준다(매퍼와 DDL 선택이 둘 다 이 값을 읽는다).
                   --exclude <glob>     분석에서 뺄 경로 패턴. 여러 번 줄 수 있다. 예: 'db/sample-data/**', '*.min.js'
                   --exclude-tests      테스트 소스를 뺀다. --exclude src/test 와 같다(어느 깊이의 src/test 폴더든). 기본은 포함이다.
@@ -156,7 +157,7 @@ final class AnalyzeCommand implements Command {
                     try {
                         options.dialect(Dialect.parse(value));
                     } catch (IllegalArgumentException e) {
-                        throw new UsageException("알 수 없는 방언: " + value + " (oracle, db2, auto 중 하나). 그 밖의 방언으로 분석하려면 "
+                        throw new UsageException("알 수 없는 방언: " + value + " (oracle, db2, postgres, auto 중 하나). 그 밖의 방언으로 분석하려면 "
                                 + "--opt mybatis.dialectVariant=<방언>을 쓴다");
                     }
                 }

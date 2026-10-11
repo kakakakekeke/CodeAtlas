@@ -27,14 +27,17 @@ import java.util.TreeSet;
 public final class DialectTokens {
 
     /**
-     * 방언 표준 이름. 앞의 넷은 기본 선호 순서다: Oracle, DB2, Oracle 계열(Tibero, Altibase). 그 뒤(그 밖의 방언)는 이름의 목록일 뿐이고
-     * 고르는 순서는 {@link #otherOrder}가 정한다.
+     * 방언 표준 이름. 앞의 다섯은 기본 선호 순서다(F-019-R4): 대상 방언 Oracle, DB2, PostgreSQL, 그다음 Oracle 계열(Tibero, Altibase).
+     * 그 뒤(그 밖의 방언)는 이름의 목록일 뿐이고 고르는 순서는 {@link #otherOrder}가 정한다.
      */
-    public static final List<String> NAMES = List.of("oracle", "db2", "tibero", "altibase", "postgres", "mysql", "mariadb", "mssql",
+    public static final List<String> NAMES = List.of("oracle", "db2", "postgres", "tibero", "altibase", "mysql", "mariadb", "mssql",
             "cubrid", "goldilocks", "hsql", "h2", "derby", "sqlite", "sybase", "informix");
 
-    /** 요청한 방언이 없을 때 먼저 고르는 방언(이 도구의 대상 방언과 그 계열): Oracle, DB2, Tibero, Altibase 순. */
-    public static final List<String> PREFERRED = NAMES.subList(0, 4);
+    /** 요청한 방언이 없을 때 먼저 고르는 방언(이 도구의 대상 방언과 그 계열): Oracle, DB2, PostgreSQL, Tibero, Altibase 순. */
+    public static final List<String> PREFERRED = NAMES.subList(0, 5);
+
+    /** 이 도구의 대상 방언(F-019-R4): Oracle, DB2, PostgreSQL. */
+    public static final List<String> TARGETS = NAMES.subList(0, 3);
 
     private static final Map<String, String> ALIASES = Map.of(
             "ora", "oracle",

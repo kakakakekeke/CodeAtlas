@@ -1,0 +1,109 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<!-- 고객 매퍼 (PostgreSQL): ON CONFLICT, JSON·배열 연산자, DISTINCT ON, LATERAL, WITH RECURSIVE, 집합 반환 함수 -->
+<mapper namespace="com.example.pg.mapper.CustomerMapper">
+
+    <!-- 고객 등록·갱신: ON CONFLICT (컬럼) DO UPDATE + EXCLUDED + RETURNING. 행을 돌려받으므로 select 태그에 둔다 -->
+    <select id="upsertCustomer" parameterType="map" resultType="long">
+        INSERT INTO customers (email, name, tags, profile)
+        VALUES (#{email}, #{name}, #{tags}::text[], #{profile}::jsonb)
+        ON CONFLICT (email) DO UPDATE
+           SET name = EXCLUDED.name,
+               profile = customers.profile || EXCLUDED.profile
+         WHERE customers.active
+        RETURNING id
+    </select>
+
+    <!-- 프로필로 조회: #{...} 자리표시자와 #>> 연산자가 한 구문에 함께 있다. @>, 배열 첨자 -->
+    <select id="selectByProfile" resultType="map">
+        SELECT c.id,
+               c.email,
+               c.profile #>> '{addr,city}' AS city,
+               c.tags[1] AS first_tag
+          FROM customers c
+         WHERE c.profile #>> '{addr,city}' = #{city}
+           AND c.tags @> ARRAY[#{tag}]::text[]
+           AND c.profile @> #{filter}::jsonb
+    </select>
+
+    <!-- 고객별 최근 주문: DISTINCT ON, LEFT JOIN LATERAL (...) 별칭 ON true, = ANY(배열) -->
+    <select id="selectLatestOrders" resultType="map">
+        SELECT DISTINCT ON (c.id) c.id, c.name, x.amount AS last_amount, x.ordered_at
+          FROM customers c
+          LEFT JOIN LATERAL (
+                SELECT o.amount, o.ordered_at
+                  FROM orders o
+                 WHERE o.customer_id = c.id
+                 ORDER BY o.ordered_at DESC
+                 LIMIT 1
+               ) x ON true
+         WHERE c.id = ANY(#{ids}::bigint[])
+         ORDER BY c.id, x.ordered_at DESC NULLS LAST
+    </select>
+
+    <!-- 날짜별 주문 수: FROM generate_series(...) AS 별칭(컬럼) -->
+    <select id="selectDailyOrderCounts" resultType="map">
+        <![CDATA[
+        SELECT g.day::date AS day, count(o.id) AS order_count
+          FROM generate_series(#{from}::timestamptz, #{to}::timestamptz, interval '1 day') AS g(day)
+          LEFT JOIN orders o
+            ON o.ordered_at >= g.day
+           AND o.ordered_at < g.day + interval '1 day'
+         GROUP BY g.day
+         ORDER BY g.day
+        ]]>
+    </select>
+
+    <!-- 추천인 트리: WITH RECURSIVE -->
+    <select id="selectReferralTree" parameterType="long" resultType="map">
+        WITH RECURSIVE tree AS (
+            SELECT c.id, c.referrer_id, c.name, 1 AS depth
+              FROM customers c
+             WHERE c.id = #{rootId}
+            UNION ALL
+            SELECT ch.id, ch.referrer_id, ch.name, t.depth + 1
+              FROM customers ch
+              JOIN tree t ON ch.referrer_id = t.id
+        )
+        SELECT tree.id, tree.name, tree.depth
+          FROM tree
+         ORDER BY tree.depth
+    </select>
+
+    <!-- VIP 고객: INHERITS 로 물려받은 컬럼(email)과 자기 컬럼(manager). 정규식 연산자 ~* -->
+    <select id="selectVipCustomers" resultType="map">
+        SELECT v.id, v.email, v.vip_since, v.manager
+          FROM vip_customers v
+         WHERE v.manager ~* #{pattern}
+           AND v.email NOT ILIKE '%@test.%'
+    </select>
+
+    <!-- 세션 저장: ON CONFLICT ON CONSTRAINT 이름 DO UPDATE -->
+    <insert id="putSession">
+        INSERT INTO session_cache (k, v, expires_at)
+        VALUES (#{key}, #{value}::jsonb, now() + interval '30 minutes')
+        ON CONFLICT ON CONSTRAINT session_cache_pkey DO UPDATE
+           SET v = EXCLUDED.v,
+               expires_at = EXCLUDED.expires_at
+    </insert>
+
+    <!-- 주문 요약: 뷰를 읽는다 -->
+    <select id="selectOrderSummary" resultType="map">
+        SELECT s.order_id, s.status, s.amount, s.customer_name
+          FROM v_order_summary s
+         WHERE s.customer_id = #{customerId}
+        <if test="minAmount != null">
+           AND s.amount >= #{minAmount}
+        </if>
+         ORDER BY s.ordered_at DESC
+    </select>
+
+    <!-- 테이블 통계: 시스템 카탈로그(pg_catalog) -->
+    <select id="selectTableSizes" resultType="map">
+        SELECT pc.relname, pc.reltuples
+          FROM pg_catalog.pg_class pc
+         WHERE pc.relkind = 'r'
+           AND pc.relname = ANY(#{names}::text[])
+    </select>
+
+</mapper>

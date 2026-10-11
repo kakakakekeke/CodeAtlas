@@ -17,12 +17,23 @@ public interface Statement {
         }
     }
 
-    /** {@code conditions}는 {@code INSERT FIRST/ALL WHEN ..}의 조건, {@code source}는 SELECT 원본(없으면 null). */
-    record Insert(List<InsertTarget> targets, Query source, List<Expr> conditions, List<Expr> returning) implements Statement {
+    /**
+     * {@code conditions}는 {@code INSERT FIRST/ALL WHEN ..}의 조건, {@code source}는 SELECT 원본(없으면 null).
+     * {@code conflictAssignments}는 PostgreSQL {@code ON CONFLICT .. DO UPDATE SET ..}의 대입 항목, {@code conflictConditions}는 그 절의
+     * {@code WHERE} 조건들이다(F-019-R12). 절이 없으면 둘 다 비어 있다.
+     */
+    record Insert(List<InsertTarget> targets, Query source, List<Expr> conditions, List<Expr> returning,
+            List<Assignment> conflictAssignments, List<Expr> conflictConditions) implements Statement {
         public Insert {
             targets = List.copyOf(targets);
             conditions = List.copyOf(conditions);
             returning = List.copyOf(returning);
+            conflictAssignments = List.copyOf(conflictAssignments);
+            conflictConditions = List.copyOf(conflictConditions);
+        }
+
+        public Insert(List<InsertTarget> targets, Query source, List<Expr> conditions, List<Expr> returning) {
+            this(targets, source, conditions, returning, List.of(), List.of());
         }
     }
 
@@ -83,6 +94,13 @@ public interface Statement {
     }
 
     record Truncate(QName table) implements Statement {
+    }
+
+    /** PostgreSQL {@code COPY 테이블 [(컬럼, ..)] FROM stdin}: 뒤따르는 데이터 줄을 그 테이블에 넣는다(F-019-R23). 컬럼 목록이 없으면 비어 있다. */
+    record Copy(QName table, List<QName> columns) implements Statement {
+        public Copy {
+            columns = List.copyOf(columns);
+        }
     }
 
     record LockTable(List<QName> tables) implements Statement {

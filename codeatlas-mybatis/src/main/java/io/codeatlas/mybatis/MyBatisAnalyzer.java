@@ -270,7 +270,7 @@ public final class MyBatisAnalyzer implements Analyzer {
                 forced = all ? null : DialectVariants.canonical(option);
                 if (!all && forced == null) {
                     report(Diagnostic.warn(DiagnosticCodes.INVALID_OPTION,
-                            DialectVariants.OPTION + "=" + option + "는 아는 방언 이름이 아니다(auto, all, oracle, db2, mysql 등). auto로 본다",
+                            DialectVariants.OPTION + "=" + option + "는 아는 방언 이름이 아니다(auto, all, oracle, db2, postgres, mysql 등). auto로 본다",
                             null));
                 }
             }
@@ -419,8 +419,8 @@ public final class MyBatisAnalyzer implements Analyzer {
                 message.append(" 프로젝트 설정이 엇갈려 쓰지 않음(").append(String.join(", ", each)).append(").");
             }
             if (!target && !requested) {
-                // 대상 방언(Oracle, DB2와 Oracle 계열)의 매퍼가 하나도 없어 대상 외 방언을 쓴다: WARN으로 알린다(F-009-R24)
-                message.append(" 이 도구의 대상 방언(Oracle, DB2)의 파일이 없어 ").append(main).append(" 파일을 씀: SQL 해석이 부정확할 수 있음");
+                // 대상 방언(Oracle, DB2, PostgreSQL과 Oracle 계열)의 매퍼가 하나도 없어 대상 외 방언을 쓴다: WARN으로 알린다(F-009-R24, F-019-R4)
+                message.append(" 이 도구의 대상 방언(Oracle, DB2, PostgreSQL)의 파일이 없어 ").append(main).append(" 파일을 씀: SQL 해석이 부정확할 수 있음");
                 report(Diagnostic.warn(DIALECT_VARIANT_MAPPERS, message.toString(), null));
                 return;
             }

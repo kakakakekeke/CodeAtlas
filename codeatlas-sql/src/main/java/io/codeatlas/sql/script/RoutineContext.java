@@ -9,6 +9,7 @@ import io.codeatlas.sql.analysis.FactsWriter;
 import io.codeatlas.sql.analysis.Locator;
 import io.codeatlas.sql.analysis.StatementFacts;
 import io.codeatlas.sql.ast.Pos;
+import io.codeatlas.sql.lexer.Syntax;
 
 /** 루틴 단위 핸들러가 받는 실행 환경: 그래프, 카탈로그, 방언, 위치 변환. */
 public final class RoutineContext {
@@ -20,6 +21,7 @@ public final class RoutineContext {
     private final Locator locator;
 
     private Dialect fallbackDialect;
+    private Syntax syntax = Syntax.DEFAULT;
 
     public RoutineContext(GraphModel graph, Catalog catalog, Dialect dialect, String file, Locator locator) {
         this.graph = graph;
@@ -48,6 +50,17 @@ public final class RoutineContext {
         return fallbackDialect;
     }
 
+    /** 이 단위가 든 파일의 읽기 방식(ADR-0012). 단위의 토큰은 이 방식으로 만든 것이고, 본문을 읽는 파서에도 같은 값을 넘긴다. */
+    public RoutineContext syntax(Syntax syntax) {
+        this.syntax = syntax == null ? Syntax.DEFAULT : syntax;
+        return this;
+    }
+
+    /** 이 단위가 든 파일의 읽기 방식. 알려 주지 않았으면 기본이다. */
+    public Syntax syntax() {
+        return syntax;
+    }
+
     /** 이 파일의 방언. 판정하지 못했으면 null. */
     public Dialect dialect() {
         return dialect;
@@ -67,9 +80,9 @@ public final class RoutineContext {
         return locator;
     }
 
-    /** 이 카탈로그를 쓰는 사실 추출기. 지역 변수는 {@link FactExtractor#variables}로 알려 준다. */
+    /** 이 카탈로그를 쓰는 사실 추출기(이 단위의 읽기 방식을 넘겨 둔다). 지역 변수는 {@link FactExtractor#variables}로 알려 준다. */
     public FactExtractor extractor() {
-        return new FactExtractor(catalog);
+        return new FactExtractor(catalog).syntax(syntax);
     }
 
     /**

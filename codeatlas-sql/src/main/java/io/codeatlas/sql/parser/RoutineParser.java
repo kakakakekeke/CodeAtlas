@@ -15,6 +15,9 @@ import java.util.Set;
 
 /**
  * 루틴 본문 파서(F-008). PL/SQL과 SQL PL의 합집합을 하나의 문법으로 받아 {@link Routine} 트리를 만든다(ADR-0004).
+ * 언어가 {@link RoutineLanguage#PLPGSQL}이면 PL/pgSQL로 읽는다(F-019-R25): {@code PERFORM}, {@code EXECUTE 문자열식}, {@code =} 대입,
+ * 괄호 없는 {@code FOR r IN 쿼리 LOOP}, {@code RETURN QUERY|NEXT}, {@code INTO [STRICT]} 대상 등 PostgreSQL에만 있거나 다르게 읽는 문장은
+ * 그 언어에서만 켠다(ADR-0012). PL/SQL·SQL PL로 읽을 때의 결과는 달라지지 않는다.
  *
  * <p>목적은 본문 어디에 있든 SQL 구문과 호출을 찾는 것이다. 블록과 제어 구조는 구조적으로 파싱하고, 식은 토큰 구간으로 두되
  * 안의 서브쿼리와 이름 참조를 뽑는다. SQL 구문은 {@link SqlParser}에 넘긴다.
@@ -65,7 +68,12 @@ public final class RoutineParser extends TokenCursor {
             "CURRENT", "PATH", "SCHEMA", "ENCRYPTION", "SESSION", "ISOLATION", "PASSTHRU", "EVENT", "INTEGRITY", "CONNECTION",
             "ROLE", "TRANSACTION", "CONSTRAINT", "CONSTRAINTS", "SERVEROUTPUT", "WRITE", "USAGE", "WORKLOAD", "CURRENT_SCHEMA");
 
+    /** 본문의 언어. 안의 SQL 구문은 이 언어의 읽기 방식({@link RoutineLanguage#syntax()})으로 읽는다. */
+    private final RoutineLanguage language;
+    /** SQL PL 문법으로 읽는가(블록 안의 {@code DECLARE}를 선언문으로 본다). PL/SQL과 PL/pgSQL은 선언부다. */
     private final boolean sqlPl;
+    /** PL/pgSQL 문법으로 읽는가. PostgreSQL에만 있는 문장과 PL/SQL·SQL PL과 겹치는 표기는 이 값이 참일 때만 그렇게 읽는다(ADR-0012). */
+    private final boolean pg;
     private final int sqlDepth;
     private final List<Routine.Decl> rootDeclarations = new ArrayList<>();
     private final Deque<List<Routine.Decl>> declarationSinks = new ArrayDeque<>();
@@ -74,16 +82,23 @@ public final class RoutineParser extends TokenCursor {
 
     /**
      * @param tokens 본문의 토큰(주석 제외)
-     * @param sqlPl SQL PL 문법으로 읽을지(블록 안의 {@code DECLARE}를 선언문으로 본다). false면 PL/SQL
+     * @param language 본문의 언어. {@link RoutineLanguage#SQLPL}이면 블록 안의 {@code DECLARE}를 선언문으로 본다. null이면 PL/SQL
      */
-    public RoutineParser(List<Token> tokens, boolean sqlPl) {
-        this(tokens, sqlPl, 0);
+    public RoutineParser(List<Token> tokens, RoutineLanguage language) {
+        this(tokens, language, 0);
     }
 
-    RoutineParser(List<Token> tokens, boolean sqlPl, int sqlDepth) {
+    RoutineParser(List<Token> tokens, RoutineLanguage language, int sqlDepth) {
         super(stripConditionalCompilation(tokens));
-        this.sqlPl = sqlPl;
+        this.language = language == null ? RoutineLanguage.PLSQL : language;
+        this.sqlPl = this.language == RoutineLanguage.SQLPL;
+        this.pg = this.language == RoutineLanguage.PLPGSQL;
         this.sqlDepth = sqlDepth;
+    }
+
+    /** 이 파서가 읽는 본문의 언어. */
+    public RoutineLanguage language() {
+        return language;
     }
 
     // ------------------------------------------------------------------ 진입점
@@ -95,6 +110,15 @@ public final class RoutineParser extends TokenCursor {
      *                           (SQL PL 본문, 트리거 본문, 익명 블록: {@code DECLARE}/{@code BEGIN}/단일 문장)
      */
     public Routine.Block parseBody(boolean declarationSection) {
+        if (pg) {
+            // PL/pgSQL 본문 처음의 컴파일러 지시문(#variable_conflict use_column, #option dump): 그 줄을 건너뛴다
+            while (atSymbol("#") && peek(1).type() == TokenType.IDENT && peek(1).line() == peek().line()) {
+                int line = peek().line();
+                while (!atEnd() && peek().line() == line) {
+                    next();
+                }
+            }
+        }
         int start = pos;
         Routine.Block body;
         if (declarationSection) {
@@ -109,6 +133,23 @@ public final class RoutineParser extends TokenCursor {
             }
         }
         return withLeftovers(body);
+    }
+
+    /**
+     * {@code ;}로 나뉜 문장들을 블록 없이 읽는다: PostgreSQL {@code LANGUAGE sql} 루틴의 본문(F-019-R31).
+     * 끝의 {@code ;}는 없어도 된다.
+     */
+    public Routine.Block parseStatementList() {
+        int start = pos;
+        List<Routine.Decl> declarations = new ArrayList<>();
+        List<Routine.Stmt> list;
+        declarationSinks.push(declarations);
+        try {
+            list = statements();
+        } finally {
+            declarationSinks.pop();
+        }
+        return withLeftovers(new Routine.Block(null, declarations, list, List.of(), false, span(start, pos)));
     }
 
     /** {@code PROCEDURE|FUNCTION 이름 ..}로 시작하는 서브프로그램 하나(패키지 멤버)를 파싱한다. */
@@ -484,15 +525,38 @@ public final class RoutineParser extends TokenCursor {
 
     /** 토큰 구간을 SQL 구문으로 파싱한다. */
     private Routine.Sql sql(int from, int toExclusive) {
+        return sql(from, toExclusive, false);
+    }
+
+    /**
+     * 토큰 구간을 SQL 구문으로 파싱한다.
+     *
+     * @param perform PL/pgSQL {@code PERFORM 쿼리}면 true: 첫 토큰을 같은 위치의 {@code SELECT}로 바꿔 읽는다(구문의 토큰과 위치는 원문 그대로다)
+     */
+    private Routine.Sql sql(int from, int toExclusive, boolean perform) {
         int to = Math.max(from, Math.min(toExclusive, eofIndex()));
         List<Token> sub = new ArrayList<>(tokens.subList(from, to));
         Statement statement;
         List<QName> salvaged = List.of();
         List<Routine.Problem> found = new ArrayList<>();
+        List<Token> parsed = sub;
+        List<String> into;
+        if (pg) {
+            // PL/pgSQL의 INTO [STRICT] 대상은 구문의 어디에나 올 수 있다: 떼어 내고 나머지를 구문으로 읽는다(F-019-R26)
+            List<String> names = new ArrayList<>();
+            parsed = withoutIntoClause(sub, names);
+            into = names;
+            if (perform && !parsed.isEmpty()) {
+                parsed = new ArrayList<>(parsed);
+                parsed.set(0, parsed.get(0).renamed("SELECT"));
+            }
+        } else {
+            into = intoTargets(sub);
+        }
         if (sub.isEmpty() || sqlDepth >= SqlParser.MAX_DEPTH) {
             statement = new Statement.Empty();
         } else {
-            SqlParser parser = new SqlParser(sub);
+            SqlParser parser = new SqlParser(parsed, language.syntax());
             parser.depth = sqlDepth;
             ParseResult result = parser.parseStatement();
             statement = result.statement();
@@ -501,7 +565,63 @@ public final class RoutineParser extends TokenCursor {
                 found.add(new Routine.Problem(p.message(), p.pos(), p.minor()));
             }
         }
-        return new Routine.Sql(statement, salvaged, found, sub, intoTargets(sub), span(from, to));
+        return new Routine.Sql(statement, salvaged, found, sub, into, span(from, to));
+    }
+
+    /**
+     * PL/pgSQL 본문 SQL의 {@code INTO [STRICT] 대상, ..}을 뗀 토큰 목록을 돌려주고 대상 이름(첫 조각, 정규화)을 names에 더한다.
+     * 괄호 밖의 첫 {@code INTO}만 보고 {@code INSERT INTO}·{@code MERGE INTO}의 것은 그대로 둔다. 대상은 {@code 이름[.필드][[첨자]]}다.
+     */
+    private static List<Token> withoutIntoClause(List<Token> sub, List<String> names) {
+        int parens = 0;
+        int n = sub.size();
+        for (int i = 1; i < n; i++) {
+            Token t = sub.get(i);
+            if (t.isSymbol("(")) {
+                parens++;
+            } else if (t.isSymbol(")")) {
+                parens--;
+            } else if (parens == 0 && t.is("INTO") && !sub.get(i - 1).isAny("INSERT", "MERGE")) {
+                int j = i + 1;
+                if (j + 1 < n && sub.get(j).is("STRICT") && (sub.get(j + 1).isIdentifier() || sub.get(j + 1).type() == TokenType.BIND)
+                        && !sub.get(j + 1).is("FROM")) {
+                    j++;
+                }
+                List<String> found = new ArrayList<>();
+                while (j < n && (sub.get(j).isIdentifier() || sub.get(j).type() == TokenType.BIND)) {
+                    found.add(norm(sub.get(j)));
+                    j++;
+                    while (j + 1 < n && sub.get(j).isSymbol(".") && sub.get(j + 1).isIdentifier()) {
+                        j += 2;
+                    }
+                    while (j < n && sub.get(j).isSymbol("[")) {
+                        int d = 0;
+                        while (j < n) {
+                            if (sub.get(j).isSymbol("[")) {
+                                d++;
+                            } else if (sub.get(j).isSymbol("]") && --d == 0) {
+                                j++;
+                                break;
+                            }
+                            j++;
+                        }
+                    }
+                    if (j + 1 < n && sub.get(j).isSymbol(",")) {
+                        j++;
+                    } else {
+                        break;
+                    }
+                }
+                if (found.isEmpty()) {
+                    return sub;
+                }
+                names.addAll(found);
+                List<Token> out = new ArrayList<>(sub.subList(0, i));
+                out.addAll(sub.subList(Math.min(j, n), n));
+                return out;
+            }
+        }
+        return sub;
     }
 
     /** {@code SELECT .. INTO a, b}, {@code RETURNING .. INTO a}의 대상 변수 이름. */
@@ -559,11 +679,12 @@ public final class RoutineParser extends TokenCursor {
     private List<Routine.Decl> declarations() {
         List<Routine.Decl> list = new ArrayList<>();
         while (!atEnd() && !at("BEGIN") && !at("END")) {
-            if (acceptSymbol(";")) {
-                continue;
+            if (acceptSymbol(";") || (pg && accept("DECLARE"))) {
+                continue; // PL/pgSQL은 선언부 안의 여분의 DECLARE를 허용한다
             }
             Token t = peek();
-            if (t.type() == TokenType.IDENT && STATEMENT_KEYWORDS.contains(t.upper())) {
+            if (t.type() == TokenType.IDENT && STATEMENT_KEYWORDS.contains(t.upper())
+                    && !(pg && PG_VARIABLE_KEYWORDS.contains(t.upper()) && peek(1).isIdentifier())) {
                 problem("선언부에 문장이 있음(BEGIN이 없음): " + t.text(), t, false);
                 break;
             }
@@ -582,6 +703,14 @@ public final class RoutineParser extends TokenCursor {
     private Routine.Decl declaration() {
         int start = pos;
         Token t = peek();
+        if (pg) {
+            if (t.isIdentifier()) {
+                return pgDeclaration(start);
+            }
+            problem("선언을 해석하지 못함: " + t.text(), t, false);
+            skipToSemicolon();
+            return null;
+        }
         if (t.is("CURSOR") && peek(1).isIdentifier()) {
             return cursorDeclaration();
         }
@@ -630,6 +759,59 @@ public final class RoutineParser extends TokenCursor {
         problem("선언을 해석하지 못함: " + t.text(), t, false);
         skipToSemicolon();
         return null;
+    }
+
+    /**
+     * PL/pgSQL 선언 하나: {@code 이름 [CONSTANT] 타입 [COLLATE ..] [NOT NULL] [{DEFAULT | := | =} 식];}, {@code 이름 ALIAS FOR $1;},
+     * {@code 이름 [[NO] SCROLL] CURSOR [(인자, ..)] {FOR | IS} 쿼리;}. PL/SQL의 {@code TYPE}·{@code PRAGMA}·지역 서브프로그램은 없다
+     * ({@code type}은 변수 이름일 수 있다).
+     */
+    private Routine.Decl pgDeclaration(int start) {
+        String name = norm(next());
+        int k = pos;
+        if (tokenAt(k).is("NO") && tokenAt(k + 1).is("SCROLL")) {
+            k += 2;
+        } else if (tokenAt(k).is("SCROLL")) {
+            k++;
+        }
+        if (tokenAt(k).is("CURSOR")) {
+            pos = Math.min(k + 1, eofIndex());
+            List<Routine.Param> params = atSymbol("(") ? parameters() : List.of();
+            Routine.Sql query = null;
+            if (acceptAny("FOR", "IS")) {
+                int end = sqlEnd(pos);
+                query = sql(pos, end);
+                pos = end;
+            } else {
+                skipToSemicolon();
+            }
+            acceptSymbol(";");
+            return new Routine.Cursor(name, params, query, null, span(start, pos));
+        }
+        boolean constant = accept("CONSTANT");
+        int typeStart = pos;
+        int typeEnd = -1;
+        int parens = 0;
+        while (!atEnd() && !atSymbol(";")) {
+            if (atSymbol("(")) {
+                parens++;
+            } else if (atSymbol(")")) {
+                parens--;
+            } else if (parens <= 0 && (atSymbol(":=") || atSymbol("=") || at("DEFAULT"))) {
+                break;
+            } else if (parens <= 0 && typeEnd < 0 && pos > typeStart && ((at("NOT") && peek(1).is("NULL")) || at("COLLATE"))) {
+                typeEnd = pos;
+            }
+            next();
+        }
+        String type = text(typeStart, typeEnd < 0 ? pos : typeEnd);
+        Routine.Expr init = null;
+        if (atSymbol(":=") || atSymbol("=") || at("DEFAULT")) {
+            next();
+            init = scanExpr();
+        }
+        acceptSymbol(";");
+        return new Routine.Variable(List.of(name), constant ? "CONSTANT" : "VARIABLE", type, init, span(start, pos));
     }
 
     private Routine.Decl cursorDeclaration() {
@@ -959,7 +1141,15 @@ public final class RoutineParser extends TokenCursor {
         if (n.isSymbol(":=") || n.isSymbol(".")) {
             return assignOrCall(start); // 키워드와 같은 이름의 변수·패키지
         }
-        if (n.isSymbol("(") && CALLABLE_KEYWORDS.contains(t.upper())) {
+        if (pg) {
+            if (n.isSymbol("=") || n.isSymbol("[")) {
+                return assignOrCall(start); // PL/pgSQL: v = 식, arr[1] := 식
+            }
+            Routine.Stmt s = pgStatement(label, start, t);
+            if (s != null) {
+                return s;
+            }
+        } else if (n.isSymbol("(") && CALLABLE_KEYWORDS.contains(t.upper())) {
             return assignOrCall(start); // 키워드와 같은 이름의 사용자 프로시저: PREPARE(1);
         }
         switch (t.upper()) {
@@ -1303,8 +1493,17 @@ public final class RoutineParser extends TokenCursor {
         Routine.Sql query = null;
         Routine.Expr dynamic = null;
         Routine.Expr using = null;
+        if (pg && at("NO") && peek(1).is("SCROLL")) {
+            next();
+            next();
+        } else if (pg) {
+            accept("SCROLL");
+        }
         if (accept("FOR")) {
-            if (queryStartsAt(pos)) {
+            if (pg && at("EXECUTE")) {
+                next(); // OPEN c FOR EXECUTE 문자열식 [USING ..]
+                dynamic = scanExpr("USING");
+            } else if (queryStartsAt(pos)) {
                 int end = sqlEnd(pos);
                 query = sql(pos, end);
                 pos = end;
@@ -1471,7 +1670,21 @@ public final class RoutineParser extends TokenCursor {
                 }
             }
         }
-        if (atSymbol(":=") && !callKeyword) {
+        if (pg && args == null) {
+            // PL/pgSQL 대입 대상의 첨자와 필드: arr[1], rec.items[2].qty
+            while (atSymbol("[")) {
+                int close = matchingBracket(pos, semicolon(pos));
+                if (args == null) {
+                    args = expr(pos + 1, close);
+                }
+                pos = Math.min(close + 1, eofIndex());
+                while (atSymbol(".") && peek(1).isIdentifier()) {
+                    next();
+                    next();
+                }
+            }
+        }
+        if ((atSymbol(":=") || (pg && atSymbol("="))) && !callKeyword) {
             next();
             Routine.Expr value = scanExpr();
             int end = pos;
@@ -1510,10 +1723,266 @@ public final class RoutineParser extends TokenCursor {
         return new Routine.Unknown(word, salvage, span(start, Math.max(end, start + 1)));
     }
 
+    // ------------------------------------------------------------------ PL/pgSQL 문장 (F-019-R25)
+
+    /** 문장 키워드지만 PL/pgSQL 선언부에서 타입이 뒤따르면 변수 이름으로 보는 것({@code values text[];}, {@code lock boolean;}). */
+    private static final Set<String> PG_VARIABLE_KEYWORDS = Set.of(
+            "VALUES", "OPEN", "CLOSE", "FETCH", "GET", "SET", "LOCK", "CALL", "PREPARE", "PIPE", "LEAVE", "ITERATE", "SIGNAL", "RESIGNAL",
+            "REPEAT", "SAVEPOINT", "TRUNCATE", "MERGE");
+
+    /** PL/pgSQL 본문에서 뽑을 것이 없는 SQL 명령의 첫 키워드({@code SET}은 대입이 아니라 설정이다). */
+    private static final Set<String> PG_PASS_THROUGH = Set.of(
+            "SET", "RESET", "NOTIFY", "LISTEN", "UNLISTEN", "DISCARD", "VACUUM", "REINDEX", "CLUSTER", "COPY", "SHOW", "CHECKPOINT", "SECURITY");
+
+    /** open 위치의 여는 대괄호와 짝인 닫는 대괄호의 인덱스. limit(제외) 안에 없으면 limit. */
+    private int matchingBracket(int open, int limit) {
+        int d = 0;
+        for (int i = open; i < limit; i++) {
+            Token t = tokens.get(i);
+            if (t.isSymbol("[")) {
+                d++;
+            } else if (t.isSymbol("]")) {
+                d--;
+                if (d == 0) {
+                    return i;
+                }
+            }
+        }
+        return limit;
+    }
+
+    /**
+     * PL/pgSQL에만 있거나 PL/SQL·SQL PL과 다르게 읽는 문장. 여기서 다루지 않는 문장이면 null(공통 규칙으로 읽는다).
+     * 현재 위치는 문장의 첫 토큰 t다.
+     */
+    private Routine.Stmt pgStatement(String label, int start, Token t) {
+        switch (t.upper()) {
+            case "PERFORM":
+                return pgPerform(start);
+            case "EXECUTE": {
+                next();
+                Routine.Expr sql = scanExpr("INTO", "USING");
+                Routine.Expr rest = atSymbol(";") || atEnd() ? null : scanExpr();
+                endStatement();
+                return new Routine.ExecuteImmediate(sql, rest, span(start, pos));
+            }
+            case "FOR":
+                return pgFor(label, start);
+            case "FOREACH": {
+                next();
+                String variable = peek().isIdentifier() ? norm(next()) : null;
+                while (!atEnd() && !atSymbol(";") && !at("IN") && !at("LOOP")) {
+                    next(); // 대상이 여럿이거나 SLICE n
+                }
+                accept("IN");
+                accept("ARRAY");
+                Routine.Expr array = scanExpr("LOOP");
+                if (!accept("LOOP")) {
+                    problem("FOREACH에 LOOP가 없음", peek(), false);
+                }
+                List<Routine.Stmt> body = statements();
+                endOf("LOOP");
+                return new Routine.Loop(Routine.LoopKind.FOR_RANGE, label, variable, array, null, null, body, span(start, pos));
+            }
+            case "RETURN": {
+                if (peek(1).is("QUERY") && (peek(2).type() == TokenType.IDENT || peek(2).isSymbol("("))) {
+                    next();
+                    next();
+                    if (accept("EXECUTE")) {
+                        Routine.Expr sql = scanExpr("USING");
+                        Routine.Expr rest = atSymbol(";") || atEnd() ? null : scanExpr();
+                        endStatement();
+                        return new Routine.ExecuteImmediate(sql, rest, span(start, pos));
+                    }
+                    int end = sqlEnd(pos);
+                    Routine.Sql query = sql(pos, end);
+                    pos = end;
+                    acceptSymbol(";");
+                    return new Routine.Return(null, query, span(start, pos));
+                }
+                if (peek(1).is("NEXT") && !peek(2).isSymbol(".") && !peek(2).isSymbol("(")) {
+                    next();
+                    next();
+                    Routine.Expr value = atSymbol(";") || atEnd() ? null : scanExpr();
+                    acceptSymbol(";");
+                    return new Routine.Return(value, null, span(start, pos));
+                }
+                return null; // RETURN [식]: 공통 규칙
+            }
+            case "CREATE": {
+                // CREATE [TEMP] TABLE t AS 쿼리: PL/pgSQL 본문에는 DDL을 그대로 쓴다. 쿼리가 읽는 테이블과 채우는 테이블을 구문으로 남긴다.
+                // 그 밖의 CREATE는 공통 규칙대로 넘긴다
+                int end = semicolon(pos);
+                List<Token> sub = new ArrayList<>(tokens.subList(pos, end));
+                if (sqlDepth < SqlParser.MAX_DEPTH && DdlParser.isDdl(sub)) {
+                    ParseResult result = new DdlParser(sub, language.syntax()).parse();
+                    if (result.statement() instanceof io.codeatlas.sql.ast.Ddl.CreateTable table && table.asQuery() != null) {
+                        List<Routine.Problem> found = new ArrayList<>();
+                        for (ParseProblem p : result.problems()) {
+                            found.add(new Routine.Problem(p.message(), p.pos(), p.minor()));
+                        }
+                        pos = end;
+                        acceptSymbol(";");
+                        return new Routine.Sql(result.statement(), result.salvagedReads(), found, sub, List.of(), span(start, end));
+                    }
+                }
+                return null;
+            }
+            case "ASSERT": {
+                next();
+                Routine.Expr detail = scanExpr();
+                endStatement();
+                return new Routine.Simple("ASSERT", detail, span(start, pos));
+            }
+            case "FETCH":
+            case "MOVE": {
+                // FETCH [방향 {FROM | IN}] 커서 INTO 대상, MOVE [방향 {FROM | IN}] 커서: 커서 이름은 INTO(없으면 끝) 바로 앞의 이름이다
+                boolean fetch = next().is("FETCH");
+                int end = semicolon(pos);
+                int intoAt = -1;
+                for (int i = pos; i < end; i++) {
+                    if (tokens.get(i).is("INTO")) {
+                        intoAt = i;
+                        break;
+                    }
+                }
+                int nameEnd = intoAt >= 0 ? intoAt : end;
+                String cursor = nameEnd > pos && tokens.get(nameEnd - 1).isIdentifier() ? norm(tokens.get(nameEnd - 1)) : null;
+                Routine.Expr into = null;
+                if (intoAt >= 0) {
+                    pos = intoAt + 1;
+                    into = scanExpr();
+                } else {
+                    pos = end;
+                }
+                endStatement();
+                return fetch ? new Routine.Fetch(cursor, into, span(start, pos)) : new Routine.Simple("MOVE", null, span(start, pos));
+            }
+            default:
+                if (PG_PASS_THROUGH.contains(t.upper()) && (peek(1).type() == TokenType.IDENT || peek(1).isSymbol(";") || peek(1).isEof())) {
+                    String keyword = next().upper();
+                    int end = semicolon(pos);
+                    Routine.Expr detail = expr(pos, end);
+                    pos = end;
+                    acceptSymbol(";");
+                    return new Routine.Simple(keyword, detail, span(start, pos));
+                }
+                return null;
+        }
+    }
+
+    /**
+     * {@code PERFORM}: 함수 호출 하나뿐이면({@code PERFORM f(..);}) 호출문이고, 그 밖에는({@code PERFORM 1 FROM t WHERE ..}) 결과를 버리는
+     * {@code SELECT} 구문이다(F-019-R26·R27).
+     */
+    private Routine.Stmt pgPerform(int start) {
+        next(); // PERFORM
+        if (peek().isIdentifier()) {
+            int nameStart = pos;
+            QName name = nameChain();
+            if (atSymbol("(")) {
+                int close = matchingParen(pos, semicolon(pos));
+                if (close < eofIndex() && tokens.get(close).isSymbol(")") && (tokenAt(close + 1).isSymbol(";") || close + 1 >= eofIndex())) {
+                    Routine.Expr args = expr(pos + 1, close);
+                    pos = Math.min(close + 1, eofIndex());
+                    int callEnd = pos;
+                    acceptSymbol(";");
+                    return new Routine.Call(name, args, false, tokens.subList(nameStart, callEnd), span(start, callEnd));
+                }
+            }
+            pos = nameStart;
+        }
+        int end = sqlEnd(pos);
+        Routine.Sql query = sql(start, end, true);
+        pos = end;
+        acceptSymbol(";");
+        return query;
+    }
+
+    /**
+     * PL/pgSQL의 {@code FOR}: {@code FOR i IN [REVERSE] a..b [BY n] LOOP}, {@code FOR r IN 쿼리 LOOP}(괄호 없이 쓴다),
+     * {@code FOR r IN EXECUTE 문자열식 [USING ..] LOOP}, {@code FOR r IN 커서[(인자)] LOOP}.
+     */
+    private Routine.Stmt pgFor(String label, int start) {
+        next(); // FOR
+        String variable = peek().isIdentifier() && !at("IN") ? norm(next()) : null;
+        while (!atEnd() && !atSymbol(";") && !at("IN") && !at("LOOP")) {
+            next(); // 대상이 여럿(FOR a, b IN ..)이거나 필드(rec.f): 첫 이름만 루프 변수로 둔다
+        }
+        if (!accept("IN")) {
+            problem("FOR에 IN이 없음", peek(), false);
+        }
+        if (at("EXECUTE")) {
+            next();
+            Routine.Expr dynamic = scanExpr("USING", "LOOP");
+            Routine.Expr using = accept("USING") ? scanExpr("LOOP") : null;
+            int headEnd = pos;
+            if (!accept("LOOP")) {
+                problem("FOR에 LOOP가 없음", peek(), false);
+            }
+            List<Routine.Stmt> body = statements();
+            endOf("LOOP");
+            // 동적 SQL 지점과 루프를 한 블록으로 묶는다: 루프 변수는 루프 안에서만 보인다
+            Routine.Stmt execute = new Routine.ExecuteImmediate(dynamic, using, span(start, headEnd));
+            Routine.Stmt loop = new Routine.Loop(Routine.LoopKind.FOR_CURSOR, label, variable, null, null, null, body, span(start, pos));
+            return new Routine.Block(null, List.of(), List.of(execute, loop), List.of(), false, span(start, pos));
+        }
+        accept("REVERSE");
+        // 머리의 끝: 괄호 밖의 LOOP
+        int loopAt = pos;
+        int parens = 0;
+        boolean range = false;
+        int n = eofIndex();
+        while (loopAt < n) {
+            Token t = tokens.get(loopAt);
+            if (t.isSymbol(";")) {
+                break;
+            }
+            if (t.isSymbol("(")) {
+                parens++;
+            } else if (t.isSymbol(")")) {
+                parens--;
+            } else if (parens <= 0 && t.is("LOOP") && !prevIsDot(loopAt, pos)) {
+                break;
+            } else if (parens <= 0 && t.isSymbol("..")) {
+                range = true;
+            }
+            loopAt++;
+        }
+        Routine.LoopKind kind;
+        Routine.Expr control = null;
+        Routine.Sql query = null;
+        String cursor = null;
+        if (range) {
+            control = expr(pos, loopAt);
+            kind = Routine.LoopKind.FOR_RANGE;
+        } else if (queryStartsAt(pos)) {
+            boolean wrapped = atSymbol("(") && matchingParen(pos, loopAt) == loopAt - 1;
+            query = wrapped ? sql(pos + 1, loopAt - 1) : sql(pos, loopAt);
+            kind = Routine.LoopKind.FOR_QUERY;
+        } else {
+            control = expr(pos, loopAt);
+            kind = Routine.LoopKind.FOR_CURSOR;
+            if (!control.refs().isEmpty()) {
+                cursor = control.refs().get(0).name().display();
+            }
+        }
+        pos = loopAt;
+        if (!accept("LOOP")) {
+            problem("FOR에 LOOP가 없음", peek(), false);
+        }
+        List<Routine.Stmt> body = statements();
+        endOf("LOOP");
+        return new Routine.Loop(kind, label, variable, control, cursor, query, body, span(start, pos));
+    }
+
     // ------------------------------------------------------------------ DECLARE
 
     private Routine.Stmt declareStatement(String label, int start) {
         next(); // DECLARE
+        if (pg) {
+            return bodyAfterDeclarations(label, declarations(), start); // PL/pgSQL의 DECLARE는 언제나 블록의 선언부다
+        }
         if (atAny("CONTINUE", "EXIT", "UNDO") && peek(1).is("HANDLER")) {
             String action = next().upper();
             next(); // HANDLER

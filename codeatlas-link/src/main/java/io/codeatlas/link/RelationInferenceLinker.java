@@ -604,10 +604,17 @@ public final class RelationInferenceLinker implements Linker {
         String first = base.trim().split("\\s+")[0];
         return switch (first) {
             case "NUMBER", "NUMERIC", "DECIMAL", "DEC", "INTEGER", "INT", "SMALLINT", "BIGINT", "FLOAT", "DOUBLE", "REAL",
-                    "DECFLOAT", "BINARY_FLOAT", "BINARY_DOUBLE" -> "NUMERIC";
+                    "DECFLOAT", "BINARY_FLOAT", "BINARY_DOUBLE",
+                    // PostgreSQL의 별칭(F-019-R35): serial 류는 정수 컬럼에 시퀀스 기본값을 붙인 것이고, intN·floatN은 같은 타입의 다른 이름이다
+                    "SERIAL", "BIGSERIAL", "SMALLSERIAL", "SERIAL2", "SERIAL4", "SERIAL8", "INT2", "INT4", "INT8",
+                    "FLOAT4", "FLOAT8" -> "NUMERIC";
             case "CHAR", "CHARACTER", "VARCHAR", "VARCHAR2", "NCHAR", "NVARCHAR", "NVARCHAR2", "CLOB", "NCLOB", "LONG",
-                    "GRAPHIC", "VARGRAPHIC", "DBCLOB" -> "CHARACTER";
-            case "DATE", "TIME", "TIMESTAMP" -> "DATETIME";
+                    "GRAPHIC", "VARGRAPHIC", "DBCLOB",
+                    // PostgreSQL의 TEXT는 길이 제한 없는 문자열이다(CLOB과 같은 자리). VARCHAR 컬럼과의 조인이 흔하다(F-019-R35)
+                    "TEXT" -> "CHARACTER";
+            // TIMESTAMPTZ·TIMETZ는 PostgreSQL의 TIMESTAMP·TIME WITH TIME ZONE이다(F-019-R35)
+            case "DATE", "TIME", "TIMESTAMP", "TIMESTAMPTZ", "TIMETZ" -> "DATETIME";
+            case "BOOL", "BOOLEAN" -> "BOOLEAN"; // PostgreSQL의 BOOL은 BOOLEAN이다(F-019-R35)
             default -> first;
         };
     }

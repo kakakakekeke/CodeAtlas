@@ -16,6 +16,9 @@ import java.util.Set;
  * 동적 SQL의 문자열 식을 푼다. 푸는 것은 문자열·숫자 리터럴, 리터럴끼리의 연결({@code ||}, DB2 {@code CONCAT}), 괄호,
  * 그리고 같은 본문 안에서 대입이 정확히 한 번인 변수(그 값이 다시 풀릴 때)뿐이다. 그 밖의 조각은 {@link #HOLE}로 남긴다.
  * 흐름(분기·루프)과 OUT 인자로 바뀌는 값은 보지 않는다.
+ *
+ * <p>PostgreSQL 본문이면(F-019-R28) {@code format('서식', 인자, ..)}의 {@code %s}·{@code %I}·{@code %L} 자리에 풀리는 인자를 넣고,
+ * {@code quote_ident(..)}·{@code quote_literal(..)}·{@code quote_nullable(..)}과 뒤에 붙은 캐스트({@code 'x'::text})도 푼다.
  */
 final class DynamicSql {
 
@@ -31,12 +34,20 @@ final class DynamicSql {
     /** 변수 이름 → 대입된 식들. 식을 알 수 없는 대입(INTO, FETCH, 튜플)은 null로 센다. */
     private final Map<String, List<Routine.Expr>> assignments = new HashMap<>();
     private final Set<String> parameters = new HashSet<>();
+    /** PostgreSQL 본문인가: {@code format(..)}과 {@code quote_*(..)}, 캐스트, 달러 인용 문자열을 푼다. */
+    private final boolean postgres;
 
     /**
      * @param body 대입을 모을 본문(중첩 블록과 지역 서브프로그램 포함)
      * @param parameterNames 매개변수 이름(값이 밖에서 오므로 풀지 않는다)
      */
     DynamicSql(Routine.Block body, Set<String> parameterNames) {
+        this(body, parameterNames, false);
+    }
+
+    /** @param postgres PostgreSQL 본문이면 true */
+    DynamicSql(Routine.Block body, Set<String> parameterNames, boolean postgres) {
+        this.postgres = postgres;
         parameters.addAll(parameterNames);
         if (body != null) {
             Routine.visit(body, new Collector());
@@ -108,7 +119,8 @@ final class DynamicSql {
                     into = true;
                 } else if (t.isAny("USING", "RETURNING", "RETURN")) {
                     into = false;
-                } else if (into && t.isIdentifier() && (prev == null || !prev.isSymbol(".")) && !t.isAny("BULK", "COLLECT")) {
+                } else if (into && t.isIdentifier() && (prev == null || !prev.isSymbol(".")) && !t.isAny("BULK", "COLLECT")
+                        && !(postgres && t.is("STRICT"))) {
                     add(DbName.normalize(t.text()), null);
                 }
                 prev = t;
@@ -135,13 +147,23 @@ final class DynamicSql {
         boolean resolved = true;
         for (List<Token> operand : splitConcat(tokens)) {
             List<Token> op = stripParens(operand);
+            if (postgres) {
+                op = stripParens(stripCast(op));
+            }
             if (op.isEmpty()) {
                 continue;
+            }
+            if (postgres && op.size() >= 3 && depth < MAX_DEPTH) {
+                Boolean call = postgresCall(op, sb, depth, visiting);
+                if (call != null) {
+                    resolved &= call;
+                    continue;
+                }
             }
             if (op.size() == 1) {
                 Token t = op.get(0);
                 if (t.type() == TokenType.STRING) {
-                    sb.append(unquote(t.text()));
+                    sb.append(postgres ? stringValue(t) : unquote(t.text()));
                 } else if (t.type() == TokenType.NUMBER) {
                     sb.append(t.text());
                 } else if (t.isIdentifier()) {
@@ -172,6 +194,194 @@ final class DynamicSql {
             }
         }
         return resolved;
+    }
+
+    // ------------------------------------------------------------------ PostgreSQL: format, quote_*, 캐스트
+
+    /** 괄호 밖의 첫 {@code ::}부터 끝까지(캐스트)를 뗀다: {@code 'session_cache'::regclass}, {@code v_name::text}. */
+    private static List<Token> stripCast(List<Token> tokens) {
+        int parens = 0;
+        for (int i = 0; i < tokens.size(); i++) {
+            Token t = tokens.get(i);
+            if (t.isSymbol("(") || t.isSymbol("[")) {
+                parens++;
+            } else if (t.isSymbol(")") || t.isSymbol("]")) {
+                parens--;
+            } else if (parens == 0 && i > 0 && t.isSymbol("::")) {
+                return tokens.subList(0, i);
+            }
+        }
+        return tokens;
+    }
+
+    /**
+     * 연결의 한 조각이 {@code [pg_catalog.]format(..)}이나 {@code quote_ident|quote_literal|quote_nullable(..)} 호출 하나면 풀어서 붙인다.
+     *
+     * @return 그런 호출이 아니면 null, 전부 풀렸으면 true, 풀지 못한 자리를 {@link #HOLE}로 남겼으면 false
+     */
+    private Boolean postgresCall(List<Token> op, StringBuilder sb, int depth, Set<String> visiting) {
+        int at = 0;
+        if (op.size() >= 5 && op.get(0).is("PG_CATALOG") && op.get(1).isSymbol(".")) {
+            at = 2;
+        }
+        Token name = op.get(at);
+        if (!name.isAny("FORMAT", "QUOTE_IDENT", "QUOTE_LITERAL", "QUOTE_NULLABLE") || !op.get(at + 1).isSymbol("(")
+                || !op.get(op.size() - 1).isSymbol(")") || closing(op, at + 1) != op.size() - 1) {
+            return null;
+        }
+        List<List<Token>> args = splitArguments(op.subList(at + 2, op.size() - 1));
+        if (!name.is("FORMAT")) {
+            StringBuilder value = new StringBuilder();
+            if (args.size() != 1 || !append(args.get(0), value, depth + 1, visiting)) {
+                sb.append(HOLE);
+                return false;
+            }
+            sb.append(name.is("QUOTE_IDENT") ? quoteIdent(value.toString()) : quoteLiteral(value.toString()));
+            return true;
+        }
+        StringBuilder format = new StringBuilder();
+        if (args.isEmpty() || args.get(0).isEmpty() || !append(args.get(0), format, depth + 1, visiting)) {
+            // 서식 문자열을 모른다: 알아낸 조각만 남긴다
+            sb.append(format.length() == 0 ? HOLE : format);
+            return false;
+        }
+        return applyFormat(format.toString(), args, sb, depth, visiting);
+    }
+
+    /** op.get(open)의 여는 괄호와 짝인 닫는 괄호의 인덱스. 없으면 -1. */
+    private static int closing(List<Token> op, int open) {
+        int d = 0;
+        for (int i = open; i < op.size(); i++) {
+            if (op.get(i).isSymbol("(")) {
+                d++;
+            } else if (op.get(i).isSymbol(")") && --d == 0) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    private static List<List<Token>> splitArguments(List<Token> tokens) {
+        List<List<Token>> out = new ArrayList<>();
+        if (tokens.isEmpty()) {
+            return out;
+        }
+        int parens = 0;
+        int start = 0;
+        for (int i = 0; i < tokens.size(); i++) {
+            Token t = tokens.get(i);
+            if (t.isSymbol("(") || t.isSymbol("[")) {
+                parens++;
+            } else if (t.isSymbol(")") || t.isSymbol("]")) {
+                parens--;
+            } else if (parens == 0 && t.isSymbol(",")) {
+                out.add(tokens.subList(start, i));
+                start = i + 1;
+            }
+        }
+        out.add(tokens.subList(start, tokens.size()));
+        return out;
+    }
+
+    /**
+     * PostgreSQL {@code format()}의 서식을 적용한다: {@code %%}, {@code %s}(그대로), {@code %I}(식별자), {@code %L}(리터럴), 위치 지정 {@code %1$s}.
+     * 너비·플래그({@code %-10s})는 채움만 바꾸므로 무시하고, {@code *} 너비나 모르는 지정자는 풀지 못한 자리로 남긴다.
+     */
+    private boolean applyFormat(String format, List<List<Token>> args, StringBuilder sb, int depth, Set<String> visiting) {
+        boolean resolved = true;
+        int next = 1;
+        int n = format.length();
+        int i = 0;
+        while (i < n) {
+            char c = format.charAt(i);
+            if (c != '%') {
+                sb.append(c);
+                i++;
+                continue;
+            }
+            int j = i + 1;
+            if (j < n && format.charAt(j) == '%') {
+                sb.append('%');
+                i = j + 1;
+                continue;
+            }
+            int digits = j;
+            while (digits < n && Character.isDigit(format.charAt(digits))) {
+                digits++;
+            }
+            int position = -1;
+            if (digits > j && digits < n && format.charAt(digits) == '$') {
+                position = parse(format.substring(j, digits));
+                j = digits + 1;
+            }
+            boolean star = false;
+            while (j < n && (format.charAt(j) == '-' || Character.isDigit(format.charAt(j)) || format.charAt(j) == '*' || format.charAt(j) == '$')) {
+                star |= format.charAt(j) == '*';
+                j++;
+            }
+            char type = j < n ? format.charAt(j) : 0;
+            if (star || (type != 's' && type != 'I' && type != 'L')) {
+                sb.append(HOLE);
+                resolved = false;
+                i = Math.min(n, j + 1);
+                continue;
+            }
+            int index = position > 0 ? position : next;
+            next = index + 1;
+            StringBuilder value = new StringBuilder();
+            if (index >= 1 && index < args.size() && !args.get(index).isEmpty() && append(args.get(index), value, depth + 1, visiting)) {
+                sb.append(type == 's' ? value.toString() : type == 'I' ? quoteIdent(value.toString()) : quoteLiteral(value.toString()));
+            } else {
+                sb.append(HOLE);
+                resolved = false;
+            }
+            i = j + 1;
+        }
+        return resolved;
+    }
+
+    private static int parse(String digits) {
+        try {
+            return Integer.parseInt(digits);
+        } catch (NumberFormatException e) {
+            return -1;
+        }
+    }
+
+    /** {@code quote_ident}: 소문자 이름 꼴이면 그대로, 아니면 큰따옴표로 감싼다. */
+    private static String quoteIdent(String value) {
+        return value.matches("[a-z_][a-z0-9_$]*") ? value : '"' + value.replace("\"", "\"\"") + '"';
+    }
+
+    private static String quoteLiteral(String value) {
+        return "'" + value.replace("'", "''") + "'";
+    }
+
+    /** PostgreSQL 문자열 토큰의 값: 달러 인용은 안쪽 그대로, {@code E'..'}는 백슬래시 이스케이프를 풀고, 그 밖에는 {@link #unquote}와 같다. */
+    static String stringValue(Token t) {
+        if (t.dollarQuoted()) {
+            return t.dollarBody();
+        }
+        String text = t.text();
+        int quote = text.indexOf('\'');
+        if (quote == 1 && (text.charAt(0) == 'E' || text.charAt(0) == 'e')) {
+            String body = text.substring(2, text.endsWith("'") && text.length() > 2 ? text.length() - 1 : text.length());
+            StringBuilder sb = new StringBuilder();
+            for (int i = 0; i < body.length(); i++) {
+                char c = body.charAt(i);
+                if (c == '\\' && i + 1 < body.length()) {
+                    char e = body.charAt(++i);
+                    sb.append(e == 'n' ? '\n' : e == 't' ? '\t' : e == 'r' ? '\r' : e);
+                } else if (c == '\'' && i + 1 < body.length() && body.charAt(i + 1) == '\'') {
+                    sb.append('\'');
+                    i++;
+                } else {
+                    sb.append(c);
+                }
+            }
+            return sb.toString();
+        }
+        return unquote(text);
     }
 
     private static boolean isConcat(Token t) {

@@ -11,6 +11,7 @@ import io.codeatlas.sql.ast.Query.QueryBody;
 import io.codeatlas.sql.ast.Query.SelectItem;
 import io.codeatlas.sql.ast.Statement;
 import io.codeatlas.sql.ast.TableRef;
+import io.codeatlas.sql.lexer.Syntax;
 import io.codeatlas.sql.parser.Keywords;
 import io.codeatlas.sql.parser.ParseResult;
 import java.util.ArrayList;
@@ -35,7 +36,25 @@ public final class FactExtractor {
 
     /** DB가 제공하는 사전·카탈로그 스키마(Oracle {@code SYS}, DB2 {@code SYSCAT}·{@code SYSIBM}·{@code SYSSTAT} 등). */
     private static final java.util.Set<String> SYSTEM_SCHEMAS = java.util.Set.of(
-            "SYS", "SYSCAT", "SYSIBM", "SYSSTAT", "SYSIBMADM", "SYSTOOLS", "SYSPROC", "SYSFUN", "INFORMATION_SCHEMA");
+            "SYS", "SYSCAT", "SYSIBM", "SYSSTAT", "SYSIBMADM", "SYSTOOLS", "SYSPROC", "SYSFUN", "INFORMATION_SCHEMA", "PG_CATALOG");
+    /**
+     * 스키마 없이 쓰는 PostgreSQL 시스템 카탈로그·시스템 뷰의 이름({@code PG_} 뒤, F-019-R17). {@code PG_STAT_}·{@code PG_STATIO_}로 시작하는
+     * 통계 뷰는 접두사로 본다. {@code PG_PAYMENT}처럼 접두사만 같은 프로젝트 테이블은 아니다(Oracle 사전 뷰와 같은 규칙).
+     * 업무 테이블 이름으로도 흔한 낱말({@code PG_USER}, {@code PG_GROUP}, {@code PG_CONFIG} 등. PG는 결제 대행사의 약자로도 쓴다)은 넣지 않았다:
+     * 그런 카탈로그는 {@code pg_catalog.}으로 한정해 쓴 것만 시스템 카탈로그로 본다.
+     */
+    private static final java.util.Set<String> PG_CATALOG_NAMES = java.util.Set.of(
+            "AGGREGATE", "AM", "AMOP", "AMPROC", "ATTRDEF", "ATTRIBUTE", "AUTHID", "AUTH_MEMBERS", "AVAILABLE_EXTENSIONS",
+            "AVAILABLE_EXTENSION_VERSIONS", "CLASS", "COLLATION", "CONSTRAINT", "CONVERSION", "CURSORS", "DATABASE",
+            "DB_ROLE_SETTING", "DEFAULT_ACL", "DEPEND", "DESCRIPTION", "ENUM", "EVENT_TRIGGER", "EXTENSION", "FILE_SETTINGS",
+            "FOREIGN_DATA_WRAPPER", "FOREIGN_SERVER", "FOREIGN_TABLE", "HBA_FILE_RULES", "INDEX", "INDEXES", "INHERITS", "INIT_PRIVS",
+            "LARGEOBJECT", "LARGEOBJECT_METADATA", "LOCKS", "MATVIEWS", "NAMESPACE", "OPCLASS", "OPERATOR", "OPFAMILY",
+            "PARTITIONED_TABLE", "POLICIES", "PREPARED_STATEMENTS", "PREPARED_XACTS", "PROC", "PUBLICATION", "PUBLICATION_REL",
+            "PUBLICATION_TABLES", "REPLICATION_ORIGIN", "REPLICATION_SLOTS", "REWRITE", "ROLES", "SECLABEL", "SECLABELS",
+            "SEQUENCE", "SEQUENCES", "SETTINGS", "SHADOW", "SHDEPEND", "SHDESCRIPTION", "SHSECLABEL", "STATISTIC", "STATISTIC_EXT", "STATS",
+            "STATS_EXT", "SUBSCRIPTION", "SUBSCRIPTION_REL", "TABLES", "TABLESPACE", "TIMEZONE_ABBREVS", "TIMEZONE_NAMES",
+            "TRIGGER", "TS_CONFIG", "TS_CONFIG_MAP", "TS_DICT", "TS_PARSER", "TS_TEMPLATE", "TYPE", "USER_MAPPING", "USER_MAPPINGS",
+            "VIEWS");
     private static final List<String> DICTIONARY_PREFIXES = List.of("USER_", "ALL_", "DBA_");
     /** Oracle 데이터 사전 뷰의 이름({@code USER_}·{@code ALL_}·{@code DBA_} 뒤). */
     private static final java.util.Set<String> DICTIONARY_VIEWS = java.util.Set.of(
@@ -90,9 +109,22 @@ public final class FactExtractor {
     private boolean scopeComplete = true;
     private String currentPackage;
     private Predicate<String> transientRelations = name -> false;
+    /** 구문을 읽은 읽기 방식(ADR-0012). 스키마 없이 쓴 PostgreSQL 카탈로그 이름을 알아보는 데만 쓴다(F-019-R17). */
+    private Syntax syntax = Syntax.DEFAULT;
 
     public FactExtractor(Catalog catalog) {
         this.catalog = catalog == null ? new Catalog() : catalog;
+    }
+
+    /**
+     * 구문을 읽은 읽기 방식을 알려 준다(기본은 {@link Syntax#DEFAULT}). 여기서 정하는 값이 아니라 그 텍스트를 렉서·파서에 넘긴 값 그대로다
+     * ({@code DialectDetector.syntaxOfFile}·{@code syntaxOfEmbedded}가 정한 것, ADR-0012). 스키마 없이 쓴 {@code PG_} 카탈로그 이름
+     * ({@code pg_class}, {@code pg_stat_activity})은 PostgreSQL 읽기 방식으로 읽은 구문에서만 시스템 카탈로그로 본다: Oracle·DB2 프로젝트에는
+     * {@code PG_SETTINGS}·{@code PG_STAT_DAILY} 같은 결제 PG사 업무 테이블이 있다(F-019-R17, F-019-R8).
+     */
+    public FactExtractor syntax(Syntax syntax) {
+        this.syntax = syntax == null ? Syntax.DEFAULT : syntax;
+        return this;
     }
 
     /** 컬럼이 아니라 변수인 이름(정규화한 대문자)을 판별하는 함수를 준다. 카탈로그상 컬럼이 확실하면 컬럼이 이긴다. */
@@ -395,6 +427,13 @@ public final class FactExtractor {
             } else if (st instanceof Statement.Truncate s) {
                 facts.noteType("DELETE");
                 writeNamed(s.table(), "DELETE", true);
+            } else if (st instanceof Statement.Copy s) {
+                // PostgreSQL COPY 테이블 [(컬럼, ..)] FROM stdin: 그 테이블에 넣는다(F-019-R23)
+                facts.noteType("INSERT");
+                Relation target = dmlTarget(new TableRef.Named(s.table(), null, List.of(), false), new Scope(parent), "INSERT");
+                for (QName column : s.columns()) {
+                    writeColumn(target, column, "INSERT");
+                }
             } else if (st instanceof Statement.LockTable s) {
                 facts.noteType("OTHER");
                 for (QName name : s.tables()) {
@@ -489,6 +528,14 @@ public final class FactExtractor {
                 for (List<Expr> row : t.values()) {
                     row.forEach(v -> expr(v, valueScope));
                 }
+            }
+            if (firstTarget != null && (!s.conflictAssignments().isEmpty() || !s.conflictConditions().isEmpty())) {
+                // PostgreSQL ON CONFLICT .. DO UPDATE SET ..: 대입 컬럼은 대상 테이블에 쓰는 컬럼이다(F-019-R12).
+                // EXCLUDED(넣으려던 행)는 스코프에 없는 한정자라 테이블도 컬럼의 소속도 되지 않는다
+                Scope scope = new Scope(parent);
+                scope.relations.add(firstTarget);
+                assignments(s.conflictAssignments(), firstTarget, scope, "INSERT");
+                s.conflictConditions().forEach(c -> expr(c, scope));
             }
             if (firstTarget != null && !s.returning().isEmpty()) {
                 Scope scope = new Scope(parent);
@@ -647,6 +694,20 @@ public final class FactExtractor {
         private void defineCtes(List<Cte> ctes, Scope scope) {
             for (Cte cte : ctes) {
                 String name = DbName.normalize(cte.name());
+                if (cte.dml() != null) {
+                    // PostgreSQL의 데이터 변경 CTE(F-019-R14): 대상 테이블은 쓰기다. 이름은 RETURNING 결과를 가리키는 릴레이션이지 테이블이 아니다
+                    // (결과 컬럼의 원본은 추적하지 않는다)
+                    statement(cte.dml(), scope);
+                    Derived returned = new Derived();
+                    returned.alias = name;
+                    if (cte.columns().isEmpty()) {
+                        returned.opaque = true;
+                    } else {
+                        cte.columns().forEach(c -> returned.add(DbName.normalize(c), null));
+                    }
+                    scope.ctes.put(name, returned);
+                    continue;
+                }
                 // 재귀 참조용 자리: 컬럼 원본은 추적하지 않는다
                 Derived placeholder = new Derived();
                 placeholder.alias = name;
@@ -721,6 +782,9 @@ public final class FactExtractor {
                     expr(e, orderScope);
                 }
                 for (QName of : q.forUpdateOf()) {
+                    if (of.size() == 1 && !of.anyDynamic() && findRelation(of.name(), orderScope) != null) {
+                        continue; // PostgreSQL·MySQL의 FOR UPDATE OF 테이블(별칭): 잠글 테이블을 가리킨다. 컬럼이 아니다(F-019-R15)
+                    }
                     expr(new Expr.ColumnRef(of, false), orderScope);
                 }
             } finally {
@@ -775,6 +839,7 @@ public final class FactExtractor {
             for (TableRef ref : s.from()) {
                 tableRef(ref, scope, false);
             }
+            s.distinctOn().forEach(e -> expr(e, scope));
             Derived out = new Derived();
             for (Relation rel : scope.relations) {
                 if (rel instanceof Base b) {
@@ -921,8 +986,10 @@ public final class FactExtractor {
         }
 
         /**
-         * DB가 제공하는 사전 뷰·카탈로그 테이블인가(F-006-R40): 사전 스키마({@code SYS}, {@code SYSCAT}, {@code SYSIBM}, {@code SYSSTAT} 등)로
-         * 한정했거나, Oracle 데이터 사전 뷰의 이름({@code USER_}·{@code ALL_}·{@code DBA_} + 알려진 이름, {@code V$..})이다.
+         * DB가 제공하는 사전 뷰·카탈로그 테이블인가(F-006-R40): 사전 스키마({@code SYS}, {@code SYSCAT}, {@code SYSIBM}, {@code SYSSTAT},
+         * PostgreSQL의 {@code PG_CATALOG}·{@code INFORMATION_SCHEMA} 등)로 한정했거나, Oracle 데이터 사전 뷰의 이름({@code USER_}·{@code ALL_}·{@code DBA_}
+         * + 알려진 이름, {@code V$..})이나 PostgreSQL 시스템 카탈로그의 이름({@code PG_} + 알려진 이름, F-019-R17)이다.
+         * 스키마 없이 쓴 {@code PG_} 이름은 PostgreSQL 읽기 방식으로 읽은 구문에서만 카탈로그다({@link FactExtractor#syntax}).
          * {@code USER_INFO}처럼 접두사만 같은 프로젝트 테이블은 아니다. 사전 스키마로 한정한 참조는 이름과 상관없이 사전 테이블이다:
          * 이름이나 스키마를 따옴표·백틱으로 감쌌어도, 대소문자가 어떻든 같다({@code information_schema.`TABLES`}, F-006-R41).
          */
@@ -936,6 +1003,12 @@ public final class FactExtractor {
             String n = name.name();
             if (n.startsWith("V$") || n.startsWith("GV$") || n.startsWith("V_$") || DICTIONARY_NAMES.contains(n)) {
                 return true;
+            }
+            if (n.startsWith("PG_")) {
+                // PostgreSQL 시스템 카탈로그(pg_class, pg_tables)와 통계 뷰(pg_stat_activity, pg_statio_user_tables).
+                // PostgreSQL 읽기 방식으로 읽은 구문에서만 본다: 다른 방언의 프로젝트에서는 PG_SETTINGS·PG_STAT_DAILY가 업무 테이블이다
+                return syntax == Syntax.POSTGRES
+                        && (n.startsWith("PG_STAT_") || n.startsWith("PG_STATIO_") || PG_CATALOG_NAMES.contains(n.substring(3)));
             }
             for (String prefix : DICTIONARY_PREFIXES) {
                 if (n.startsWith(prefix) && DICTIONARY_VIEWS.contains(n.substring(prefix.length()))) {

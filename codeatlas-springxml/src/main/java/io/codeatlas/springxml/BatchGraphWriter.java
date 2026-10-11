@@ -414,8 +414,9 @@ final class BatchGraphWriter {
         }
         String[] parts = value.split("\\.");
         String routineId;
-        if (parts.length == 1 || ctx.options().dialect() == Dialect.DB2) {
-            // DB2에서 A.B는 스키마.프로시저다
+        Dialect dialect = ctx.options().dialect();
+        if (parts.length == 1 || dialect == Dialect.DB2 || dialect == Dialect.POSTGRES) {
+            // DB2와 PostgreSQL에서 A.B는 스키마.프로시저다(패키지가 없다. F-019-R33)
             routineId = Ids.routine(value);
         } else {
             // A.B는 패키지.프로시저로, S.A.B는 스키마를 뺀 패키지.프로시저로 본다

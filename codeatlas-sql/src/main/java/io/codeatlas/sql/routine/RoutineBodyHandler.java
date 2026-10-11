@@ -13,9 +13,12 @@ import io.codeatlas.sql.analysis.SqlIds;
 import io.codeatlas.sql.analysis.StatementFacts;
 import io.codeatlas.sql.ast.Pos;
 import io.codeatlas.sql.ast.Routine;
+import io.codeatlas.sql.lexer.Lexer;
+import io.codeatlas.sql.lexer.Syntax;
 import io.codeatlas.sql.lexer.Token;
 import io.codeatlas.sql.lexer.TokenType;
 import io.codeatlas.sql.parser.ParseProblem;
+import io.codeatlas.sql.parser.RoutineLanguage;
 import io.codeatlas.sql.parser.RoutineParser;
 import io.codeatlas.sql.parser.TokenCursor;
 import io.codeatlas.sql.script.RoutineContext;
@@ -40,12 +43,14 @@ import java.util.Set;
  *   <li>패키지 본문: 멤버마다 따로 파싱한다(멤버 하나가 깨져도 나머지는 분석한다). 패키지 수준 선언과 초기화부는 패키지 노드가 주인이다.</li>
  *   <li>패키지 명세: 본문이 없는 멤버에 {@code bodyMissing}을 붙인다.</li>
  *   <li>익명 블록은 {@link #analyzeBlock}으로 분석해 블록의 구문 노드 하나에 모은다.</li>
+ *   <li>PostgreSQL 루틴(F-019-R24~R31): 본문은 달러 인용·작은따옴표 문자열 토큰 안에 있다. {@code LANGUAGE plpgsql}이면 PL/pgSQL로,
+ *       {@code LANGUAGE sql}이면 SQL 구문들로 읽고, 그 밖의 언어는 분석하지 않는다. 트리거는 본문이 없고 함수를 부른다.
+ *       {@code DO} 블록은 {@link #analyzeDoBlock}으로 분석한다.</li>
  * </ul>
  */
 public final class RoutineBodyHandler implements RoutineUnitHandler {
 
     private static final String PLSQL = "PLSQL";
-    private static final String SQLPL = "SQLPL";
 
     @Override
     public void handle(RoutineUnit unit, RoutineContext context) {
@@ -57,7 +62,16 @@ public final class RoutineBodyHandler implements RoutineUnitHandler {
         Dialect dialect = context.dialect() != null ? context.dialect() : DialectDetector.fromTokens(tokens);
         // 구문 노드에 적는 방언(dialect)은 파일·단위에서 판정한 것이고, 판정이 없을 때 문법을 고르는 데만 --dialect를 쓴다(F-006-R37)
         BodyWalker.Env env = new BodyWalker.Env(context.graph(), context.catalog(), dialect, context.locator(),
-                unit.unit().text(), tokens.get(0).offset(), false, new HashSet<>(), dialect != null ? dialect : context.fallbackDialect());
+                unit.unit().text(), tokens.get(0).offset(), false, new HashSet<>(), dialect != null ? dialect : context.fallbackDialect(),
+                context.syntax());
+        if (header.postgres() != null) {
+            if (header.kind() == RoutineHeader.Kind.TRIGGER) {
+                postgresTrigger(unit, env);
+            } else {
+                postgresRoutine(unit, env);
+            }
+            return;
+        }
         switch (header.kind()) {
             case PROCEDURE:
             case FUNCTION:
@@ -90,7 +104,8 @@ public final class RoutineBodyHandler implements RoutineUnitHandler {
         boolean plsql = bodyStart > 0 && tokens.get(bodyStart - 1).isAny("IS", "AS");
         String name = header.name().name();
         Routine.Block body = null;
-        RoutineParser parser = new RoutineParser(tokens.subList(bodyStart, tokens.size()), !plsql);
+        RoutineLanguage language = RoutineLanguage.of(env.syntax(), !plsql);
+        RoutineParser parser = new RoutineParser(tokens.subList(bodyStart, tokens.size()), language);
         body = parser.parseBody(plsql);
         VarScope root = new VarScope(null);
         Set<String> parameters = new LinkedHashSet<>();
@@ -104,7 +119,7 @@ public final class RoutineBodyHandler implements RoutineUnitHandler {
         walker.walkBody(body, root, parameters);
         reportParserProblems(env, parser.problems(), unit.unit().pos(), name);
         Map<String, Object> attrs = new LinkedHashMap<>();
-        attrs.put("language", plsql ? PLSQL : SQLPL);
+        attrs.put("language", language.name());
         attrs.put("statementCount", sink.statementIds().size());
         attrs.put("dynamicSql", walker.dynamicSeen());
         if (!header.parameters().isEmpty()) {
@@ -119,6 +134,160 @@ public final class RoutineBodyHandler implements RoutineUnitHandler {
         locals.addAll(parameters);
         putTypeRefs(attrs, typeRefs(tokens, locals, env.catalog()));
         env.graph().putAttrs(unit.nodeId(), attrs);
+    }
+
+    // ------------------------------------------------------------------ PostgreSQL 함수·프로시저 (F-019-R24~R28, R31)
+
+    private static final String PLPGSQL = "PLPGSQL";
+    private static final String SQL = "SQL";
+
+    /** 트리거 함수 본문에서 변수인 이름(F-019-R29). */
+    private static final List<String> TRIGGER_VARIABLES = List.of("NEW", "OLD", "TG_NAME", "TG_WHEN", "TG_LEVEL", "TG_OP", "TG_RELID",
+            "TG_RELNAME", "TG_TABLE_NAME", "TG_TABLE_SCHEMA", "TG_NARGS", "TG_ARGV", "TG_EVENT", "TG_TAG");
+
+    /**
+     * 문자열 토큰 안에 든 본문.
+     *
+     * @param tokens 본문의 토큰. 위치는 그 문자열이 든 텍스트 기준이다
+     * @param text 본문의 글자(따옴표를 벗긴 값)
+     * @param offset text의 첫 글자가 놓인 위치(토큰의 offset과 같은 기준)
+     */
+    private record BodySource(List<Token> tokens, String text, int offset) {
+    }
+
+    /**
+     * 본문 문자열 토큰을 다시 토큰으로 만든다. 달러 인용이면 위치가 원문과 정확히 맞는다(F-019-R25).
+     * 작은따옴표 문자열이면 안의 {@code ''}를 {@code '}로 푼 값을 읽으므로, 이스케이프가 있는 줄에서는 그 뒤의 열이 조금 밀린다(줄은 맞는다).
+     */
+    private static BodySource bodySource(Token string) {
+        if (string.dollarQuoted()) {
+            List<Token> all = Lexer.tokenizeBody(string, Syntax.POSTGRES);
+            return new BodySource(all.subList(0, all.size() - 1), string.dollarBody(), string.bodyOffset());
+        }
+        int quote = Math.max(0, string.text().indexOf('\''));
+        String inner = DynamicSql.stringValue(string);
+        List<Token> all = Lexer.tokenizeAt(inner, string.offset() + quote + 1, string.line(), string.column() + quote + 1, Syntax.POSTGRES);
+        return new BodySource(all.subList(0, all.size() - 1), inner, string.offset() + quote + 1);
+    }
+
+    private void postgresRoutine(RoutineUnit unit, BodyWalker.Env base) {
+        RoutineHeader header = unit.header();
+        RoutineHeader.Postgres pg = header.postgres();
+        List<Token> tokens = unit.unit().tokens();
+        String name = header.name().name();
+        Map<String, Object> attrs = new LinkedHashMap<>();
+        if (header.kind() == RoutineHeader.Kind.FUNCTION && pg.returnType() != null) {
+            attrs.put("returnType", pg.returnType());
+        }
+        Set<String> parameters = new LinkedHashSet<>(pg.variables());
+        boolean plpgsql = PLPGSQL.equals(pg.language());
+        int bodyStart = header.bodyStart();
+        boolean hasBody = bodyStart >= 0 && bodyStart < tokens.size();
+        if (!hasBody || !(plpgsql || SQL.equals(pg.language()))) {
+            // 본문이 없거나 plpgsql·sql이 아닌 언어: 헤더만 기록한다. language를 넣지 않고 진단도 남기지 않는다(F-019-R24)
+            putTypeRefs(attrs, typeRefs(tokens, parameters, base.catalog()));
+            if (!attrs.isEmpty()) {
+                base.graph().putAttrs(unit.nodeId(), attrs);
+            }
+            return;
+        }
+        BodyWalker.Env env = base;
+        List<Token> bodyTokens;
+        RoutineParser parser;
+        Routine.Block body;
+        if (pg.bodyToken() >= 0) {
+            BodySource source = bodySource(tokens.get(pg.bodyToken()));
+            bodyTokens = source.tokens();
+            env = new BodyWalker.Env(base.graph(), base.catalog(), base.dialect(), base.locator(), source.text(), source.offset(), false,
+                    base.reported(), base.interpret(), Syntax.POSTGRES);
+            parser = new RoutineParser(bodyTokens, RoutineLanguage.PLPGSQL);
+            // LANGUAGE sql 본문은 ;로 나뉜 구문들이고, PL/pgSQL 본문은 블록 하나다
+            body = plpgsql ? parser.parseBody(false) : parser.parseStatementList();
+        } else {
+            // SQL 표준 본문: RETURN 식 | BEGIN ATOMIC 구문; .. END
+            bodyTokens = tokens.subList(bodyStart, tokens.size());
+            parser = new RoutineParser(bodyTokens, RoutineLanguage.PLPGSQL);
+            body = parser.parseBody(false);
+        }
+        VarScope root = new VarScope(null);
+        root.declareAll(parameters);
+        if (plpgsql) {
+            root.declare("FOUND");
+            if (pg.returnsTrigger()) {
+                root.declareAll(TRIGGER_VARIABLES); // NEW.컬럼·OLD.컬럼으로 컬럼 사실을 만들지 않는다(F-019-R29)
+            }
+        }
+        RoutineSink sink = new RoutineSink(env, unit.nodeId(), name, name);
+        BodyWalker walker = new BodyWalker(env, null, sink, name);
+        walker.scopeReliable(parser.problems().isEmpty());
+        walker.walkBody(body, root, parameters);
+        reportParserProblems(env, parser.problems(), unit.unit().pos(), name);
+        // 같은 이름의 오버로드는 한 노드다(F-019-R24). 같은 시그니처를 다시 정의한 것(CREATE OR REPLACE, 마이그레이션 파일)도 같은 노드에 온다:
+        // 어느 정의가 나중인지는 알 수 없으므로 본문을 버리지 않고, 앞서 본 본문의 것과 합친다
+        io.codeatlas.core.model.Node existing = env.graph().node(unit.nodeId()).orElse(null);
+        boolean priorDynamic = existing != null && existing.attrBoolean("dynamicSql");
+        attrs.put("language", plpgsql ? PLPGSQL : SQL);
+        // 본문마다의 구문 수를 더하지 않는다: 두 본문의 구문이 같은 줄이면 구문 노드가 하나다(ID가 루틴 이름과 줄이다)
+        attrs.put("statementCount", containedStatements(env.graph(), unit.nodeId()));
+        attrs.put("dynamicSql", walker.dynamicSeen() || priorDynamic);
+        Set<String> locals = declaredNames(body);
+        locals.addAll(parameters);
+        Set<String> refs = new LinkedHashSet<>(typeRefs(tokens, locals, env.catalog()));
+        if (pg.bodyToken() >= 0) {
+            refs.addAll(typeRefs(bodyTokens, locals, env.catalog()));
+        }
+        if (existing != null) {
+            Set<String> merged = new LinkedHashSet<>(existing.attrList("typeRefs"));
+            merged.addAll(refs);
+            refs = merged;
+        }
+        putTypeRefs(attrs, refs);
+        env.graph().putAttrs(unit.nodeId(), attrs);
+    }
+
+    /** 루틴 노드에 실제로 속한 구문 노드의 수: 그 노드에서 {@code CONTAINS}로 이어진 서로 다른 {@code SQL_STATEMENT} 노드를 센다. */
+    private static int containedStatements(GraphModel graph, String routineId) {
+        Set<String> statements = new HashSet<>();
+        for (io.codeatlas.core.model.Edge e : graph.outgoing(routineId, io.codeatlas.core.model.EdgeKind.CONTAINS)) {
+            if (graph.node(e.to()).map(n -> n.kind() == io.codeatlas.core.model.NodeKind.SQL_STATEMENT).orElse(false)) {
+                statements.add(e.to());
+            }
+        }
+        return statements.size();
+    }
+
+    /**
+     * PostgreSQL 트리거(F-019-R29): 본문이 없고 {@code EXECUTE FUNCTION|PROCEDURE f(..)}로 함수를 부른다. 그 호출과 {@code WHEN (조건)} 안의
+     * 호출·서브쿼리를 트리거 루틴에서 낸다. {@code TRIGGERS_ON}은 노드를 선언할 때 이미 만들었다.
+     */
+    private void postgresTrigger(RoutineUnit unit, BodyWalker.Env env) {
+        RoutineHeader header = unit.header();
+        List<Token> tokens = unit.unit().tokens();
+        String name = header.name().name();
+        VarScope root = new VarScope(null);
+        root.declare("NEW");
+        root.declare("OLD");
+        RoutineSink sink = new RoutineSink(env, unit.nodeId(), name, name);
+        BodyWalker walker = new BodyWalker(env, null, sink, name);
+        int parens = 0;
+        for (int i = 0; i + 1 < tokens.size(); i++) {
+            Token t = tokens.get(i);
+            if (t.isSymbol("(")) {
+                parens++;
+            } else if (t.isSymbol(")")) {
+                parens--;
+            } else if (parens == 0 && t.is("WHEN") && tokens.get(i + 1).isSymbol("(")) {
+                int close = matching(tokens, i + 1, tokens.size());
+                RoutineParser condition = new RoutineParser(tokens.subList(i + 2, Math.max(i + 2, close)), RoutineLanguage.PLPGSQL);
+                walker.walkExpression(condition.parseExpression(), root);
+                break;
+            } else if (parens == 0 && t.is("EXECUTE")) {
+                break;
+            }
+        }
+        if (header.postgres().triggerFunction() != null && !header.postgres().triggerFunction().anyDynamic()) {
+            walker.walkCall(header.postgres().triggerFunction(), root);
+        }
     }
 
     // ------------------------------------------------------------------ %TYPE, %ROWTYPE
@@ -291,6 +460,7 @@ public final class RoutineBodyHandler implements RoutineUnitHandler {
             }
             sqlPl = true;
         }
+        RoutineLanguage language = RoutineLanguage.of(env.syntax(), sqlPl);
         VarScope root = new VarScope(null);
         root.declare("NEW");
         root.declare("OLD");
@@ -309,19 +479,19 @@ public final class RoutineBodyHandler implements RoutineUnitHandler {
                 parens--;
             } else if (parens == 0 && t.is("WHEN") && tokens.get(i + 1).isSymbol("(")) {
                 int close = matching(tokens, i + 1, bodyStart);
-                RoutineParser conditionParser = new RoutineParser(tokens.subList(i + 2, Math.max(i + 2, close)), sqlPl);
+                RoutineParser conditionParser = new RoutineParser(tokens.subList(i + 2, Math.max(i + 2, close)), language);
                 walker.walkExpression(conditionParser.parseExpression(), root);
                 break;
             }
         }
-        RoutineParser parser = new RoutineParser(tokens.subList(bodyStart, tokens.size()), sqlPl);
+        RoutineParser parser = new RoutineParser(tokens.subList(bodyStart, tokens.size()), language);
         Routine.Block body = parser.parseBody(false);
         boolean dynamicInCondition = walker.dynamicSeen();
         walker.scopeReliable(parser.problems().isEmpty());
         walker.walkBody(body, root, Set.of());
         reportParserProblems(env, parser.problems(), unit.unit().pos(), name);
         Map<String, Object> attrs = new LinkedHashMap<>();
-        attrs.put("language", sqlPl ? SQLPL : PLSQL);
+        attrs.put("language", language.name());
         attrs.put("statementCount", sink.statementIds().size());
         attrs.put("dynamicSql", walker.dynamicSeen() || dynamicInCondition);
         Set<String> locals = declaredNames(body);
@@ -490,7 +660,7 @@ public final class RoutineBodyHandler implements RoutineUnitHandler {
             int to = Math.max(from, Math.min(m.endToken(), tokens.size()));
             String label = pkg + "." + m.name();
             try {
-                RoutineParser parser = new RoutineParser(tokens.subList(from, to), false);
+                RoutineParser parser = new RoutineParser(tokens.subList(from, to), RoutineLanguage.PLSQL);
                 Routine.Subprogram sp = parser.parseSubprogram();
                 Set<String> locals = declaredNames(sp.body());
                 locals.addAll(catalog.packageVariables(pkg));
@@ -605,7 +775,7 @@ public final class RoutineBodyHandler implements RoutineUnitHandler {
         for (int k = 0; k <= members.size(); k++) {
             int end = k < members.size() ? Math.min(members.get(k).startToken(), n) : n;
             if (end > prev) {
-                sections.add(new RoutineParser(tokens.subList(prev, end), false).parsePackageSection());
+                sections.add(new RoutineParser(tokens.subList(prev, end), RoutineLanguage.PLSQL).parsePackageSection());
             }
             if (k < members.size()) {
                 prev = Math.max(prev, Math.min(members.get(k).endToken(), n));
@@ -644,10 +814,11 @@ public final class RoutineBodyHandler implements RoutineUnitHandler {
      *
      * @param tokens 블록의 토큰
      * @param text 블록 원문(첫 토큰부터). 모르면 null
+     * @param syntax 블록이 든 텍스트의 읽기 방식(토큰을 만든 방식). null이면 기본이다
      * @param lenient 내장 소스면 true: 가벼운 파싱 문제는 보고하지 않는다
      * @param reported 같은 주인의 진단 중복을 막는 집합
      */
-    public static void analyzeBlock(List<Token> tokens, String text, GraphModel graph, Catalog catalog, Dialect dialect,
+    public static void analyzeBlock(List<Token> tokens, String text, GraphModel graph, Catalog catalog, Dialect dialect, Syntax syntax,
             FactsWriter writer, Locator locator, boolean lenient, Set<String> reported) {
         StatementFacts base = new StatementFacts();
         base.noteType("OTHER");
@@ -655,13 +826,84 @@ public final class RoutineBodyHandler implements RoutineUnitHandler {
         if (tokens.isEmpty()) {
             return;
         }
-        BodyWalker.Env env = new BodyWalker.Env(graph, catalog, dialect, locator, text, tokens.get(0).offset(), lenient, reported);
-        RoutineParser parser = new RoutineParser(tokens, blockIsSqlPl(tokens, dialect));
+        BodyWalker.Env env = new BodyWalker.Env(graph, catalog, dialect, locator, text, tokens.get(0).offset(), lenient, reported, syntax);
+        RoutineParser parser = new RoutineParser(tokens, RoutineLanguage.of(syntax, blockIsSqlPl(tokens, dialect)));
         Routine.Block body = parser.parseBody(false);
         BodyWalker walker = new BodyWalker(env, null, new BlockSink(writer, locator), "익명 블록");
         walker.scopeReliable(parser.problems().isEmpty());
-        walker.walkBody(body, new VarScope(null), Set.of());
+        VarScope root = new VarScope(null);
+        if (parser.language() == RoutineLanguage.PLPGSQL) {
+            root.declare("FOUND");
+        }
+        walker.walkBody(body, root, Set.of());
         reportParserProblems(env, parser.problems(), Pos.span(tokens.get(0), tokens.get(tokens.size() - 1)), "익명 블록");
+    }
+
+    // ------------------------------------------------------------------ PostgreSQL DO 블록 (F-019-R30)
+
+    /**
+     * {@code DO [LANGUAGE 언어] 본문 [LANGUAGE 언어]} 구문에서 읽은 것.
+     *
+     * @param body 본문 문자열 토큰(달러 인용 또는 작은따옴표)
+     * @param language 적어 준 언어(대문자). 적지 않았으면 {@code PLPGSQL}
+     */
+    public record DoBlock(Token body, String language) {
+
+        /** 본문을 분석할 수 있는 언어인가. 다른 언어의 블록은 분석하지 않는다(진단도 없다). */
+        public boolean plpgsql() {
+            return PLPGSQL.equals(language);
+        }
+    }
+
+    /** 구문의 토큰이 PostgreSQL의 {@code DO} 블록이면 본문과 언어를 돌려준다. 아니면 null. 어떤 입력에도 예외를 던지지 않는다. */
+    public static DoBlock doBlock(List<Token> tokens) {
+        if (tokens.size() < 2 || !tokens.get(0).is("DO")) {
+            return null;
+        }
+        Token body = null;
+        String language = PLPGSQL;
+        int i = 1;
+        while (i < tokens.size() && !tokens.get(i).isSymbol(";") && !tokens.get(i).isEof()) {
+            Token t = tokens.get(i);
+            if (t.is("LANGUAGE") && i + 1 < tokens.size() && (tokens.get(i + 1).type() == TokenType.IDENT || tokens.get(i + 1).type() == TokenType.STRING)
+                    && (body != null || i + 2 < tokens.size())) {
+                Token x = tokens.get(i + 1);
+                language = (x.type() == TokenType.STRING ? DynamicSql.stringValue(x) : x.text()).toUpperCase(java.util.Locale.ROOT);
+                i += 2;
+            } else if (t.type() == TokenType.STRING && body == null) {
+                body = t;
+                i++;
+            } else {
+                return null; // DO 블록의 꼴이 아니다
+            }
+        }
+        return body == null ? null : new DoBlock(body, language);
+    }
+
+    /**
+     * PostgreSQL {@code DO} 블록의 본문(PL/pgSQL)을 분석해 안쪽 구문의 사실과 호출을 주인 구문 노드의 기록기에 모은다(F-019-R30).
+     * 기존 익명 블록({@link #analyzeBlock})과 같은 방식이다. 본문 토큰의 위치는 블록이 든 텍스트 기준이다.
+     *
+     * @param lenient 내장 소스면 true: 가벼운 파싱 문제는 보고하지 않는다
+     */
+    public static void analyzeDoBlock(DoBlock block, GraphModel graph, Catalog catalog, Dialect dialect, FactsWriter writer, Locator locator,
+            boolean lenient, Set<String> reported) {
+        StatementFacts base = new StatementFacts();
+        base.noteType("OTHER");
+        writer.add(base, locator);
+        BodySource source = bodySource(block.body());
+        if (source.tokens().isEmpty()) {
+            return;
+        }
+        BodyWalker.Env env = new BodyWalker.Env(graph, catalog, dialect, locator, source.text(), source.offset(), lenient, reported, Syntax.POSTGRES);
+        RoutineParser parser = new RoutineParser(source.tokens(), RoutineLanguage.PLPGSQL);
+        Routine.Block body = parser.parseBody(false);
+        BodyWalker walker = new BodyWalker(env, null, new BlockSink(writer, locator), "익명 블록");
+        walker.scopeReliable(parser.problems().isEmpty());
+        VarScope root = new VarScope(null);
+        root.declare("FOUND");
+        walker.walkBody(body, root, Set.of());
+        reportParserProblems(env, parser.problems(), Pos.span(source.tokens().get(0), source.tokens().get(source.tokens().size() - 1)), "익명 블록");
     }
 
     // ------------------------------------------------------------------ 진단

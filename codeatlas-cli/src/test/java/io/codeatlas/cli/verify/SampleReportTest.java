@@ -100,6 +100,30 @@ class SampleReportTest {
     }
 
     @Test
+    @DisplayName("F-019-AC34 허용한 지점 밖의 PARSE_FAILED·UNSUPPORTED_SYNTAX: 같은 파일의 그 줄에서 시작한 진단만 허용하고, 다른 줄·다른 파일·위치 없는 진단은 밖으로 친다")
+    void parseFailuresOutsideAllowedPoints() {
+        List<UnresolvedPoints.Point> allowed = List.of(new UnresolvedPoints.Point("N1", "db/schema.sql", 7, 7, "REFRESH"),
+                new UnresolvedPoints.Point("N2", "db/schema.sql", 20, 22, "여러 줄"));
+        Diagnostic atPoint = Diagnostic.warn(DiagnosticCodes.UNSUPPORTED_SYNTAX, "REFRESH", SourceLocation.of("db/schema.sql", 7));
+        Diagnostic inRange = Diagnostic.error(DiagnosticCodes.PARSE_FAILED, "범위 안", SourceLocation.of("db/schema.sql", 21));
+        Diagnostic otherLine = Diagnostic.warn(DiagnosticCodes.UNSUPPORTED_SYNTAX, "다른 줄", SourceLocation.of("db/schema.sql", 8));
+        Diagnostic otherFile = Diagnostic.warn(DiagnosticCodes.UNSUPPORTED_SYNTAX, "다른 파일", SourceLocation.of("other/db/schema.sql", 7));
+        Diagnostic fileOnly = Diagnostic.error(DiagnosticCodes.PARSE_FAILED, "줄 없음", SourceLocation.ofFile("db/schema.sql"));
+        Diagnostic noLocation = Diagnostic.error(DiagnosticCodes.PARSE_FAILED, "위치 없음", null);
+        Diagnostic otherCode = Diagnostic.warn(DiagnosticCodes.UNRESOLVED_REFERENCE, "다른 코드는 보지 않는다", SourceLocation.of("db/schema.sql", 8));
+        GraphModel g = new GraphModel();
+        List.of(atPoint, inRange, otherLine, otherFile, fileOnly, noLocation, otherCode).forEach(g::report);
+
+        assertThat(DiagnosticChecks.parseFailuresAt(g, allowed.get(0))).containsExactly(atPoint);
+        assertThat(DiagnosticChecks.parseFailuresAt(g, allowed.get(1))).containsExactly(inRange);
+        assertThat(DiagnosticChecks.parseFailuresOutside(g, allowed)).containsExactly(otherLine, otherFile, fileOnly, noLocation);
+        // 허용 목록이 비면 전부 밖이다. 기존 그래프(broken/Bad.java의 PARSE_FAILED)로도 본다
+        assertThat(DiagnosticChecks.parseFailuresOutside(g, List.of())).hasSize(6);
+        assertThat(DiagnosticChecks.parseFailuresOutside(graph, allowed)).singleElement()
+                .satisfies(d -> assertThat(d.location().file()).isEqualTo("broken/Bad.java"));
+    }
+
+    @Test
     @DisplayName("expected-unresolved.md의 표에서 지점(번호, 파일, 줄 범위)을 읽고, 근처의 미해결 엣지와 진단을 찾는다")
     void unresolvedPoints() {
         List<UnresolvedPoints.Point> points = UnresolvedPoints.parse(UNRESOLVED_MD);
@@ -234,5 +258,55 @@ class SampleReportTest {
 
         assertThat(Files.readString(target.resolve("sample-shop-report.md"))).contains("# sample-shop 검증 리포트");
         assertThat(new ObjectMapper().readTree(target.resolve("sample-shop-report.json").toFile()).path("summary").isObject()).isTrue();
+    }
+
+    @Test
+    @DisplayName("F-019-AC34 샘플 이름을 주면 제목과 파일 이름이 그 이름을 따른다. 주지 않으면 sample-shop이다")
+    void sampleNameGoesIntoTitleAndFileNames(@TempDir Path dir) throws Exception {
+        SampleReport pg = SampleReport.builder(graph, result).sample("sample-pg").mode("report").build();
+
+        assertThat(pg.markdown()).startsWith("# sample-pg 검증 리포트\n");
+        assertThat(pg.markdownFile()).isEqualTo("sample-pg-report.md").isEqualTo(SampleReport.markdownFile("sample-pg"));
+        assertThat(pg.jsonFile()).isEqualTo("sample-pg-report.json").isEqualTo(SampleReport.jsonFile("sample-pg"));
+        pg.write(dir);
+        report().write(dir);
+        assertThat(Files.readString(dir.resolve("sample-pg-report.md"))).startsWith("# sample-pg 검증 리포트");
+        assertThat(dir.resolve("sample-pg-report.json")).isRegularFile();
+        // 이름을 주지 않은 리포트는 전과 같은 이름으로 따로 남는다
+        assertThat(report().markdownFile()).isEqualTo("sample-shop-report.md");
+        assertThat(Files.readString(dir.resolve("sample-shop-report.md"))).startsWith("# sample-shop 검증 리포트");
+        assertThat(dir.resolve("sample-shop-report.json")).isRegularFile();
+    }
+
+    @Test
+    @DisplayName("F-019-AC34 일부러 넣은 미지원 구문 목록을 주면 지점마다 남은 진단과 목록 밖의 PARSE_FAILED·UNSUPPORTED_SYNTAX를 싣는다. 주지 않으면 그 절이 없다")
+    void allowedParseFailuresSection() throws Exception {
+        graph.report(Diagnostic.warn(DiagnosticCodes.UNSUPPORTED_SYNTAX, "REFRESH는 읽지 않는다", SourceLocation.of("db/schema.sql", 7)));
+        List<UnresolvedPoints.Point> allowed = List.of(new UnresolvedPoints.Point("N1", "db/schema.sql", 7, 7, "REFRESH"),
+                new UnresolvedPoints.Point("N2", "db/schema.sql", 30, 30, "조용히 넘긴 것"));
+
+        SampleReport with = SampleReport.builder(graph, result).sample("sample-pg").allowedParseFailures(allowed).build();
+        String md = with.markdown();
+
+        assertThat(md).contains("### 일부러 넣은 미지원 구문");
+        assertThat(md).contains("| N1 | `db/schema.sql:7` | UNSUPPORTED_SYNTAX REFRESH는 읽지 않는다 |");
+        assertThat(md).contains("| N2 | `db/schema.sql:30` | 없음 |");
+        assertThat(md).contains("#### 목록 밖의 PARSE_FAILED·UNSUPPORTED_SYNTAX (1)");
+        assertThat(md).contains("| PARSE_FAILED | `broken/Bad.java:14` | 세미콜론 \\| 없음 |");
+        // 깨진 입력 파일을 주지 않았으면 그 표는 없다
+        assertThat(md).doesNotContain("### 깨진 입력 파일");
+        JsonNode json = new ObjectMapper().readTree(with.json());
+        assertThat(json.path("allowedParseFailures")).hasSize(2);
+        assertThat(json.path("allowedParseFailures").get(0).path("id").asText()).isEqualTo("N1");
+        assertThat(json.path("allowedParseFailures").get(0).path("diagnostics")).hasSize(1);
+        assertThat(json.path("allowedParseFailures").get(1).path("diagnostics")).isEmpty();
+        assertThat(json.path("unexpectedParseFailures")).hasSize(1);
+        assertThat(json.path("unexpectedParseFailures").get(0).path("location").asText()).isEqualTo("broken/Bad.java:14");
+
+        // 목록을 주지 않은 리포트(sample-shop)는 전과 같다
+        assertThat(report().markdown()).doesNotContain("일부러 넣은 미지원 구문").contains("### 깨진 입력 파일");
+        JsonNode plain = new ObjectMapper().readTree(report().json());
+        assertThat(plain.has("allowedParseFailures")).isFalse();
+        assertThat(plain.has("unexpectedParseFailures")).isFalse();
     }
 }

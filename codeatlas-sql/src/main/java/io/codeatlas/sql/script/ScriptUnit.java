@@ -11,8 +11,9 @@ import java.util.List;
  * @param tokens 단위의 토큰(주석 제외, EOF 없음). STATEMENT는 종결자를 뺀 것, ROUTINE·BLOCK은 끝의 {@code ;}까지 포함한다.
  *               토큰의 줄·열·offset은 원문 전체 기준이다
  * @param text 원문에서 잘라 낸 본문(첫 토큰부터 마지막 토큰까지)
+ * @param dataRows PostgreSQL {@code COPY … FROM stdin} 구문이면 그 뒤에 따라온 데이터 줄 수(F-019-R11), 그 밖에는 -1
  */
-public record ScriptUnit(Kind kind, List<Token> tokens, String text) {
+public record ScriptUnit(Kind kind, List<Token> tokens, String text, int dataRows) {
 
     public enum Kind {
         /** 구문 하나(DML, DDL, 줄 명령). */
@@ -25,6 +26,11 @@ public record ScriptUnit(Kind kind, List<Token> tokens, String text) {
 
     public ScriptUnit {
         tokens = List.copyOf(tokens);
+    }
+
+    /** 데이터 구간이 따르지 않는 단위. */
+    public ScriptUnit(Kind kind, List<Token> tokens, String text) {
+        this(kind, tokens, text, -1);
     }
 
     public Token first() {

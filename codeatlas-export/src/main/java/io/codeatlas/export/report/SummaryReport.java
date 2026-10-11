@@ -564,7 +564,7 @@ public final class SummaryReport {
         }
         // 적재 구문을 뺐을 때, 스크립트가 적재하는 테이블
         Set<String> loadedOnly = excluded.isEmpty() ? Set.of() : loads.byTable().keySet();
-        // DB가 제공하는 시스템 카탈로그(Oracle 데이터 사전, DB2 카탈로그: attrs.systemCatalog=true)는 뒤에 따로 묶고 의심으로 치지 않는다.
+        // DB가 제공하는 시스템 카탈로그(Oracle 데이터 사전, DB2 카탈로그, PostgreSQL pg_catalog·information_schema: attrs.systemCatalog=true)는 뒤에 따로 묶고 의심으로 치지 않는다.
         List<Node> undeclared = new ArrayList<>(nodes.stream().filter(n -> n.kind() == NodeKind.DB_TABLE && !n.declared()).toList());
         undeclared.sort(Comparator.comparing((Node n) -> n.attrBoolean("systemCatalog")).thenComparing(Node::id));
         out.append("\n## DDL에 없는 테이블 (").append(undeclared.size()).append(")\n\n");

@@ -14,10 +14,12 @@ import io.codeatlas.sql.analysis.StatementFacts;
 import io.codeatlas.sql.ast.Pos;
 import io.codeatlas.sql.ast.Routine;
 import io.codeatlas.sql.ast.Statement;
+import io.codeatlas.sql.lexer.Syntax;
 import io.codeatlas.sql.lexer.Token;
 import io.codeatlas.sql.parser.DdlParser;
 import io.codeatlas.sql.parser.ParseProblem;
 import io.codeatlas.sql.parser.ParseResult;
+import io.codeatlas.sql.parser.RoutineLanguage;
 import io.codeatlas.sql.parser.RoutineParser;
 import io.codeatlas.sql.parser.SqlParser;
 import io.codeatlas.sql.parser.TokenCursor;
@@ -64,11 +66,23 @@ final class BodyWalker {
 
     /** 걷는 데 필요한 환경. */
     record Env(GraphModel graph, Catalog catalog, Dialect dialect, Locator locator, String sourceText, int sourceOffset,
-            boolean lenient, Set<String> reported, Dialect interpret) {
+            boolean lenient, Set<String> reported, Dialect interpret, Syntax syntax) {
+
+        Env {
+            syntax = syntax == null ? Syntax.DEFAULT : syntax;
+        }
 
         Env(GraphModel graph, Catalog catalog, Dialect dialect, Locator locator, String sourceText, int sourceOffset,
-                boolean lenient, Set<String> reported) {
-            this(graph, catalog, dialect, locator, sourceText, sourceOffset, lenient, reported, dialect);
+                boolean lenient, Set<String> reported, Syntax syntax) {
+            this(graph, catalog, dialect, locator, sourceText, sourceOffset, lenient, reported, dialect, syntax);
+        }
+
+        /**
+         * 본문에서 풀어낸 동적 SQL 문자열을 읽는 방식. PostgreSQL 본문의 것은 PostgreSQL로 읽고, 그 밖에는 지금까지처럼 기본으로 읽는다
+         * (MySQL 파일의 루틴에서 푼 문자열에 줄 처음 {@code #} 주석 규칙을 새로 적용하지 않는다, F-019-R8).
+         */
+        Syntax dynamicSyntax() {
+            return syntax == Syntax.POSTGRES ? Syntax.POSTGRES : Syntax.DEFAULT;
         }
     }
 
@@ -80,6 +94,8 @@ final class BodyWalker {
     private final Sink sink;
     private final String ownerLabel;
     private final int dynamicNesting;
+    /** PostgreSQL 읽기 방식의 본문인가(PL/pgSQL, LANGUAGE sql 본문). 호출 판정과 동적 SQL 풀기가 달라진다(F-019-R27·R28). */
+    private final boolean postgres;
     private DynamicSql dynamicSql = new DynamicSql(null, Set.of());
     private Set<String> transientRelations = Set.of();
     private boolean dynamicSeen;
@@ -99,6 +115,8 @@ final class BodyWalker {
         this.sink = sink;
         this.ownerLabel = ownerLabel;
         this.dynamicNesting = dynamicNesting;
+        this.postgres = env.syntax() == Syntax.POSTGRES;
+        this.dynamicSql = new DynamicSql(null, Set.of(), postgres);
     }
 
     /** FROM에 오지만 테이블이 아닌 이름(트리거의 전이 테이블)을 알려 준다. */
@@ -121,7 +139,7 @@ final class BodyWalker {
 
     /** 본문 하나를 걷는다. scope에는 매개변수와 바깥(패키지) 변수가 들어 있다. */
     void walkBody(Routine.Block body, VarScope scope, Set<String> parameterNames) {
-        dynamicSql = new DynamicSql(body, parameterNames);
+        dynamicSql = new DynamicSql(body, parameterNames, postgres);
         // 선언을 보지 못한 이름이라도 본문에서 값을 받으면(대입, INTO) 변수다: 다른 파일의 패키지 명세에 선언된 패키지 변수 등
         scope.declareAll(assignedNames(body));
         block(body, scope);
@@ -159,6 +177,14 @@ final class BodyWalker {
     /** 식 하나만 걷는다(트리거의 WHEN 조건). */
     void walkExpression(Routine.Expr e, VarScope scope) {
         expr(e, scope);
+    }
+
+    /** 호출문 하나만 판정해 기록한다: PostgreSQL 트리거의 {@code EXECUTE FUNCTION f(..)}(F-019-R29). */
+    void walkCall(io.codeatlas.sql.ast.QName name, VarScope scope) {
+        Target t = resolveCall(name.parts(), scope, true);
+        if (t != null) {
+            sink.call(t.packageName(), t.name(), name.pos(), false);
+        }
     }
 
     // ------------------------------------------------------------------ 블록과 선언
@@ -267,7 +293,7 @@ final class BodyWalker {
             expr(f.into(), scope);
         } else if (s instanceof Routine.ExecuteImmediate e) {
             if (e.sql() != null) {
-                dynamicPoint(e.sql().tokens(), e.pos(), "EXECUTE IMMEDIATE", scope);
+                dynamicPoint(e.sql().tokens(), e.pos(), postgres ? "EXECUTE" : "EXECUTE IMMEDIATE", scope);
                 expr(e.sql(), scope);
             }
             expr(e.rest(), scope);
@@ -290,7 +316,7 @@ final class BodyWalker {
         } else if (s instanceof Routine.Raise r) {
             expr(r.detail(), scope);
         } else if (s instanceof Routine.Simple x) {
-            if (x.keyword().equals("PIPE ROW") || x.keyword().equals("EXPRESSION")) {
+            if (x.keyword().equals("PIPE ROW") || x.keyword().equals("EXPRESSION") || x.keyword().equals("ASSERT")) {
                 expr(x.detail(), scope);
             } else {
                 subqueries(x.detail(), scope);
@@ -337,7 +363,7 @@ final class BodyWalker {
             inner.markOpen();
             return;
         }
-        FactExtractor.OutputColumns columns = new FactExtractor(env.catalog()).variables(outer::isVariable).inPackage(packageName)
+        FactExtractor.OutputColumns columns = new FactExtractor(env.catalog()).syntax(env.syntax()).variables(outer::isVariable).inPackage(packageName)
                 .transientRelations(transientRelations::contains).outputColumns(select.query());
         for (FactExtractor.OutputColumn c : columns.columns()) {
             inner.declare(c.name());
@@ -361,6 +387,9 @@ final class BodyWalker {
             Target t = resolveCall(parts, scope, true);
             if (t != null) {
                 sink.call(t.packageName(), t.name(), c.name().pos(), false);
+            } else if (postgres && !c.tokens().isEmpty()) {
+                // PERFORM setval('seq', ..): 내장 시퀀스 함수의 호출문도 시퀀스 참조다(F-019-R16)
+                sequences(new Routine.Expr(c.tokens(), List.of(), List.of(), c.pos()), scope, c.pos(), c.tokens());
             }
         }
         expr(c.args(), scope);
@@ -401,6 +430,9 @@ final class BodyWalker {
         }
         subqueries(e, scope);
         for (Routine.NameRef r : e.refs()) {
+            if (postgres && !r.call()) {
+                continue; // PostgreSQL의 함수 호출에는 괄호가 있다: 괄호 없는 이름은 변수·컬럼·키워드다
+            }
             Target t = resolveCall(r.name().parts(), scope, false);
             if (t != null) {
                 sink.call(t.packageName(), t.name(), r.name().pos(), true);
@@ -435,6 +467,20 @@ final class BodyWalker {
             boolean afterDot = i > 0 && tokens.get(i - 1).isSymbol(".");
             if (inSubquery.contains(t) || !t.isIdentifier() || afterDot) {
                 i++;
+                continue;
+            }
+            if (postgres && t.isAny("NEXTVAL", "CURRVAL", "SETVAL") && i + 2 < n && tokens.get(i + 1).isSymbol("(")
+                    && tokens.get(i + 2).type() == io.codeatlas.sql.lexer.TokenType.STRING) {
+                // PostgreSQL nextval('seq')·currval('seq')·setval('seq', ..): 첫 인자가 문자열 리터럴일 때만 시퀀스 참조다(F-019-R16)
+                io.codeatlas.sql.ast.QName sequenceName = SqlParser.sequenceName(tokens.get(i + 2));
+                if (sequenceName != null) {
+                    if (facts == null) {
+                        facts = new StatementFacts();
+                        facts.noteType("OTHER");
+                    }
+                    facts.sequence(sequenceName.name(), Pos.of(tokens.get(i + 2)));
+                }
+                i += 3;
                 continue;
             }
             int nameAt = -1;
@@ -497,6 +543,19 @@ final class BodyWalker {
             return null; // 변수, 컬렉션 첨자, 레코드 필드, 커서
         }
         String name = parts.get(n - 1);
+        if (postgres) {
+            // PostgreSQL에는 패키지가 없다: 이름 앞의 조각은 스키마(와 데이터베이스)이므로 뗀다(F-019-R27)
+            if (Builtins.isPostgresCatalogSchema(parts)) {
+                return null;
+            }
+            if (catalog.hasRoutine(null, name)) {
+                return new Target(null, name);
+            }
+            if (!statementForm || Builtins.isBuiltin(parts) || Builtins.isPostgresBuiltin(parts)) {
+                return null;
+            }
+            return new Target(null, name);
+        }
         if (n == 1) {
             if (scope.isLocalRoutine(name)) {
                 return null;
@@ -543,7 +602,8 @@ final class BodyWalker {
             problems.add(new ParseProblem(p.message(), p.pos(), p.minor()));
         }
         ParseResult result = new ParseResult(st, problems, q.salvagedReads(), q.pos());
-        StatementFacts facts = new FactExtractor(env.catalog()).variables(scope::isVariable).scopeComplete(scopeReliable && !scope.isOpen())
+        StatementFacts facts = new FactExtractor(env.catalog()).syntax(env.syntax()).variables(scope::isVariable)
+                .scopeComplete(scopeReliable && !scope.isOpen())
                 .inPackage(packageName).transientRelations(transientRelations::contains).extract(result);
         sink.statement(q.pos(), sourceText(q.tokens()), attrs, w -> w.add(facts, env.locator()));
         reportProblems(problems, q.pos());
@@ -647,23 +707,26 @@ final class BodyWalker {
         base.noteType("OTHER");
         base.markDynamic();
         writer.add(base, fixed);
-        for (ScriptUnit unit : ScriptSplitter.splitEmbedded(sqlText)) {
+        Syntax syntax = env.dynamicSyntax();
+        for (ScriptUnit unit : ScriptSplitter.splitEmbedded(sqlText, syntax)) {
             List<Token> tokens = new ArrayList<>(unit.tokens());
             if (unit.kind() == ScriptUnit.Kind.BLOCK) {
                 if (dynamicNesting < MAX_DYNAMIC_NESTING) {
-                    Env inner = new Env(env.graph(), env.catalog(), env.dialect(), fixed, unit.text(), tokens.get(0).offset(), true, env.reported(), env.interpret());
+                    Env inner = new Env(env.graph(), env.catalog(), env.dialect(), fixed, unit.text(), tokens.get(0).offset(), true, env.reported(),
+                            env.interpret(), syntax);
                     BodyWalker walker = new BodyWalker(inner, packageName, new BlockSink(writer, fixed), ownerLabel, dynamicNesting + 1);
-                    Routine.Block body = new RoutineParser(tokens, RoutineBodyHandler.blockIsSqlPl(tokens, env.interpret())).parseBody(false);
+                    RoutineLanguage language = RoutineLanguage.of(syntax, RoutineBodyHandler.blockIsSqlPl(tokens, env.interpret()));
+                    Routine.Block body = new RoutineParser(tokens, language).parseBody(false);
                     walker.walkBody(body, new VarScope(null), Set.of());
                 }
                 continue;
             }
-            ParseResult result = DdlParser.isDdl(tokens) ? new DdlParser(tokens).parse() : new SqlParser(tokens).parseStatement();
+            ParseResult result = DdlParser.isDdl(tokens) ? new DdlParser(tokens, syntax).parse() : new SqlParser(tokens, syntax).parseStatement();
             if (result.statement() instanceof Statement.Empty) {
                 continue;
             }
             // 동적 SQL 안의 이름은 실행 시점에 SQL로 해석된다: 본문의 변수가 아니다
-            writer.add(new FactExtractor(env.catalog()).inPackage(packageName).extract(result), fixed);
+            writer.add(new FactExtractor(env.catalog()).syntax(syntax).inPackage(packageName).extract(result), fixed);
         }
     }
 

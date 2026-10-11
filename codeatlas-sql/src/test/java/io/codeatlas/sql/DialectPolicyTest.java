@@ -14,7 +14,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 /**
- * 방언 기본값 정책(F-007-R23~R25). 이 도구의 대상 방언은 Oracle·DB2다: 프로젝트 설정이 대상 외 방언(전자정부 템플릿의
+ * 방언 기본값 정책(F-007-R23~R25, F-019-R4). 이 도구의 대상 방언은 Oracle·DB2·PostgreSQL이다: 프로젝트 설정이 대상 외 방언(전자정부 템플릿의
  * {@code Globals.DbType=mysql}/{@code hsql})을 가리켜도 대상 방언의 파일이 있으면 그쪽을 고르고, 그 사실을 요약 진단으로 알린다.
  */
 class DialectPolicyTest {
@@ -69,7 +69,7 @@ class DialectPolicyTest {
     }
 
     @Test
-    @DisplayName("F-007-AC24 대상 방언 파일이 하나도 없을 때만 WARN이다: 설정이 가리키는 대상 외 방언이 그 밖의 방언보다 먼저고, 설정이 없으면 그 밖의 방언의 순서(이름의 사전순, F-007-R28)로 첫 방언")
+    @DisplayName("F-007-AC24 F-019-AC4 대상 방언(Oracle, DB2, PostgreSQL) 파일이 하나도 없을 때만 WARN이다: 설정이 가리키는 대상 외 방언이 그 밖의 방언보다 먼저고, 설정이 없으면 그 밖의 방언의 순서(이름의 사전순, F-007-R28)로 첫 방언")
     void foreignDialectOnlyWhenNoTargetFiles() {
         TestProject base = TestProject.create()
                 .file("db/cubrid/ddl_cubrid.sql", "CREATE TABLE TB_A (ID VARCHAR(10) NOT NULL, CUB_COL INT);\n")
@@ -80,7 +80,7 @@ class DialectPolicyTest {
             Diagnostic d = summary(g).get(0);
             assertThat(d.severity()).isEqualTo(Severity.WARN);
             assertThat(d.message()).contains("프로젝트 설정(src/main/resources/globals.properties:Globals.DbType=mysql)에 따라 mysql 선택")
-                    .contains("이 도구의 대상 방언(Oracle, DB2)의 파일이 없어").contains("부정확할 수 있음");
+                    .contains("이 도구의 대상 방언(Oracle, DB2, PostgreSQL)의 파일이 없어").contains("부정확할 수 있음");
         }
         try (TestProject project = TestProject.create()
                 .file("db/cubrid/ddl_cubrid.sql", "CREATE TABLE TB_A (ID VARCHAR(10) NOT NULL, CUB_COL INT);\n")
@@ -88,7 +88,7 @@ class DialectPolicyTest {
             GraphModel g = project.run(new SqlAnalyzer()).graph();
             assertThat(node(g, "db:table:TB_A").location().file()).isEqualTo("db/cubrid/ddl_cubrid.sql");
             assertThat(summary(g).get(0).severity()).isEqualTo(Severity.WARN);
-            assertThat(summary(g).get(0).message()).contains("cubrid 파일을 사용").contains("대상 방언(Oracle, DB2)의 파일이 없어");
+            assertThat(summary(g).get(0).message()).contains("cubrid 파일을 사용").contains("대상 방언(Oracle, DB2, PostgreSQL)의 파일이 없어");
         }
     }
 
@@ -206,63 +206,108 @@ class DialectPolicyTest {
     }
 
     @Test
-    @DisplayName("F-007-AC29 대상 방언 파일도 프로젝트 설정도 없으면 그 밖의 방언끼리는 경로순이 아니라 이름의 사전순이다: mysql·postgres 두 벌이면 postgres 파일이 경로상 먼저여도 mysql(mybatis 모듈 F-009-AC47과 같은 방언). 적재 스크립트도 같다")
+    @DisplayName("F-007-AC29 F-019-AC4 mysql·postgres 두 벌이면 대상 방언 postgres를 고르고 WARN이 아니다(전에는 사전순으로 mysql이었다). 대상 방언 파일도 프로젝트 설정도 없으면 그 밖의 방언끼리는 경로순이 아니라 이름의 사전순이다: cubrid·mysql 두 벌이면 mysql 파일이 경로상 먼저여도 cubrid. 적재 스크립트도 같다")
     void otherDialectsByName() {
         try (TestProject project = TestProject.create()
                 .file("db/a_postgres.sql", "CREATE TABLE TB_A (ID VARCHAR(10) NOT NULL, PG_COL INT);\n")
                 .file("db/b_mysql.sql", "CREATE TABLE TB_A (ID VARCHAR(10) NOT NULL, MY_COL INT);\n")) {
             GraphModel g = project.run(new SqlAnalyzer()).graph();
 
-            assertThat(node(g, "db:table:TB_A").location().file()).isEqualTo("db/b_mysql.sql");
+            assertThat(node(g, "db:table:TB_A").location().file()).isEqualTo("db/a_postgres.sql");
             Diagnostic d = summary(g).get(0);
-            assertThat(d.severity()).isEqualTo(Severity.WARN);
-            assertThat(d.message()).contains("방언별 DDL 2벌 감지(mysql, postgres): mysql 파일을 사용(테이블 1개)").contains("대상 방언(Oracle, DB2)의 파일이 없어");
+            assertThat(d.severity()).isEqualTo(Severity.INFO);
+            assertThat(d.message()).contains("방언별 DDL 2벌 감지(postgres, mysql): postgres 파일을 사용(테이블 1개)").doesNotContain("파일이 없어");
         }
         // 정의 없이 데이터 적재 스크립트만 방언별 두 벌일 때도 같은 순서다
         try (TestProject project = TestProject.create()
                 .file("data/a_postgres.sql", inserts("TB_A", 12))
                 .file("data/b_mysql.sql", inserts("TB_A", 12))) {
             GraphModel g = project.run(new SqlAnalyzer()).graph();
-            assertThat(summary(g).get(0).message()).contains("방언별 데이터 적재 스크립트 2벌 감지(mysql, postgres): mysql 파일을 사용");
+            assertThat(summary(g).get(0).message()).contains("방언별 데이터 적재 스크립트 2벌 감지(postgres, mysql): postgres 파일을 사용");
             assertThat(g.nodes(io.codeatlas.core.model.NodeKind.SQL_STATEMENT).stream().map(n -> n.id()).toList())
-                    .containsExactly("sql:stmt:data/b_mysql.sql:1");
+                    .containsExactly("sql:stmt:data/a_postgres.sql:1");
+        }
+        // 그 밖의 방언끼리(대상 방언이 없다): 경로순이 아니라 이름의 사전순이다
+        try (TestProject project = TestProject.create()
+                .file("db/a_mysql.sql", "CREATE TABLE TB_A (ID VARCHAR(10) NOT NULL, MY_COL INT);\n")
+                .file("db/b_cubrid.sql", "CREATE TABLE TB_A (ID VARCHAR(10) NOT NULL, CUB_COL INT);\n")) {
+            GraphModel g = project.run(new SqlAnalyzer()).graph();
+
+            assertThat(node(g, "db:table:TB_A").location().file()).isEqualTo("db/b_cubrid.sql");
+            Diagnostic d = summary(g).get(0);
+            assertThat(d.severity()).isEqualTo(Severity.WARN);
+            assertThat(d.message()).contains("방언별 DDL 2벌 감지(cubrid, mysql): cubrid 파일을 사용(테이블 1개)")
+                    .contains("대상 방언(Oracle, DB2, PostgreSQL)의 파일이 없어");
+        }
+        try (TestProject project = TestProject.create()
+                .file("data/a_mysql.sql", inserts("TB_A", 12))
+                .file("data/b_cubrid.sql", inserts("TB_A", 12))) {
+            GraphModel g = project.run(new SqlAnalyzer()).graph();
+            assertThat(summary(g).get(0).message()).contains("방언별 데이터 적재 스크립트 2벌 감지(cubrid, mysql): cubrid 파일을 사용");
+            assertThat(g.nodes(io.codeatlas.core.model.NodeKind.SQL_STATEMENT).stream().map(n -> n.id()).toList())
+                    .containsExactly("sql:stmt:data/b_cubrid.sql:1");
         }
     }
 
     @Test
-    @DisplayName("F-007-AC29 매퍼와 SQL 스크립트 양쪽의 경로에 다 있는 그 밖의 방언이 한쪽에만 있는 방언보다 먼저다: 스크립트 cubrid·mysql·postgres에 매퍼 mysql·postgres면 mysql, 매퍼가 없으면 cubrid. 앞 단계(프로젝트 설정의 대상 외 방언)는 그대로 먼저다")
+    @DisplayName("F-007-AC29 F-019-AC4 스크립트 cubrid·mysql·postgres면 매퍼가 있든 없든 대상 방언 postgres다(전에는 매퍼가 없으면 cubrid, 매퍼 mysql·postgres면 mysql이었다). 대상 방언이 없으면 매퍼와 SQL 스크립트 양쪽의 경로에 다 있는 그 밖의 방언이 한쪽에만 있는 방언보다 먼저다: 스크립트 cubrid·mysql·sqlite에 매퍼 mysql·sqlite면 mysql, 매퍼가 없으면 cubrid. 앞 단계(프로젝트 설정의 대상 외 방언)는 그대로 먼저다")
     void otherDialectsOnBothSidesFirst() {
         try (TestProject project = TestProject.create()
                 .file("db/cubrid/ddl_cubrid.sql", "CREATE TABLE TB_A (ID VARCHAR(10) NOT NULL, CUB_COL INT);\n")
                 .file("db/mysql/ddl_mysql.sql", "CREATE TABLE TB_A (ID VARCHAR(10) NOT NULL, MY_COL INT);\n")
                 .file("db/postgres/ddl_postgres.sql", "CREATE TABLE TB_A (ID VARCHAR(10) NOT NULL, PG_COL INT);\n")) {
+            // postgres는 대상 방언이다: 그 밖의 방언의 순서(사전순, 양쪽 경로)와 상관없이 먼저다
+            assertThat(node(project.run(new SqlAnalyzer()).graph(), "db:table:TB_A").location().file()).isEqualTo("db/postgres/ddl_postgres.sql");
+
+            project.file("mapper/A_SQL_postgres.xml", mapper("TB_A")).file("mapper/A_SQL_mysql.xml", mapper("TB_A"));
+            GraphModel g = project.run(new SqlAnalyzer()).graph();
+            assertThat(node(g, "db:table:TB_A").location().file()).isEqualTo("db/postgres/ddl_postgres.sql");
+            assertThat(summary(g).get(0).message()).contains("방언별 DDL 3벌 감지(postgres, mysql, cubrid): postgres 파일을 사용(테이블 1개)");
+
+            project.file("src/main/resources/globals.properties", "Globals.DbType=postgres\n");
+            assertThat(node(project.run(new SqlAnalyzer()).graph(), "db:table:TB_A").location().file()).isEqualTo("db/postgres/ddl_postgres.sql");
+        }
+        try (TestProject project = TestProject.create()
+                .file("db/cubrid/ddl_cubrid.sql", "CREATE TABLE TB_A (ID VARCHAR(10) NOT NULL, CUB_COL INT);\n")
+                .file("db/mysql/ddl_mysql.sql", "CREATE TABLE TB_A (ID VARCHAR(10) NOT NULL, MY_COL INT);\n")
+                .file("db/sqlite/ddl_sqlite.sql", "CREATE TABLE TB_A (ID VARCHAR(10) NOT NULL, LITE_COL INT);\n")) {
             // 스크립트뿐이면 이름의 사전순 첫 방언
             assertThat(node(project.run(new SqlAnalyzer()).graph(), "db:table:TB_A").location().file()).isEqualTo("db/cubrid/ddl_cubrid.sql");
 
-            // 매퍼 쪽에도 있는 방언(mysql, postgres)이 먼저고 그 안에서 사전순
-            project.file("mapper/A_SQL_postgres.xml", mapper("TB_A")).file("mapper/A_SQL_mysql.xml", mapper("TB_A"));
+            // 매퍼 쪽에도 있는 방언(mysql, sqlite)이 먼저고 그 안에서 사전순
+            project.file("mapper/A_SQL_sqlite.xml", mapper("TB_A")).file("mapper/A_SQL_mysql.xml", mapper("TB_A"));
             GraphModel g = project.run(new SqlAnalyzer()).graph();
             assertThat(node(g, "db:table:TB_A").location().file()).isEqualTo("db/mysql/ddl_mysql.sql");
-            assertThat(summary(g).get(0).message()).contains("방언별 DDL 3벌 감지(mysql, postgres, cubrid): mysql 파일을 사용(테이블 1개)");
+            assertThat(summary(g).get(0).message()).contains("방언별 DDL 3벌 감지(mysql, sqlite, cubrid): mysql 파일을 사용(테이블 1개)");
 
             // 프로젝트 설정이 가리키는 대상 외 방언은 전처럼 그보다 먼저다
-            project.file("src/main/resources/globals.properties", "Globals.DbType=postgres\n");
-            assertThat(node(project.run(new SqlAnalyzer()).graph(), "db:table:TB_A").location().file()).isEqualTo("db/postgres/ddl_postgres.sql");
+            project.file("src/main/resources/globals.properties", "Globals.DbType=sqlite\n");
+            assertThat(node(project.run(new SqlAnalyzer()).graph(), "db:table:TB_A").location().file()).isEqualTo("db/sqlite/ddl_sqlite.sql");
         }
     }
 
     @Test
-    @DisplayName("F-007-AC29 방언을 읽지 못한 파일은 전처럼 처음 물은 순서로 선다: 그 밖의 방언 파일보다 경로상 먼저면 그 앞, 뒤면 그 뒤")
+    @DisplayName("F-007-AC29 F-019-AC4 방언을 읽지 못한 파일은 전처럼 처음 물은 순서로 선다: 그 밖의 방언 파일보다 경로상 먼저면 그 앞, 뒤면 그 뒤. 대상 방언 postgres 파일은 방언을 읽지 못한 파일보다 늘 먼저다(Oracle·DB2와 같다. 전에는 postgres도 그 밖의 방언이었다)")
     void unknownDialectFileKeepsPathOrder() {
         String plain = "CREATE TABLE TB_A (ID VARCHAR(10) NOT NULL, PLAIN_COL INT);\n";
         String mysql = "CREATE TABLE TB_A (ID VARCHAR(10) NOT NULL, MY_COL INT);\n";
         String postgres = "CREATE TABLE TB_A (ID VARCHAR(10) NOT NULL, PG_COL INT);\n";
+        String sybase = "CREATE TABLE TB_A (ID VARCHAR(10) NOT NULL, SYB_COL INT);\n";
         try (TestProject project = TestProject.create().file("db/a_common.sql", plain)
                 .file("db/b_postgres.sql", postgres).file("db/c_mysql.sql", mysql)) {
-            assertThat(node(project.run(new SqlAnalyzer()).graph(), "db:table:TB_A").location().file()).isEqualTo("db/a_common.sql");
+            assertThat(node(project.run(new SqlAnalyzer()).graph(), "db:table:TB_A").location().file()).isEqualTo("db/b_postgres.sql");
         }
         try (TestProject project = TestProject.create().file("db/z_common.sql", plain)
                 .file("db/b_postgres.sql", postgres).file("db/c_mysql.sql", mysql)) {
+            assertThat(node(project.run(new SqlAnalyzer()).graph(), "db:table:TB_A").location().file()).isEqualTo("db/b_postgres.sql");
+        }
+        // 그 밖의 방언끼리(sybase, mysql)일 때의 자리는 전과 같다
+        try (TestProject project = TestProject.create().file("db/a_common.sql", plain)
+                .file("db/b_sybase.sql", sybase).file("db/c_mysql.sql", mysql)) {
+            assertThat(node(project.run(new SqlAnalyzer()).graph(), "db:table:TB_A").location().file()).isEqualTo("db/a_common.sql");
+        }
+        try (TestProject project = TestProject.create().file("db/z_common.sql", plain)
+                .file("db/b_sybase.sql", sybase).file("db/c_mysql.sql", mysql)) {
             assertThat(node(project.run(new SqlAnalyzer()).graph(), "db:table:TB_A").location().file()).isEqualTo("db/c_mysql.sql");
         }
     }

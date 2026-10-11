@@ -1,0 +1,142 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<!-- 주문 매퍼 (PostgreSQL): 캐스트, JSON 연산자, UPDATE ... FROM, DELETE ... USING, 데이터 변경 CTE, 루틴 호출 -->
+<mapper namespace="com.example.pg.mapper.OrderMapper">
+
+    <sql id="orderColumns">
+        o.id, o.customer_id, o.status, o.amount, o.memo, o.ordered_at
+    </sql>
+
+    <!-- 예전 구문: SELECT * FROM orders_legacy WHERE status = 'NEW' -->
+
+    <!-- 주문 목록: include, if, foreach, ILIKE, 캐스트, JSON 연산자, interval, NULLS LAST, LIMIT/OFFSET -->
+    <select id="selectOrderPage" parameterType="map" resultType="map">
+        SELECT <include refid="orderColumns"/>,
+               o.amount::text AS amount_text,
+               c.name AS customer_name,
+               c.profile->>'grade' AS grade
+          FROM orders o /* 이전에는 orders_backup 도 읽었다 */
+          JOIN customers c ON c.id = o.customer_id
+        <where>
+            <if test="keyword != null and keyword != ''">
+                AND c.name ILIKE '%' || #{keyword} || '%'
+            </if>
+            <if test="statuses != null and statuses.size() > 0">
+                AND o.status IN
+                <foreach collection="statuses" item="st" open="(" separator="," close=")">
+                    #{st}::order_status
+                </foreach>
+            </if>
+            <if test="recentOnly">
+                AND o.ordered_at >= now() - interval '7 days'
+            </if>
+        </where>
+         ORDER BY o.ordered_at DESC NULLS LAST
+         LIMIT #{size} OFFSET #{offset}
+    </select>
+
+    <!-- 잠금 조회: foreach, SELECT 목록의 함수 호출, FOR UPDATE OF 별칭 SKIP LOCKED -->
+    <select id="selectOrdersForUpdate" resultType="map">
+        SELECT o.id, o.status, calc_order_total(o.id) AS total
+          FROM orders o
+         WHERE o.id IN
+        <foreach collection="ids" item="id" open="(" separator="," close=")">
+            #{id}
+        </foreach>
+         ORDER BY o.id
+           FOR UPDATE OF o SKIP LOCKED
+    </select>
+
+    <!-- 주문 등록: selectKey 의 nextval('시퀀스') (FROM 없는 SELECT) -->
+    <insert id="insertOrder" parameterType="map">
+        <selectKey keyProperty="id" resultType="long" order="BEFORE">
+            SELECT nextval('orders_id_seq')
+        </selectKey>
+        INSERT INTO orders (id, customer_id, status, amount, memo)
+        VALUES (#{id}, #{customerId}, 'NEW', #{amount}, #{memo})
+    </insert>
+
+    <!-- 주문 상세 등록: 다중 행 VALUES + ON CONFLICT DO NOTHING -->
+    <insert id="insertOrderItems">
+        INSERT INTO order_items (order_id, product_id, qty, unit_price)
+        VALUES
+        <foreach collection="items" item="it" separator=",">
+            (#{orderId}, #{it.productId}, #{it.qty}, #{it.unitPrice})
+        </foreach>
+        ON CONFLICT DO NOTHING
+    </insert>
+
+    <!-- 고객 이메일로 주문 상태 변경: UPDATE ONLY ... FROM ... RETURNING. 행을 돌려받으므로 select 태그에 둔다 -->
+    <select id="updateStatusByEmail" resultType="long">
+        UPDATE ONLY orders o
+           SET status = #{status}::order_status,
+               memo = #{memo}
+          FROM customers c
+         WHERE c.id = o.customer_id
+           AND c.email = #{email}
+        RETURNING o.id
+    </select>
+
+    <!-- 취소된 주문의 결제 삭제: DELETE ... USING -->
+    <delete id="deleteCancelledPayments">
+        <![CDATA[
+        DELETE FROM payments p
+         USING orders o
+         WHERE o.id = p.order_id
+           AND o.status = 'CANCELLED'
+           AND o.ordered_at < #{before}
+        ]]>
+    </delete>
+
+    <!-- 결제된 주문을 PAID 로 바꾸고 고객 프로필에 표시: 데이터 변경 CTE 둘 -->
+    <select id="markPaidOrders" resultType="map">
+        WITH paid AS (
+            UPDATE orders o
+               SET status = 'PAID'
+              FROM payments p
+             WHERE p.order_id = o.id
+               AND o.status = 'NEW'
+               AND p.paid_at IS NOT NULL
+            RETURNING o.id, o.customer_id
+        ), touched AS (
+            UPDATE customers c
+               SET profile = jsonb_set(coalesce(c.profile, '{}'::jsonb), '{last_paid}', to_jsonb(now()))
+              FROM paid
+             WHERE c.id = paid.customer_id
+            RETURNING c.id
+        )
+        SELECT count(*) AS orders_paid,
+               (SELECT count(*) FROM touched) AS customers_touched
+          FROM paid
+    </select>
+
+    <!-- 상품별 판매 통계: 집계 FILTER (WHERE), IS DISTINCT FROM, JSON 연산자. order_items 와 products 사이에는 외래 키가 없다 -->
+    <select id="selectProductStats" resultType="map">
+        SELECT p.id,
+               p.sku,
+               p.attrs->>'color' AS color,
+               coalesce(sum(i.qty) FILTER (WHERE o.status = 'PAID'), 0) AS paid_qty,
+               count(DISTINCT o.id) FILTER (WHERE o.status IS DISTINCT FROM 'CANCELLED') AS order_cnt
+          FROM products p
+          LEFT JOIN order_items i ON i.product_id = p.id
+          LEFT JOIN orders o ON o.id = i.order_id
+         GROUP BY p.id, p.sku, p.attrs
+    </select>
+
+    <!-- 함수 호출: SELECT fn(#{...}) -->
+    <select id="callCloseOrder" resultType="int">
+        SELECT close_order(#{orderId}, #{memo})
+    </select>
+
+    <!-- 프로시저 호출: {call proc(...)} -->
+    <update id="callArchiveOrders" statementType="CALLABLE" parameterType="map">
+        {call archive_orders(#{before, mode=IN, jdbcType=DATE}, #{moved, mode=INOUT, jdbcType=INTEGER})}
+    </update>
+
+    <!-- 집합 반환 함수를 FROM 에서 부른다: 함수 이름과 별칭은 테이블이 아니다 -->
+    <select id="selectTimeline" resultType="map">
+        SELECT t.event_type, t.created_at, t.status
+          FROM order_timeline(#{orderId}) AS t
+    </select>
+
+</mapper>

@@ -59,6 +59,13 @@ public final class Catalog {
         public String comment;
         public SourceLocation location;
         public String file;
+        /** PostgreSQL 파티션이면 부모 테이블의 이름({@code CREATE TABLE p PARTITION OF 부모}), 아니면 null(F-019-R20). */
+        public String partitionOf;
+        /**
+         * 컬럼을 물려준 테이블({@code LIKE}·{@code INHERITS}·{@code PARTITION OF})의 정의를 찾지 못해 컬럼 목록이 다 차지 않았는가.
+         * 그러면 자기 컬럼만 들어 있다: "이 테이블에 없는 컬럼"이라고 말할 수 없다.
+         */
+        public boolean columnsIncomplete;
         public final Map<String, ColumnDef> columns = new LinkedHashMap<>();
         public List<String> primaryKey = new ArrayList<>();
         public final List<List<String>> uniqueKeys = new ArrayList<>();
@@ -83,7 +90,7 @@ public final class Catalog {
 
         /** 컬럼 목록을 아는가(컬럼 소속 판정에 쓸 수 있는가). */
         public boolean columnsKnown() {
-            return !columns.isEmpty();
+            return !columns.isEmpty() && !columnsIncomplete;
         }
     }
 

@@ -9,6 +9,7 @@ import io.codeatlas.core.model.Node;
 import io.codeatlas.core.model.NodeKind;
 import io.codeatlas.core.testing.TestProject;
 import io.codeatlas.sql.lexer.Lexer;
+import io.codeatlas.sql.lexer.Syntax;
 import io.codeatlas.sql.lexer.Token;
 import io.codeatlas.sql.lexer.TokenType;
 import io.codeatlas.sql.script.ScriptSplitter;
@@ -93,7 +94,7 @@ class LineEndingTest {
     @Test
     @DisplayName("F-006-AC32 렉서: MySQL로 판정한 SQL의 줄 처음 # 주석도 CR 단독에서 끝난다")
     void hashCommentEndsAtLoneCr() {
-        List<Token> tokens = Lexer.tokenize("# 주석 SELECT\rSELECT A\r# 또\rFROM T", true);
+        List<Token> tokens = Lexer.tokenize("# 주석 SELECT\rSELECT A\r# 또\rFROM T", Syntax.MYSQL);
         assertThat(positions(tokens)).isEqualTo("SELECT@2:1^ A@2:8 FROM@4:1^ T@4:6");
     }
 

@@ -31,7 +31,10 @@ public sealed interface Expr {
         }
     }
 
-    /** 이항 연산. op: {@code AND OR = <> < > <= >= + - * / || LIKE} 등(비교 연산자는 {@code !=}, {@code ^=}도 {@code <>}로 통일). */
+    /**
+     * 이항 연산. op: {@code AND OR = <> < > <= >= + - * / || LIKE} 등(비교 연산자는 {@code !=}, {@code ^=}도 {@code <>}로 통일).
+     * PostgreSQL 연산자({@code -> ->> #> #>> @> <@ && ~ ~* !~ !~* @@})와 첨자 접근({@code a[i]}는 op {@code []})도 이 노드다(F-019-R15).
+     */
     record Binary(String op, Expr left, Expr right) implements Expr {
     }
 
@@ -65,14 +68,18 @@ public sealed interface Expr {
     record Between(Expr value, Expr low, Expr high, boolean not) implements Expr {
     }
 
-    /** {@code (a, b, c)} */
+    /** {@code (a, b, c)}. PostgreSQL 배열 생성자 {@code ARRAY[a, b, c]}도 이 노드다. */
     record Tuple(List<Expr> items) implements Expr {
         public Tuple {
             items = List.copyOf(items);
         }
     }
 
-    /** {@code seq.NEXTVAL}, {@code seq.CURRVAL}, {@code NEXT VALUE FOR seq}, {@code PREVIOUS VALUE FOR seq}. */
+    /**
+     * {@code seq.NEXTVAL}, {@code seq.CURRVAL}, {@code NEXT VALUE FOR seq}, {@code PREVIOUS VALUE FOR seq}.
+     * PostgreSQL {@code nextval('seq')}·{@code currval('seq')}·{@code setval('seq', ..)}는 그 함수 호출의 첫 인자가 이 노드다
+     * (op는 {@code NEXTVAL}, {@code CURRVAL}, {@code SETVAL}, F-019-R16).
+     */
     record SequenceRef(QName sequence, String op) implements Expr {
     }
 

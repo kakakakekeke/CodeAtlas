@@ -7,6 +7,7 @@ import io.codeatlas.core.spi.Dialect;
 import io.codeatlas.core.spi.FileType;
 import io.codeatlas.core.spi.SourceFile;
 import io.codeatlas.sql.SqlDiagnosticCodes;
+import io.codeatlas.sql.lexer.Syntax;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
@@ -18,14 +19,15 @@ import java.util.Set;
 /**
  * 방언별 SQL 스크립트(DDL, 데이터 적재) 여러 벌 가운데 프로젝트 전체로 한 방언을 일관되게 고르는 규칙과 그 결과의 요약(F-007-R18~R21).
  *
- * <p>방언의 순위(작을수록 먼저)는 프로젝트에 하나다(F-007-R23). mybatis 모듈이 방언별 매퍼를 고르는 순서(F-009-R24)와 같되 맨 앞 둘의 순서만 다르다
- * (매퍼는 {@code mybatis.dialectVariant}가 {@code --dialect}보다 먼저다). 이 도구의 대상 방언은 Oracle·DB2라, 프로젝트 설정이 대상 외 방언
- * (전자정부 템플릿의 {@code Globals.DbType=mysql})을 가리켜도 대상 방언의 파일이 있으면 그쪽을 고른다:
+ * <p>방언의 순위(작을수록 먼저)는 프로젝트에 하나다(F-019-R4. F-007-R23의 순위를 대체한다). mybatis 모듈이 방언별 매퍼를 고르는 순서와 같되
+ * 맨 앞 둘의 순서만 다르다(매퍼는 {@code mybatis.dialectVariant}가 {@code --dialect}보다 먼저다). 이 도구의 대상 방언은 Oracle·DB2·PostgreSQL이라,
+ * 프로젝트 설정이 대상 외 방언(전자정부 템플릿의 {@code Globals.DbType=mysql})을 가리켜도 대상 방언의 파일이 있으면 그쪽을 고른다:
  * <ol>
- *   <li>{@code --dialect}로 준 방언, {@code mybatis.dialectVariant}로 준 방언 이름({@code auto}·{@code all}과 모르는 값은 건너뛴다)</li>
- *   <li>프로젝트 설정({@link ProjectDialect})이 대상 방언(oracle, db2)을 가리키면 그 방언</li>
+ *   <li>{@code --dialect}로 준 방언(oracle, db2, postgres), {@code mybatis.dialectVariant}로 준 방언 이름({@code auto}·{@code all}과 모르는 값은 건너뛴다)</li>
+ *   <li>프로젝트 설정({@link ProjectDialect})이 대상 방언(oracle, db2, postgres)을 가리키면 그 방언</li>
  *   <li>Oracle</li>
  *   <li>DB2</li>
+ *   <li>PostgreSQL(Oracle·DB2 뒤다: Oracle·DB2 파일이 있는 프로젝트의 기존 결과를 바꾸지 않는다)</li>
  *   <li>Oracle 계열(Tibero, Altibase). 프로젝트 설정이 이 가운데 하나를 가리키면 그것이 먼저다</li>
  *   <li>프로젝트 설정이 가리키는 대상 외 방언</li>
  *   <li>그 밖의 방언: 매퍼 파일과 SQL 스크립트 파일 양쪽의 경로에 다 나오는 방언이 이름의 사전순으로 먼저, 나머지가 사전순으로 그 뒤
@@ -46,14 +48,16 @@ public final class DialectSelection {
     }
 
     private final List<Request> requests = new ArrayList<>();
+    /** {@code --dialect}. 없으면(auto) null. */
+    private final Dialect optionDialect;
     private final ProjectDialect.Setting setting;
     /** 서로 다른 방언을 가리켜 쓰지 않은 프로젝트 설정들. */
     private final List<ProjectDialect.Setting> conflicting;
     private final Map<String, Integer> ranks = new LinkedHashMap<>();
     /** 파일 → 그 파일의 방언(경로의 방언 이름, 없으면 내용 특징). 등록하지 않은 파일은 경로로만 읽는다. */
     private final Map<String, String> fileDialects = new LinkedHashMap<>();
-    /** 이 도구의 대상 방언. */
-    private static final List<String> TARGETS = List.of("oracle", "db2");
+    /** 이 도구의 대상 방언(oracle, db2, postgres). */
+    private static final List<String> TARGETS = DialectTokens.TARGETS;
     /** 요청·설정·대상 방언이 아닌 "그 밖의 방언"의 순서(F-007-R28). 그 가운데 하나를 처음 물을 때 이 순서로 한꺼번에 순위를 준다. */
     private final List<String> others;
 
@@ -92,8 +96,10 @@ public final class DialectSelection {
             List<String> others) {
         this.conflicting = List.copyOf(conflicting);
         this.others = List.copyOf(others);
-        if (optionDialect == Dialect.ORACLE || optionDialect == Dialect.DB2) {
-            requests.add(new Request(optionDialect == Dialect.ORACLE ? "oracle" : "db2", "--dialect"));
+        this.optionDialect = DialectDetector.fromOption(optionDialect);
+        String requested = DialectDetector.tokenOf(this.optionDialect);
+        if (requested != null) {
+            requests.add(new Request(requested, "--dialect"));
         }
         String variant = DialectTokens.canonical(variantOption);
         if (variant != null && requests.stream().noneMatch(r -> r.dialect().equals(variant))) {
@@ -109,7 +115,7 @@ public final class DialectSelection {
         if (configured != null && DialectTokens.PREFERRED.contains(configured)) {
             ranks.putIfAbsent(configured, ranks.size()); // Oracle 계열 안에서는 설정이 가리키는 것이 먼저다
         }
-        DialectTokens.PREFERRED.forEach(d -> ranks.putIfAbsent(d, ranks.size()));
+        DialectTokens.PREFERRED.forEach(d -> ranks.putIfAbsent(d, ranks.size())); // 대상 방언은 위에서 넣었다: 남은 것은 Oracle 계열이다
         if (configured != null) {
             ranks.putIfAbsent(configured, ranks.size()); // 대상 외 방언: 대상 방언과 그 계열 다음, 그 밖의 방언보다 먼저
         }
@@ -133,14 +139,13 @@ public final class DialectSelection {
     }
 
     /**
-     * 파일 경로에서 읽은 방언(표준 이름). {@link DialectTokens#ofPath}에 더해 Oracle·DB2 확장자 힌트({@code .pks}, {@code .db2} 등,
-     * {@link DialectDetector#fromPath})도 본다. 없으면 null.
+     * 파일 경로에서 읽은 방언(표준 이름). {@link DialectTokens#ofPath}에 더해 대상 방언의 확장자 힌트({@code .pks}, {@code .db2},
+     * {@code .pgsql} 등, {@link DialectDetector#fromPath})도 본다. 없으면 null.
      */
     public static String dialectOfFile(String path) {
         String dialect = DialectTokens.ofPath(path);
         if (dialect == null) {
-            Dialect hint = DialectDetector.fromPath(path);
-            dialect = hint == Dialect.ORACLE ? "oracle" : hint == Dialect.DB2 ? "db2" : null;
+            dialect = DialectDetector.tokenOf(DialectDetector.fromPath(path));
         }
         return dialect;
     }
@@ -173,12 +178,48 @@ public final class DialectSelection {
         return rank;
     }
 
-    /** {@code mybatis.dialectVariant}나 프로젝트 설정이 MySQL 계열을 가리키는가({@code --dialect}가 있으면 아니다). */
-    public boolean mySqlProject() {
-        if (!requests.isEmpty()) {
-            return requests.get(0).option().equals(VARIANT_OPTION) && DialectTokens.isMySql(requests.get(0).dialect());
+    /** {@code mybatis.dialectVariant}로 준 방언, 없으면 프로젝트 설정이 가리키는 방언(표준 이름). 둘 다 없으면 null. */
+    private String declaredDialect() {
+        for (Request r : requests) {
+            if (r.option().equals(VARIANT_OPTION)) {
+                return r.dialect();
+            }
         }
-        return setting != null && DialectTokens.isMySql(setting.dialect());
+        return setting == null ? null : setting.dialect();
+    }
+
+    /**
+     * 옵션과 프로젝트 설정({@code --dialect}, {@code mybatis.dialectVariant}, 설정 파일)이 정하는 읽기 방식. 정하지 못하면 null
+     * ({@link DialectDetector#syntaxOfProject}). SQL 파일의 읽기 방식을 정할 때 쓴다: 파일을 읽는 동안에는 스크립트에서 고른 방언을 아직 모른다.
+     */
+    public Syntax declaredSyntax() {
+        return DialectDetector.syntaxOfProject(optionDialect, declaredDialect(), null);
+    }
+
+    /**
+     * 프로젝트 방언이 정하는 읽기 방식(F-019-R7): {@link #declaredSyntax}에 더해 스크립트에서 고른 방언({@link #scriptDialect})까지 본다.
+     * 내장 소스의 읽기 방식을 정할 때 쓴다(SQL 파일을 모두 읽은 뒤에 부른다). 정하지 못하면 null.
+     */
+    public Syntax projectSyntax() {
+        return DialectDetector.syntaxOfProject(optionDialect, declaredDialect(), scriptDialect());
+    }
+
+    /**
+     * 스크립트에서 고른 방언(표준 이름): 방언별 여러 벌이면 고른 방언({@link #mainDialect}), 아니면 방언을 읽은 스크립트가 모두 한 방언일 때 그 방언.
+     * 방언을 읽은 스크립트가 없거나 방언이 섞였으면 null.
+     */
+    public String scriptDialect() {
+        String main = mainDialect();
+        if (main != null) {
+            return main;
+        }
+        Set<String> dialects = new LinkedHashSet<>();
+        fileDialects.values().forEach(d -> {
+            if (d != null) {
+                dialects.add(d);
+            }
+        });
+        return dialects.size() == 1 ? dialects.iterator().next() : null;
     }
 
     // ------------------------------------------------------------------ 결과 요약
@@ -323,10 +364,10 @@ public final class DialectSelection {
         // 대상 방언(과 그 계열)의 파일이 하나도 없어 대상 외 방언을 쓰게 된 경우만 경고다(명시해 요청한 방언이면 아니다)
         boolean foreign = !target && !requested;
         if (foreign) {
-            message.append(" 이 도구의 대상 방언(Oracle, DB2)의 파일이 없어 ").append(main)
+            message.append(" 이 도구의 대상 방언(Oracle, DB2, PostgreSQL)의 파일이 없어 ").append(main)
                     .append(" 파일을 씀: SQL 해석이 부정확할 수 있음");
         } else {
-            message.append(" `--dialect <oracle|db2>`(그 밖의 방언은 `--opt ").append(VARIANT_OPTION).append("=<방언>`)로 변경");
+            message.append(" `--dialect <oracle|db2|postgres>`(그 밖의 방언은 `--opt ").append(VARIANT_OPTION).append("=<방언>`)로 변경");
         }
         graph.report(foreign ? Diagnostic.warn(SqlDiagnosticCodes.DIALECT_VARIANT_DDL, message.toString(), null)
                 : Diagnostic.info(SqlDiagnosticCodes.DIALECT_VARIANT_DDL, message.toString(), null));
@@ -348,6 +389,6 @@ public final class DialectSelection {
             return; // 대상 방언(계열)의 스크립트가 있거나, 그 방언을 명시해 요청했다
         }
         graph.report(Diagnostic.info(SqlDiagnosticCodes.DIALECT_NOT_TARGET, "이 프로젝트의 SQL은 " + String.join(", ", dialects)
-                + "로 보임. 대상 방언이 아니어서 일부 구문을 해석하지 못할 수 있음(이 도구의 대상 방언은 Oracle, DB2)", null));
+                + "로 보임. 대상 방언이 아니어서 일부 구문을 해석하지 못할 수 있음(이 도구의 대상 방언은 Oracle, DB2, PostgreSQL)", null));
     }
 }
