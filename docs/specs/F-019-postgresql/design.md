@@ -23,7 +23,7 @@ updated: 2026-10-11
 | sql `lexer/Syntax` (새로) | `DEFAULT`, `MYSQL`, `POSTGRES` | R6 |
 | sql `lexer/Lexer` | `boolean mysql` → `Syntax`. PostgreSQL: 달러 인용(토큰이 `$`로 시작할 때), `E''`, `$n`, 연산자, `#`을 이름 글자로 보지 않음 | R6, R9, R10 |
 | sql `script/ScriptSplitter` | `Syntax` 전달. `COPY … FROM stdin` 데이터 구간, psql 메타 명령 | R9, R11 |
-| sql `parser/SqlParser`, `DdlParser` | 생성자에 `Syntax`. PostgreSQL DML·DDL 문법 | R12~R23 |
+| sql `parser/SqlParser`, `DdlParser` | 생성자에 `Syntax`. PostgreSQL DML·DDL 문법. `COPY (쿼리) TO`의 쿼리(`SqlParser.copyQuery`, 본문에서는 `RoutineParser`가 SQL 구문으로 넘긴다) | R12~R23, R38 |
 | sql `parser/RoutineLanguage` (새로), `RoutineParser` | `boolean sqlPl` → `RoutineLanguage`. PL/pgSQL 문장 | R25 |
 | sql `script/RoutineHeader`, `routine/RoutineBodyHandler`, `BodyWalker`, `DynamicSql` | PostgreSQL 루틴 헤더와 달러 인용 본문, `language` 값, `PERFORM`·`EXECUTE`·`RETURN QUERY`, 트리거·`DO`·`LANGUAGE sql` | R24~R31 |
 | sql `analysis/DialectDetector` | PostgreSQL 내용 특징과 토큰 점수, 읽기 방식을 정하는 한곳(`syntaxOfFile`, `syntaxOfEmbedded`) | R2, R3, R7 |

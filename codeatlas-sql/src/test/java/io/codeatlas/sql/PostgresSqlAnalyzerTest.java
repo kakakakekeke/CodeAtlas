@@ -196,12 +196,14 @@ class PostgresSqlAnalyzerTest {
                     .containsExactly("db:column:CUSTOMERS.EMAIL", "db:column:CUSTOMERS.ID", "db:table:CUSTOMERS");
             assertThat(edge(g, load.id(), EdgeKind.WRITES, "db:table:CUSTOMERS").attrString("op")).isEqualTo("INSERT");
             assertThat(hasEdge(g, Ids.file(path), EdgeKind.CONTAINS, load.id())).isTrue();
-            // 데이터 줄, \connect, 파일에서 읽는 COPY, COPY … TO는 노드를 만들지 않는다. COPY 뒤의 구문은 데이터에 먹히지 않고 따로 나뉜다
+            // 데이터 줄, \connect, 파일에서 읽는 COPY, COPY 테이블 TO는 노드를 만들지 않는다. COPY 뒤의 구문은 데이터에 먹히지 않고 따로 나뉜다.
+            // COPY (쿼리) TO는 적재가 아니라 그 쿼리를 읽는 SELECT 구문이다(F-019-AC36)
             assertThat(g.hasNode("db:table:GHOST")).as(path).isFalse();
             assertThat(g.hasNode("db:table:T")).as(path).isFalse();
             assertThat(g.hasNode("db:table:SHOP")).as(path).isFalse();
-            assertThat(statementIds(g)).as(path).doesNotContain(Ids.sqlStatement(path, 2), Ids.sqlStatement(path, 3), Ids.sqlStatement(path, 7),
-                    Ids.sqlStatement(path, 8), Ids.sqlStatement(path, 9), Ids.sqlStatement(path, 10));
+            assertThat(statementIds(g)).as(path).containsExactly(Ids.sqlStatement(path, 1), Ids.sqlStatement(path, 9));
+            assertThat(node(g, Ids.sqlStatement(path, 9)).attrs()).as(path).doesNotContainKey("dataLoad");
+            assertThat(targets(g, Ids.sqlStatement(path, 9), EdgeKind.WRITES)).as(path).isEmpty();
             // pg_catalog.을 붙여 쓴 setval은 덤프의 뒷정리다: 시퀀스 참조를 만들지 않는다
             assertThat(g.hasNode("db:sequence:ORDERS_ID_SEQ")).as(path).isFalse();
             List<Diagnostic> grouped = diagnostics(g, SqlDiagnosticCodes.DATA_LOAD_GROUPED);
@@ -223,6 +225,54 @@ class PostgresSqlAnalyzerTest {
                 .containsExactly("db:column:ORDERS.AMOUNT", "db:column:ORDERS.ID", "db:column:ORDERS.STATUS", "db:table:ORDERS");
         assertThat(node(g, Ids.sqlStatement(path, 4)).attr("rowCount")).isEqualTo(3);
         assertThat(targets(g, Ids.sqlStatement(path, 4), EdgeKind.WRITES)).containsExactly("db:table:CUSTOMERS");
+    }
+
+    // ------------------------------------------------------------------ F-019-AC36: COPY (쿼리) TO
+
+    @Test
+    @DisplayName("F-019-AC36 스크립트의 COPY (쿼리) TO ..는 그 줄의 SELECT 구문 노드다: 쿼리의 테이블·컬럼 읽기와 조인이 기록되고 진단이 없다. COPY 테이블 TO ..는 전처럼 노드가 없다")
+    void copyQueryToIsSelectStatement() {
+        String sql = "SET search_path = public;\n"
+                + "COPY (SELECT o.id FROM orders o JOIN customers c ON c.id = o.customer_id) TO STDOUT;\n"
+                + "COPY customers TO '/tmp/out.csv';\n"
+                + "COPY (SELECT id, email FROM customers WHERE email IS NOT NULL) TO '/tmp/c.csv' WITH (FORMAT csv, HEADER);\n";
+        for (String path : new String[] {"db/postgres/export.sql", "db/export.sql"}) { // 경로의 방언 이름, 내용 특징(SET search_path)
+            GraphModel g = analyzeFile(path, sql);
+            assertThat(g.diagnostics()).as(path).isEmpty();
+            String copy = Ids.sqlStatement(path, 2);
+            assertThat(statementIds(g)).as(path).containsExactly(copy, Ids.sqlStatement(path, 4));
+            assertThat(node(g, copy).attrString("statementType")).as(path).isEqualTo("SELECT");
+            assertThat(node(g, copy).attrString("dialect")).as(path).isEqualTo("POSTGRES");
+            assertThat(node(g, copy).attrs()).as(path).doesNotContainKey("dataLoad");
+            assertThat(targets(g, copy, EdgeKind.READS)).as(path).containsExactly("db:column:CUSTOMERS.ID", "db:column:ORDERS.CUSTOMER_ID",
+                    "db:column:ORDERS.ID", "db:table:CUSTOMERS", "db:table:ORDERS");
+            assertThat(targets(g, copy, EdgeKind.WRITES)).as(path).isEmpty();
+            assertThat(g.edges("db:table:CUSTOMERS", EdgeKind.JOINS, "db:table:ORDERS").size() + g.edges("db:table:ORDERS", EdgeKind.JOINS, "db:table:CUSTOMERS").size())
+                    .as(path).isEqualTo(1);
+            assertThat(targets(g, Ids.sqlStatement(path, 4), EdgeKind.READS)).as(path)
+                    .containsExactly("db:column:CUSTOMERS.EMAIL", "db:column:CUSTOMERS.ID", "db:table:CUSTOMERS");
+        }
+    }
+
+    @Test
+    @DisplayName("F-019-AC36 스크립트의 COPY (쿼리) TO에서 쿼리를 읽지 못하면 그 줄에 PARSE_FAILED가 남고 읽은 테이블은 기록된다(조용히 넘기지 않는다)")
+    void copyQueryToWithUnreadableQueryIsReported() {
+        String path = "db/postgres/export.sql";
+        GraphModel g = analyzeFile(path, "SELECT 1;\nCOPY (SELECT o.id FROM orders o WHERE o.id = = 1 }) TO STDOUT;\n");
+        List<Diagnostic> failed = diagnostics(g, DiagnosticCodes.PARSE_FAILED);
+        assertThat(failed).hasSize(1);
+        assertThat(failed.get(0).location().file()).isEqualTo(path);
+        assertThat(failed.get(0).location().startLine()).isEqualTo(2);
+        assertThat(hasEdge(g, Ids.sqlStatement(path, 2), EdgeKind.READS, "db:table:ORDERS")).isTrue();
+    }
+
+    @Test
+    @DisplayName("F-019-AC36 PostgreSQL 읽기 방식의 매퍼 구문 COPY (쿼리) TO ..도 그 쿼리의 읽기를 기록한다")
+    void copyQueryToInMapper() {
+        GraphModel g = analyzeMapper(null, Map.of("dialect", "postgres"), "COPY (SELECT c.id, c.email FROM customers c WHERE c.id = #{id}) TO STDOUT");
+        assertThat(g.diagnostics()).isEmpty();
+        assertThat(node(g, OWNER).attrString("statementType")).isEqualTo("SELECT");
+        assertThat(targets(g, OWNER, EdgeKind.READS)).containsExactly("db:column:CUSTOMERS.EMAIL", "db:column:CUSTOMERS.ID", "db:table:CUSTOMERS");
     }
 
     // ------------------------------------------------------------------ F-019-AC15: 시퀀스 함수

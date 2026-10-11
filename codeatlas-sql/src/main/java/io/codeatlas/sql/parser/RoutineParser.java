@@ -1859,6 +1859,9 @@ public final class RoutineParser extends TokenCursor {
                 return fetch ? new Routine.Fetch(cursor, into, span(start, pos)) : new Routine.Simple("MOVE", null, span(start, pos));
             }
             default:
+                if (t.is("COPY") && peek(1).isSymbol("(")) {
+                    return sqlStatement(); // COPY (쿼리) TO ..: 괄호 안의 쿼리를 읽는 구문이다(F-019-R38)
+                }
                 if (PG_PASS_THROUGH.contains(t.upper()) && (peek(1).type() == TokenType.IDENT || peek(1).isSymbol(";") || peek(1).isEof())) {
                     String keyword = next().upper();
                     int end = semicolon(pos);

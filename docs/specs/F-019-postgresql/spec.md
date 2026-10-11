@@ -61,6 +61,7 @@ updated: 2026-10-11
 | F-019-R21 | 시스템은 `CREATE [UNIQUE] INDEX [CONCURRENTLY] [IF NOT EXISTS] [이름] ON [ONLY] 테이블 [USING 방식] (컬럼 [연산자클래스] [ASC\|DESC] [NULLS ..] \| (식), ..) [INCLUDE (..)] [WITH (..)] [TABLESPACE ..] [WHERE ..]`를 읽어 인덱스의 컬럼을 기록해야 한다. 식 항목은 컬럼으로 만들지 않는다. | 사용자 요청 |
 | F-019-R22 | 시스템은 pg_dump가 내는 부속 구문(`SET ..`, `SELECT pg_catalog.set_config(..)`·`setval(..)`, `CREATE EXTENSION\|SCHEMA\|TYPE\|DOMAIN\|COLLATION ..`, `ALTER .. OWNER TO ..`, `ALTER SEQUENCE .. OWNED BY ..`, `ALTER TABLE .. ALTER COLUMN .. SET DEFAULT nextval(..)`, `GRANT`·`REVOKE`, `COMMENT ON EXTENSION\|SCHEMA\|TYPE\|FUNCTION ..`)을 `PARSE_FAILED`·`UNSUPPORTED_SYNTAX` 없이 넘기고 테이블이나 구문 노드를 만들지 않아야 한다. `pg_catalog.`을 붙여 쓴 `SELECT pg_catalog.setval(..)`은 덤프의 뒷정리이므로 시퀀스 참조도 만들지 않는다(F-019-R16은 매퍼·루틴과 그 밖의 스크립트 구문의 것이다). 컬럼 기본값 `nextval('…'::regclass)`(`CREATE TABLE`의 `DEFAULT`와 `ALTER COLUMN .. SET DEFAULT`)는 Oracle의 `DEFAULT seq.NEXTVAL`과 같은 방식으로 다룬다. | 사용자 요청, F-007-R17 |
 | F-019-R23 | 시스템은 `COPY 테이블 [(컬럼, ..)] FROM stdin`과 그 데이터 줄을 그 테이블의 데이터 적재로 기록해야 한다(데이터 적재 묶음, `rowCount`는 데이터 줄 수). 파일에서 읽는 `COPY … FROM '경로'`와 `COPY … TO`는 적재로 기록하지 않고 조용히 넘긴다. | F-006의 데이터 적재 규칙 |
+| F-019-R38 | PostgreSQL 읽기 방식에서 `COPY (쿼리) TO 대상 [옵션]`을 만나면, 시스템은 괄호 안의 쿼리를 읽어 그 구문의 읽기와 조인으로 기록해야 한다(구문 종류는 `SELECT`. 괄호 안이 `INSERT`·`UPDATE`·`DELETE`·`MERGE … RETURNING ..`이면 그 구문의 종류와 쓰기). SQL 파일의 구문, 루틴 본문, 내장 소스 모두에서 그렇다. 쿼리를 읽지 못하면 조용히 넘기지 않고 다른 구문과 같은 방식으로 진단을 남긴다. `COPY 테이블 … FROM '경로'`와 `COPY 테이블 … TO`는 F-019-R23 그대로 조용히 넘긴다. | 코드 리뷰(2026-10-11), AGENTS.md "해석하지 못한 참조를 버리지 않는다" |
 
 ### 3.5 루틴과 트리거
 
@@ -270,6 +271,11 @@ updated: 2026-10-11
 - When `mvn -q -pl codeatlas-cli verify`를 돌린다
 - Then 통과율 100%, 함정 위반 0이 유지된다.
 
+### F-019-AC36 (대상: F-019-R38)
+- Given PostgreSQL 읽기 방식의 스크립트 구문 `COPY (SELECT o.id FROM orders o JOIN customers c ON c.id = o.customer_id) TO STDOUT;`, 같은 꼴의 매퍼 구문, PL/pgSQL 본문과 `LANGUAGE sql` 본문의 `COPY (SELECT ..) TO '/tmp/x.csv' WITH (FORMAT csv);`, 쿼리가 깨진 `COPY (SELECT o.id FROM orders o WHERE o.id = = 1 }) TO STDOUT;`, 그리고 `COPY customers TO '/tmp/out.csv';`·`COPY t FROM '/tmp/a.csv';`
+- When 분석한다
+- Then 앞의 것들은 `SELECT` 구문 노드(매퍼는 그 구문, 본문은 루틴에 속한 구문)가 `ORDERS`·`CUSTOMERS`와 그 컬럼의 읽기, `ORDERS.CUSTOMER_ID = CUSTOMERS.ID` 조인을 기록하고 진단이 없다. 깨진 쿼리는 그 줄에 `PARSE_FAILED`가 남고 읽은 테이블(`ORDERS`)은 기록된다. 뒤의 둘은 전처럼 구문 노드도 진단도 없다.
+
 ## 5. 가정
 
 - 가정: PostgreSQL을 "범위 밖 방언을 덜 틀리게"가 아니라 Oracle·DB2와 같은 대상 방언으로 넣는다. 사용자가 방식(ADR-0012)만 골랐고 지원 수준은 정하지 않았으므로, 조사 때 권한 순서의 끝(대상 방언 승격)까지를 범위로 잡았다.
@@ -300,6 +306,7 @@ updated: 2026-10-11
   - PL/pgSQL 식의 `nextval('seq')`와 `PERFORM setval('seq', ..)`는 Oracle 루틴의 `seq.NEXTVAL`(F-008-R15)과 같은 꼴로 남긴다. 본문의 `CREATE [TEMP] TABLE t AS 쿼리`는 t에 대한 쓰기와 쿼리의 읽기를 가진 구문이다.
   - `parameters`: 이름 없는 매개변수는 타입만, `IN OUT`은 `INOUT`, 기본값은 적힌 대로(`= 0`, `DEFAULT NULL`). `statementCount`는 그 루틴 노드에 속한 구문 노드의 수다(오버로드 여러 개나 같은 함수의 재정의가 있어도 그래프의 구문 노드 수와 같다. 리뷰 뒤 고침: 처음에는 본문마다 더해 재정의에서 실제 노드 수와 어긋났다). 같은 루틴이 여러 파일에서 정의되면 어느 것이 나중 것인지 파일 이름으로는 알 수 없으므로(`V10` < `V2`) 본문을 모두 남긴다. 루틴의 중복 정의를 알리는 진단은 없다(계약 3.7의 `DUPLICATE_OBJECT_NAME`은 테이블·뷰·빈만 다룬다. Oracle·DB2 루틴도 같다).
   - 알려진 한계: 같은 이름의 함수와 트리거는 한 노드로 합쳐진다(PostgreSQL에서는 이름 공간이 다르다). `LANGUAGE`가 없는 문자열 본문 함수와 plpgsql이 아닌 `DO`는 조용히 넘긴다. `LANGUAGE sql` 본문에서 `(`로 시작하는 구문은 `UNSUPPORTED_SYNTAX`다. 작은따옴표 본문에서 `''`가 있는 줄은 그 뒤의 열이 조금 밀린다(줄은 맞다). `FOR a, b IN ..`은 첫 대상만 루프 변수다. 선언부에서 `SELECT`·`IF` 같은 키워드와 같은 이름의 변수는 읽지 못한다. 트리거의 `REFERENCING NEW TABLE AS x`의 이름을 함수 본문의 `FROM`에 쓰면 테이블로 남는다. 본문의 `COPY`·`CREATE VIEW`는 진단 없이 넘긴다.
+  - (2026-10-11 리뷰 뒤 고침, F-019-R38) `COPY (쿼리) TO ..`의 쿼리를 읽는다. 처음 구현은 스크립트와 매퍼에서 이 구문을 `COPY 테이블 TO`와 함께 조용히 넘겨 쿼리의 테이블 읽기와 조인이 진단 없이 빠졌다. 루틴 본문에서는 모르는 문장으로 보고 괄호 안의 쿼리만 건져 읽기는 기록했지만 `UNSUPPORTED_SYNTAX`가 함께 남았고 구문 노드의 `sql`이 안쪽 쿼리뿐이었다(이제 진단 없이 `COPY` 구문 전체가 구문 노드 하나다). 정한 것: `TO` 뒤의 대상(`STDOUT`, `'경로'`, `PROGRAM '명령'`)과 옵션은 읽지 않고 받아 넘긴다. 괄호 안이 데이터 변경 구문(`DELETE … RETURNING` 등)이면 그 구문으로 읽는다(PostgreSQL이 허용하는 꼴이고 대상 테이블에 대한 쓰기다). 위 "알려진 한계"의 "본문의 `COPY`는 진단 없이 넘긴다"는 `COPY 테이블 …` 꼴에만 해당한다. 기본·MySQL 읽기 방식에서 `COPY`는 전과 같이 `UNSUPPORTED_SYNTAX`다(`COPY (쿼리) TO`를 내용 특징으로 삼지 않는다). 적재 파일 판정에는 영향을 주지 않는다(`COPY 테이블 TO`와 같다).
 - 검증 결과(2026-10-11, 리뷰 지적 네 건을 고친 뒤 다시 돌린 것): 루트 `mvn clean install` 통과(단위 테스트와 통합 테스트 2790건). `samples/sample-pg` 엣지 122/122·노드 139/139·함정 위반 0·목록 밖 진단 0, `samples/sample-shop` 엣지 417/417·노드 418/418·함정 위반 0. 변경 전 커밋의 jar와 새 jar로 `samples/sample-shop`과 `~/workspace/codeatlas-corpus`의 공개 프로젝트 8개를 옵션 없이 분석해 `graph.json`을 비교했더니 노드와 엣지는 하나도 달라지지 않았고 방언 진단의 문구(대상 방언에 PostgreSQL, 방언 나열 순서)만 달랐다. 공개 프로젝트 둘(전자정부 enterprise-business-template, common-components)을 `--dialect postgres`로 돌리면 postgres 매퍼 구문 201개·1245개와 DDL이 전과 같은 수의 진단으로 읽히고 구문의 `dialect`가 `POSTGRES`로 찍힌다.
 - 가정: PostgreSQL 버전은 현재 지원되는 버전대(13 이상)의 문법을 기준으로 한다. `EXECUTE PROCEDURE`(옛 표기)도 받는다.
 - 가정: 따옴표 없는 이름은 지금처럼 대문자로 정규화한다(PostgreSQL은 소문자로 접지만 맞추는 결과는 같다). ERD와 리포트에는 `CUSTOMERS`처럼 대문자로 나온다. 따옴표로 감싼 이름(`"camelCase"`)은 기존 규칙대로 원문 그대로다.

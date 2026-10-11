@@ -380,7 +380,7 @@ public final class SqlAnalyzer implements Analyzer {
                 ddl.apply(work.ddl.statement(), fu.path, locator, unit.pos(), unit.text());
             } else if (unit.kind() == ScriptUnit.Kind.STATEMENT && fu.syntax == Syntax.POSTGRES && unit.first().is("COPY")) {
                 // PostgreSQL COPY 테이블 FROM stdin과 그 데이터 줄: 그 테이블의 데이터 적재 묶음이다(F-019-R23).
-                // 파일에서 읽는 COPY와 COPY … TO는 적재가 아니다: 남겨 두면 뒤에서 조용히 넘어간다
+                // 파일에서 읽는 COPY와 COPY … TO는 적재가 아니다: 남겨 두면 뒤에서 구문으로 읽는다(COPY (쿼리) TO는 그 쿼리를 읽고, 나머지는 조용히 넘어간다)
                 if (new SqlParser(new ArrayList<>(unit.tokens()), fu.syntax).parseStatement().statement() instanceof Statement.Copy copy
                         && !copy.table().anyDynamic()) {
                     fu.loads.offerCopy(unit, copy, unit.dataRows());

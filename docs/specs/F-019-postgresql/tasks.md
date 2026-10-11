@@ -45,6 +45,9 @@ updated: 2026-10-11
 - [x] T22. `samples/sample-pg`와 `expected/`, F-019-AC34 통합 테스트(`SamplePgIT`) (F-019-R36)
 - [x] T23. F-019-AC35: 루트 `mvn -q install`과 `mvn -q -pl codeatlas-cli verify`로 sample-shop 통과율 100% 확인, 뷰어 JS 테스트 (F-019-R37, R8)
 
+### 리뷰 뒤 고침
+- [x] T24. F-019-AC36 테스트 → `COPY (쿼리) TO`의 쿼리를 스크립트·매퍼·루틴 본문에서 읽음. `COPY 테이블 TO|FROM '경로'`는 그대로 (F-019-R38)
+
 ## 마무리
 - [x] 모든 수용 기준 통과 확인
 - [x] 그래프 계약(F-001 design.md 3.5·3.7·3.8·4.5), README, CHANGELOG 반영
