@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xmlns:batch="http://www.springframework.org/schema/batch"
+       xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-4.0.xsd
+        http://www.springframework.org/schema/batch http://www.springframework.org/schema/batch/spring-batch-3.0.xsd">
+
+    <!--
+        회원 동기화 잡
+          syncStep   : 휴면 대상 회원을 읽어(MyBatis) 등급을 다시 계산하고 이력에 쓴다(JDBC)
+          purgeStep  : 탈퇴 회원 정리 프로시저 호출
+          reportStep : 결과 통보(애너테이션 빈 태스크릿)
+    -->
+    <batch:job id="memberSyncJob" parent="eGovBaseJob">
+        <batch:step id="syncStep" parent="eGovBaseStep">
+            <batch:tasklet>
+                <batch:chunk reader="dormantMemberReader"
+                             processor="gradeProcessor"
+                             writer="memberHistoryWriter"
+                             commit-interval="#{jobParameters['commitInterval']}"/>
+            </batch:tasklet>
+            <batch:next on="COMPLETED" to="purgeStep"/>
+            <batch:fail on="*"/>
+        </batch:step>
+        <batch:step id="purgeStep" parent="eGovBaseStep" next="reportStep">
+            <batch:tasklet>
+                <batch:chunk reader="withdrawnMemberReader" writer="memberHistoryWriter" commit-interval="100"/>
+            </batch:tasklet>
+        </batch:step>
+        <batch:step id="reportStep">
+            <batch:tasklet ref="reportTasklet"/>
+        </batch:step>
+    </batch:job>
+
+    <bean id="dormantMemberReader" class="org.mybatis.spring.batch.MyBatisPagingItemReader" scope="step">
+        <property name="sqlSessionFactory" ref="sqlSession"/>
+        <property name="queryId" value="egovframework.shop.batch.service.impl.MemberBatchMapper.selectDormantMembers"/>
+        <property name="pageSize" value="500"/>
+        <property name="parameterValues">
+            <map>
+                <entry key="baseDt" value="#{jobParameters['baseDt']}"/>
+            </map>
+        </property>
+    </bean>
+
+    <bean id="gradeProcessor" class="egovframework.shop.batch.processor.GradeProcessor">
+        <property name="gradePolicy" ref="gradePolicy"/>
+    </bean>
+
+    <bean id="memberHistoryWriter" class="org.springframework.batch.item.database.JdbcBatchItemWriter">
+        <property name="dataSource" ref="dataSource"/>
+        <property name="itemSqlParameterSourceProvider">
+            <bean class="org.springframework.batch.item.database.BeanPropertyItemSqlParameterSourceProvider"/>
+        </property>
+        <property name="sql">
+            <value>
+                <![CDATA[
+                INSERT INTO TB_MEMBER_HIST (MEMBER_ID, GRADE_CD, CHG_DT)
+                VALUES (:memberId, :gradeCd, SYSDATE)
+                ]]>
+            </value>
+        </property>
+    </bean>
+
+    <bean id="withdrawnMemberReader" class="org.springframework.batch.item.database.StoredProcedureItemReader" scope="step">
+        <property name="dataSource" ref="dataSource"/>
+        <property name="procedureName" value="SP_PURGE_WITHDRAWN_MEMBER"/>
+        <property name="rowMapper">
+            <bean class="egovframework.shop.batch.mapper.MemberRowMapper"/>
+        </property>
+    </bean>
+</beans>

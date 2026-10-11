@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xmlns:batch="http://www.springframework.org/schema/batch"
+       xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-4.0.xsd
+        http://www.springframework.org/schema/batch http://www.springframework.org/schema/batch/spring-batch-3.0.xsd">
+
+    <!-- 모든 잡이 물려받는 잡·스텝 -->
+    <batch:job id="eGovBaseJob" abstract="true">
+        <batch:listeners>
+            <batch:listener ref="jobListener"/>
+        </batch:listeners>
+    </batch:job>
+
+    <batch:step id="eGovBaseStep" abstract="true">
+        <batch:tasklet transaction-manager="txManager">
+            <batch:listeners>
+                <batch:listener ref="stepListener"/>
+            </batch:listeners>
+        </batch:tasklet>
+    </batch:step>
+
+    <bean id="jobListener" class="egovframework.shop.batch.listener.EgovJobListener"/>
+    <bean id="stepListener" class="egovframework.shop.batch.listener.EgovStepListener"/>
+</beans>
