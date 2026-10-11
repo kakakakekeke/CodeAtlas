@@ -43,6 +43,12 @@ final class ImpactCommand extends QueryCommand {
                   --include-data-load  데이터 적재 구문(스크립트의 리터럴 INSERT를 테이블별로 묶은 것)도 넣는다. 기본은 빼고 뺀 수를
                                        리포트 머리에 알린다.
                   --format <형식>      md(기본값), json
+                  이름 앞의 ~는 추론한 관계를 거쳐서만 닿은 항목이고(경로 끝의 '추론:'이 근거), [forward]는 forward로 넘어간 다른
+                  엔드포인트의 핸들러를 거쳐서만 닿은 항목이다(뷰 이름 forward:나 서블릿 API. 핸들러 자신의 호출 사슬로 닿는 경로가
+                  있으면 붙지 않는다). 경로에서는 넘어간 대상 핸들러 앞에 [forward]가, 넘어간 경로를 알면 끝에 (forward: <경로>)가
+                  붙고, 머리의 개수 요약과 계층 제목은 '엔드포인트 43개(직접 39, forward 경유 4)'처럼 나뉜다.
+                  json은 항목마다 viaForward(true/false)와 forward(from, to, target)를 낸다.
+                  redirect로 넘어간 핸들러는 따라가지 않는다(브라우저가 새로 보내는 별개의 요청이다).
                 """ + COMMON_HELP;
     }
 

@@ -3,6 +3,7 @@ package io.codeatlas.cli;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import io.codeatlas.core.io.GraphJson;
+import io.codeatlas.core.model.Edge;
 import io.codeatlas.core.model.EdgeKind;
 import io.codeatlas.core.model.GraphModel;
 import io.codeatlas.core.model.Ids;
@@ -934,6 +935,41 @@ class QueryCommandsTest {
         assertThat(out()).contains("--dialect oracle|db2|auto").contains("--opt mybatis.dialectVariant=<방언>").contains("프로젝트 설정");
         assertThat(run("analyze", work.toString(), "--dialect", "mysql")).isEqualTo(2);
         assertThat(err()).contains("mysql").contains("mybatis.dialectVariant");
+    }
+
+    @Test
+    @DisplayName("F-001-AC87 impact는 forward로 넘어간 핸들러를 거쳐서만 닿은 항목을 [forward]로 구분해 내고(json은 viaForward), 도움말과 README가 그 표시와 redirect를 따라가지 않는다는 것을 적는다")
+    void impactMarksForwardOnlyItems() throws IOException {
+        // POST /orders/copy의 핸들러는 forward:/orders/1로 detail에 넘어갈 뿐 ORDERS에 직접 닿지 않는다
+        GraphModel forwarding = ShopGraphFixture.shop();
+        String copy = Ids.javaMethod(ShopGraphFixture.CONTROLLER, "copy");
+        String copyEndpoint = Ids.httpEndpoint("POST", "/orders/copy");
+        SourceLocation at = SourceLocation.of("src/main/java/com/shop/order/OrderController.java", 40);
+        forwarding.declare(Node.builder(copy, NodeKind.JAVA_METHOD).name("copy").location(at).build());
+        forwarding.declare(Node.builder(copyEndpoint, NodeKind.HTTP_ENDPOINT).name("POST /orders/copy")
+                .attr("httpMethod", "POST").attr("path", "/orders/copy").location(at).build());
+        forwarding.addEdge(Edge.of(copyEndpoint, copy, EdgeKind.ROUTES_TO));
+        forwarding.addEdge(Edge.builder(copy, ShopGraphFixture.CONTROLLER_DETAIL, EdgeKind.CALLS).inferred()
+                .attr("callType", "forward").attr("path", "/orders/1").attr("viewName", "forward:/orders/1").location(at).build());
+        String saved = ShopGraphFixture.save(forwarding, work.resolve("forwarding")).toString();
+        GraphModel g = GraphJson.read(Path.of(saved));
+
+        assertOk("impact", "ORDERS", "--graph", saved);
+        assertThat(out()).isEqualTo(ImpactAnalysis.analyze(g, "ORDERS").toMarkdown())
+                .contains("엔드포인트 2개(직접 1, forward 경유 1)").contains("| [forward] `POST /orders/copy` | endpoint |")
+                .contains("(forward: /orders/1)").contains("| `GET /orders/{id}` | endpoint |");
+        assertOk("impact", "ORDERS", "--graph", saved, "--format", "json");
+        assertThat(out()).isEqualTo(ImpactAnalysis.analyze(g, "ORDERS").toJson()).contains("\"viaForward\": true")
+                .contains("\"target\": \"/orders/1\"");
+        // forward가 없는 그래프의 출력에는 표시가 없다
+        assertOk("impact", "ORDERS", "--graph", file);
+        assertThat(out()).doesNotContain("forward");
+
+        assertOk("help", "impact");
+        assertThat(out()).contains("[forward]").contains("forward 경유").contains("viaForward").contains("redirect").contains("별개의 요청");
+        String readme = Files.readString(Path.of("..", "README.md"), StandardCharsets.UTF_8);
+        String section = readme.substring(readme.indexOf("### 4. 테이블 영향도"), readme.indexOf("CRUD 매트릭스의 칸은"));
+        assertThat(section).contains("`[forward]`").contains("forward 경유").contains("`viaForward`").contains("redirect");
     }
 
     @Test

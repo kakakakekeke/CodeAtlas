@@ -131,6 +131,9 @@ updated: 2026-10-11
 - [x] F-001-AC86 테스트(`HintsTest`, 처음부터 통과) → 변경 없음: `DIALECT_VARIANT_DDL`의 새 문장도 그대로 옮긴다 (F-001-R53)
 - [x] design.md 4.5·3.4와 루트 README 반영
 
+## 9차 수정(영향도의 forward 경유 구분, 2026-10-11)
+- [x] F-001-AC87 테스트(`QueryCommandsTest.impactMarksForwardOnlyItems`) → 실패 확인(도움말에 `[forward]`가 없음. 명령의 출력 단언은 export가 먼저 고쳐져 있어 처음부터 통과) → `ImpactCommand`의 도움말, 루트 README의 "테이블 영향도" 절 → 통과 (F-001-R61)
+
 ## 마무리
 - [x] 모든 수용 기준 통과 확인
 - [x] spec.md의 status를 implemented로 변경

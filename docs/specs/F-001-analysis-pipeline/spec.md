@@ -79,6 +79,7 @@ PRD의 세 목표(콜트리와 관계 분석, ERD, 클래스 다이어그램)는
 | F-001-R58 | cli가 그래프의 수를 적는 곳(`analyze`·`summary` 요약의 노드·엣지 종류별 수와 신뢰도별 엣지 수, 검증 리포트 머리의 그래프 수)은 **그래프 그대로** 세야 하고(종류별 합이 총수와 같다), 미해결 참조의 목록·건수·힌트만 같은 지점에서 다른 방법으로 풀린 참조(`resolvedBy`가 있는 `UNRESOLVED` 노드와 그리로 가는 엣지)를 뺀다. 두 수가 달라지는 곳에는 까닭을 한 줄 적는다: 요약은 신뢰도 표 아래에 풀린 참조·엣지 수, `diagnostics.md`는 머리에 한 줄을 적고 풀린 참조의 `UNRESOLVED_REFERENCE` 진단을 지우지 않은 채 메시지 끝에 `(접두 일치로 풀림)`을 덧붙이며(진단 건수 유지), 검증 하네스(`verify/SampleReport`)의 "미해결 노드"·"UNRESOLVED 엣지" 목록과 지점 근처의 미해결 엣지는 풀린 것을 빼고 뺀 수를 적는다. R56의 "요약의 수에서 뺀다"는 이 요구사항으로 바뀌었다(힌트의 미해결 Java 호출 수는 R56 그대로다). | 4차 재검증(공통컴포넌트: stdout 노드 종류별 합 48692 ≠ 총 48693, report.md 430 대 stdout 429, diagnostics.md의 풀린 참조) |
 | F-001-R59 | `calltree`의 URL 검색은 화면 요청을 엔드포인트와 같은 순서로 찾아야 한다: 글자 그대로 같은 경로 → 요청의 경로 패턴(`{*}`, `{이름}`)에 구체 경로 맞추기(세그먼트 전체인 `{*}`는 한 세그먼트, 세그먼트의 일부인 `{*}`는 여러 세그먼트. 여럿이면 가장 좁은 것만. 검색어가 패턴 꼴이면 글자 그대로만) → 맨 앞 1~2 세그먼트(컨텍스트 경로)를 떼고 다시. 엔드포인트를 찾았을 때의 "같은 경로의 화면 요청"에도 같은 패턴 맞추기를 쓴다. 요청 하나만 맞았고 패턴·컨텍스트 경로로 맞췄으면 표준 오류에 알린다. URL 꼴 검색어로 아무것도 찾지 못하면 오류 문구에 (a) 메서드가 달라 못 찾은 경우 같은 경로의 다른 메서드 엔드포인트(없으면 화면 요청)와 (b) 패턴 꼴로도 찾을 수 있다는 안내를 덧붙인다. `selfSubmit` 요청은 전처럼 어느 URL에도 맞지 않는다. | 4차 재검증(`calltree 'PUT /api/schedule/1'`이 프런트만 분석한 그래프에서 실패, `--kind HTTP_REQUEST 'PUT /api/schedule/5'` 실패, POST 전용 경로에 GET을 줬을 때 안내 없음) |
 | F-001-R60 | "화면 요청은 있는데 엔드포인트가 없다" 힌트(R44)는 `report.md`의 "화면 요청" 절과 같은 것을 같은 이름으로 세야 한다: 서버 요청(외부 URL·정적 페이지 링크·클라이언트 라우트를 뺀 화면 요청. F-015-R74의 조회 API). 서버 요청이 하나도 없으면 힌트를 내지 않는다. | 4차 재검증(react: 힌트 "화면 요청 99개" 대 report.md "서버 요청 97건") |
+| F-001-R61 | `impact` 도움말과 README의 영향도 설명은 forward 경유의 구분(F-015-R77)을 적어야 한다: 이름 앞의 `[forward]`는 forward로 넘어간 다른 엔드포인트의 핸들러를 거쳐서만 닿은 항목이고 핸들러 자신의 호출 사슬로 닿는 경로가 있으면 붙지 않는다는 것, 경로의 `[forward]`와 개수 요약의 `직접`·`forward 경유`, JSON의 `viaForward`·`forward`, redirect 대상은 따라가지 않는다는 것(별개의 요청). | 실험(2026-10-11), export 계약 변경(`ImpactReport.Item.forward`) |
 
 ## 4. 수용 기준
 
@@ -515,6 +516,10 @@ PRD의 세 목표(콜트리와 관계 분석, ERD, 클래스 다이어그램)는
 - Given `DIALECT_VARIANT_DDL` 메시지에 sql의 새 문장(`… 만들지 않음. oracle 파일에 적재가 없는 테이블의 묶음 18개는 다른 방언 파일의 것을 씀(mysql 12개, hsql 6개).`)이 붙은 그래프 / "만들지 않음" 없이 그 문장만 있는 그래프 / 메시지 끝에 옵션 안내가 이미 있는 그래프
 - Then 힌트는 그 문장을 그대로 옮기고 옵션 안내(`--dialect <oracle|db2>`, `mybatis.dialectVariant`)를 한 번만 붙이며, 이미 있으면 메시지 그대로다.
 - 테스트: `HintsTest.ddlVariantHintCarriesBorrowedDataLoadSentence`(처음부터 통과: 힌트는 메시지를 옮기고 `mybatis.dialectVariant`가 있는지만 본다).
+
+### F-001-AC87 (대상: F-001-R61)
+- Then `help impact`에 `[forward]`, `forward 경유`, `viaForward`, redirect를 따라가지 않는다는 것(`별개의 요청`)이 있고, README의 "테이블 영향도" 절에 `[forward]`·`forward 경유`·`viaForward`가 있다. forward로만 닿는 엔드포인트가 있는 그래프에서 `impact`의 출력은 `ImpactAnalysis`의 Markdown·JSON 그대로다(`[forward]`와 `"viaForward": true`가 나온다).
+- 테스트: `QueryCommandsTest.impactMarksForwardOnlyItems`.
 
 ## 5. 가정
 - 8차 수정(2026-10-11, 4차 재검증 후속):
