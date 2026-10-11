@@ -1,0 +1,149 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <parent>
+    <groupId>io.codeatlas</groupId>
+    <artifactId>codeatlas-parent</artifactId>
+    <version>0.1.0-SNAPSHOT</version>
+  </parent>
+
+  <artifactId>codeatlas-cli</artifactId>
+  <name>codeatlas-cli</name>
+  <description>명령줄 진입점, 실행 jar 패키징</description>
+
+  <dependencies>
+    <dependency>
+      <groupId>io.codeatlas</groupId>
+      <artifactId>codeatlas-core</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>io.codeatlas</groupId>
+      <artifactId>codeatlas-java</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>io.codeatlas</groupId>
+      <artifactId>codeatlas-springxml</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>io.codeatlas</groupId>
+      <artifactId>codeatlas-sql</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>io.codeatlas</groupId>
+      <artifactId>codeatlas-mybatis</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>io.codeatlas</groupId>
+      <artifactId>codeatlas-web</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>io.codeatlas</groupId>
+      <artifactId>codeatlas-jsp</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>io.codeatlas</groupId>
+      <artifactId>codeatlas-link</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>io.codeatlas</groupId>
+      <artifactId>codeatlas-export</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>io.codeatlas</groupId>
+      <artifactId>codeatlas-viewer</artifactId>
+    </dependency>
+
+    <dependency>
+      <groupId>org.junit.jupiter</groupId>
+      <artifactId>junit-jupiter</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.assertj</groupId>
+      <artifactId>assertj-core</artifactId>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <plugins>
+      <!-- 실행 가능한 단일 jar: target/codeatlas.jar. 모듈 jar(codeatlas-cli-버전.jar)는 그대로 두고 따로 만든다. -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-shade-plugin</artifactId>
+        <executions>
+          <execution>
+            <phase>package</phase>
+            <goals>
+              <goal>shade</goal>
+            </goals>
+            <configuration>
+              <outputFile>${project.build.directory}/codeatlas.jar</outputFile>
+              <createDependencyReducedPom>false</createDependencyReducedPom>
+              <transformers>
+                <!-- 모듈마다 있는 META-INF/services 파일(Analyzer, Linker, Exporter)을 합친다. -->
+                <transformer implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer"/>
+                <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
+                  <manifestEntries>
+                    <Main-Class>io.codeatlas.cli.Main</Main-Class>
+                    <Implementation-Title>CodeAtlas</Implementation-Title>
+                    <Implementation-Version>${project.version}</Implementation-Version>
+                    <!-- web 모듈이 tree-sitter 네이티브 라이브러리(lib/ 리소스)를 System.load로 올린다.
+                         JDK 24부터 나오는 restricted method 경고를 없앤다(java -jar로 실행할 때만 적용된다). -->
+                    <Enable-Native-Access>ALL-UNNAMED</Enable-Native-Access>
+                  </manifestEntries>
+                </transformer>
+                <transformer implementation="org.apache.maven.plugins.shade.resource.ApacheLicenseResourceTransformer"/>
+                <transformer implementation="org.apache.maven.plugins.shade.resource.ApacheNoticeResourceTransformer">
+                  <addHeader>false</addHeader>
+                </transformer>
+              </transformers>
+              <filters>
+                <filter>
+                  <artifact>*:*</artifact>
+                  <excludes>
+                    <!-- 서명된 jar(JDT 등)의 서명 파일. 합친 jar에 남으면 실행할 때 SecurityException이 난다. -->
+                    <exclude>META-INF/*.SF</exclude>
+                    <exclude>META-INF/*.DSA</exclude>
+                    <exclude>META-INF/*.RSA</exclude>
+                    <exclude>META-INF/*.EC</exclude>
+                    <exclude>module-info.class</exclude>
+                    <exclude>META-INF/versions/*/module-info.class</exclude>
+                  </excludes>
+                </filter>
+              </filters>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+      <!-- package 단계 뒤(verify)에 도는 통합 테스트(*IT).
+           CodeatlasJarIT: 실행 jar를 실제로 돌려 본다.
+           SampleShopIT: samples/sample-shop을 분석해 expected/의 정답과 대조하고 target/sample-shop-report.md, .json을 쓴다.
+             임계값(must-have 100%, 함정 위반 0 등)에 못 미치면 실패한다. 단언 없이 리포트만 쓰려면 -Dsample.verify=report.
+             그 밖의 -Dsample.verify.* 프로퍼티는 SampleShopIT의 주석을 본다. 명령줄의 -D 값은 테스트 JVM에 그대로 전달된다. -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-failsafe-plugin</artifactId>
+        <executions>
+          <execution>
+            <goals>
+              <goal>integration-test</goal>
+              <goal>verify</goal>
+            </goals>
+          </execution>
+        </executions>
+        <configuration>
+          <systemPropertyVariables>
+            <codeatlas.jar>${project.build.directory}/codeatlas.jar</codeatlas.jar>
+            <codeatlas.script>${project.basedir}/../bin/codeatlas</codeatlas.script>
+            <sample.project>${project.basedir}/../samples/sample-shop</sample.project>
+            <sample.report.dir>${project.build.directory}</sample.report.dir>
+          </systemPropertyVariables>
+        </configuration>
+      </plugin>
+    </plugins>
+  </build>
+</project>

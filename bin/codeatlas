@@ -1,0 +1,38 @@
+#!/bin/sh
+# CodeAtlas 실행 스크립트. 빌드한 실행 jar를 java -jar로 돌린다.
+#   CODEATLAS_JAR  쓸 jar 경로(없으면 스크립트 옆, ../lib, ../codeatlas-cli/target 순으로 찾는다)
+#   JAVA_HOME      쓸 JDK(없으면 PATH의 java)
+#   JAVA_OPTS      JVM 옵션. 예: JAVA_OPTS=-Xmx4g
+set -e
+
+# 심볼릭 링크를 따라가 스크립트의 실제 위치를 찾는다.
+SCRIPT="$0"
+while [ -h "$SCRIPT" ]; do
+  LINK=$(readlink "$SCRIPT")
+  case "$LINK" in
+    /*) SCRIPT="$LINK" ;;
+    *) SCRIPT="$(dirname "$SCRIPT")/$LINK" ;;
+  esac
+done
+BIN_DIR=$(cd "$(dirname "$SCRIPT")" && pwd)
+
+JAR=""
+for CANDIDATE in "$CODEATLAS_JAR" "$BIN_DIR/codeatlas.jar" "$BIN_DIR/../lib/codeatlas.jar" "$BIN_DIR/../codeatlas-cli/target/codeatlas.jar"; do
+  if [ -n "$CANDIDATE" ] && [ -f "$CANDIDATE" ]; then
+    JAR="$CANDIDATE"
+    break
+  fi
+done
+if [ -z "$JAR" ]; then
+  echo "codeatlas.jar를 찾지 못했다. 저장소 루트에서 'mvn -q install'을 먼저 실행한다." >&2
+  exit 1
+fi
+
+if [ -n "$JAVA_HOME" ] && [ -x "$JAVA_HOME/bin/java" ]; then
+  JAVA="$JAVA_HOME/bin/java"
+else
+  JAVA=java
+fi
+
+# shellcheck disable=SC2086
+exec "$JAVA" $JAVA_OPTS -jar "$JAR" "$@"
