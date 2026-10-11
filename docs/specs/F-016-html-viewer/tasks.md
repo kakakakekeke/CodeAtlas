@@ -53,7 +53,7 @@ JS 테스트: `node --test "codeatlas-viewer/src/test/js/*.test.js"` · Java 테
 ## 남은 일
 - [x] `samples/sample-shop` 분석 결과(graph.json)로 뷰어를 열어 픽스처와 다른 점이 없는지 확인 (T11)
 - [x] (계획에 없던 작업, 2026-10-11) 사용자가 `viewer.html`을 브라우저로 열자 "뷰어를 시작하지 못했다: Failed to execute 'add' on 'DOMTokenList'"가 났다. 탐색 화면이 `classList.add('hide-client-routes none')`처럼 공백이 든 이름을 한 번에 넣은 것이 원인이고, 가짜 DOM이 너그러워 테스트가 놓쳤다. 가짜 DOM을 실제처럼 엄격하게 바꿔 실패를 재현한 뒤(`strict-dom.test.js`, 기존 테스트 30여 개도 실패) `withClass`가 이름을 하나씩 넣게 고쳤다 (F-016-R44, F-016-AC82). 고친 뒤 실제 브라우저(`http://localhost`, 앱 내장 브라우저)로 샘플의 탐색·ERD·클래스 다이어그램·콜트리·CRUD·진단 여섯 화면이 콘솔 오류 없이 뜨는 것을 확인했다
-- [ ] `file://`로 직접 열어 확인 (T11에서는 `http://localhost`로 확인했다). 4차 수정에서 브라우저 도구로 다시 시도했지만 `file://` 주소를 열지 못했다. 대신 `file:` 환경을 흉내 내 스크립트를 실행하는 테스트(F-016-AC71)를 뒀다. `http://localhost`로는 실제 브라우저에서 여섯 화면을 확인했다(2026-10-11). `file://` 주소로 여는 것만 남아 있다
+- [x] `file://`로 직접 열어 확인 (T11에서는 `http://localhost`로 확인했다). 4차 수정에서 브라우저 도구로 다시 시도했지만 `file://` 주소를 열지 못했다. 대신 `file:` 환경을 흉내 내 스크립트를 실행하는 테스트(F-016-AC71)를 뒀다. `http://localhost`로는 실제 브라우저에서 여섯 화면을 확인했다(2026-10-11). `file://` 주소로 여는 것은 소유자가 자기 브라우저에서 샘플 결과를 직접 열어 잘 뜨는 것을 확인했다(2026-10-11)
 - [x] 콜트리에서 위로 올라갈 때의 주입 좁히기 (T12, F-016-R19)
 - [ ] 표준 산출물과 일부러 다르게 둔 것(spec 5절: 뷰 → 정의 쿼리, JS 함수에서 모듈로 올라가는 조건)을 어느 쪽으로 맞출지 정한다
 - [ ] 영역 나누기의 글자 수 한도를 분석 때의 옵션(`export.mermaid.maxChars`, `graph.json`의 `project.options.extra`)에서 읽을지 정한다(지금은 기본값 45,000 고정)
