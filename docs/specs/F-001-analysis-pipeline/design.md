@@ -177,6 +177,7 @@ public final class GraphModel {
 | 데이터 적재 묶음 구문 | `sql:stmt:<파일>:<그 테이블의 첫 INSERT 줄>` (SQL 파일 구문의 ID 형식 그대로) | 데이터 적재 파일의 리터럴 INSERT는 구문마다가 아니라 (파일, 테이블)마다 노드 하나다. `attrs.dataLoad=true`, `attrs.rowCount`. 적재 파일의 판정과 묶는 규칙은 3.5 공통 규칙 "데이터 적재 구문"에 있다(F-006-R15·R24). 방언별 스크립트가 여러 벌이면 묶음은 테이블마다 한 방언의 것만 노드가 된다: 고른 방언의 파일에 그 테이블의 적재가 없으면 다른 방언 파일의 묶음이 `borrowedFrom`과 함께 남는다. 고르지 않은 방언의 파일의 DML 구문 노드는 만들지 않는다(F-007-R20·R27·R29) |
 | 애너테이션 SQL 구문 | `mybatis:stmt:<인터페이스 바이너리 이름>.<메서드명>` | `attrs.annotation=true` |
 | XML 빈의 인라인 SQL | `sql:stmt:<XML 파일>:<sql 프로퍼티 요소의 줄>` | `attrs.bean`에 빈 이름 |
+| properties 파일의 값에 든 SQL | `sql:stmt:<properties 파일>:<키가 있는 줄>` (SQL 파일 구문의 ID 형식 그대로) | `attrs.propertyKey`에 키. `FILE -CONTAINS→` 이 구문. 누가 실행하는지는 알 수 없어 `EXECUTES`는 없다. 어떤 값을 SQL로 보는지는 F-006-R43·R44 |
 | 뷰 정의 쿼리 | `sql:stmt:<파일>:<CREATE 문의 시작 줄>` | `DB_VIEW -CONTAINS→` 이 구문 |
 | 루틴(프로시저·함수·트리거) 본문의 구문 | `sql:stmt:<루틴 이름>:<줄>`. 루틴 이름은 `db:routine:` 뒤의 것 그대로다(패키지 소속이면 `<패키지>.<이름>`). 줄은 SQL 키워드(`SELECT`/`INSERT`/`UPDATE`/`DELETE`/`MERGE`/`WITH`/`VALUES`)가 있는 줄이고, 커서 선언·`FOR … IN (SELECT`·`OPEN … FOR SELECT`는 그 안의 `SELECT` 줄, 동적 SQL은 `EXECUTE IMMEDIATE`/`PREPARE`/`OPEN … FOR`/`DBMS_SQL.PARSE` 문장의 첫 줄이다. SQL 구문이 아닌 식(대입식, 조건식, 호출 인자, 선언 초기값) 안의 시퀀스 참조만으로 만든 구문(`attrs.sequence=true`, F-008-R15)은 대입문이면 그 문장의 첫 줄, 그 밖에는 식의 첫 줄이다 | `name`은 `<루틴의 짧은 이름>:<줄>`, `qualifiedName`은 패키지 소속일 때 `<패키지>.<루틴>:<줄>`(아니면 `name`과 같다). `attrs.routine`에 주인 노드 ID. 지역 서브프로그램은 노드를 만들지 않고 그 본문의 구문을 바깥 루틴의 것으로 만든다. 오버로드된 패키지 루틴은 한 노드라 구문도 그 노드에 모인다. 한 루틴의 같은 줄에 구문이 둘이면 한 노드로 합쳐진다(F-008 가정) |
 | 패키지 초기화부와 패키지 수준 선언(초기값, 커서 쿼리)의 구문 | `sql:stmt:<패키지>:<줄>` | 주인은 `DB_PACKAGE` 노드다(`attrs.routine`에 `db:package:<패키지>`) |
@@ -442,6 +443,7 @@ CONTAINS의 조합
 | | `useGeneratedKeys`, `selectKey` | boolean | mybatis |
 | | `databaseIds`, `resultColumns`, `nestedSelects` | List. `resultColumns`는 `COLUMN=property`(200개까지), `nestedSelects`는 `<namespace>.<id>` | mybatis |
 | | `bean`, `composed` | 인라인 SQL을 가진 빈 이름, 절을 이어 붙여 만든 SQL이면 true | springxml |
+| | `propertyKey` | `.properties` 파일의 값에서 읽은 SQL이면 그 키(F-006-R43). 노드의 `name`도 이 키다 | sql |
 | SQL_FRAGMENT | `namespace`, `fragmentId`, `sql`, `dynamic`, `databaseIds` | | mybatis |
 | DB_TABLE | `schema`, `comment` | 정의가 여러 파일에 있으면 이 표의 값과 컬럼은 모두 선택된 한 파일의 것이다(공통 규칙 "같은 테이블의 중복 정의") | sql |
 | | `primaryKey` | List. PK 컬럼 순서대로 | sql |
