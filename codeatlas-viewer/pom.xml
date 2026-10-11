@@ -1,0 +1,88 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <parent>
+    <groupId>io.codeatlas</groupId>
+    <artifactId>codeatlas-parent</artifactId>
+    <version>0.1.0-SNAPSHOT</version>
+  </parent>
+
+  <artifactId>codeatlas-viewer</artifactId>
+  <name>codeatlas-viewer</name>
+  <description>단일 HTML 뷰어 출력기</description>
+
+  <properties>
+    <!-- 뷰어에 인라인하는 다이어그램 라이브러리. 2026-10-11에 Maven Central(org.webjars.npm:mermaid)에서 확인한 11.x 최신판.
+         12.0.0도 올라와 있으나 나온 지 얼마 안 됐고 번들이 5.6MB(11.x는 3.6MB)라 11.x를 쓴다. -->
+    <mermaid.version>11.17.2</mermaid.version>
+    <maven-dependency-plugin.version>3.11.0</maven-dependency-plugin.version>
+  </properties>
+
+  <dependencies>
+    <dependency>
+      <groupId>io.codeatlas</groupId>
+      <artifactId>codeatlas-core</artifactId>
+    </dependency>
+
+    <dependency>
+      <groupId>org.junit.jupiter</groupId>
+      <artifactId>junit-jupiter</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.assertj</groupId>
+      <artifactId>assertj-core</artifactId>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <resources>
+      <resource>
+        <directory>src/main/resources</directory>
+      </resource>
+      <resource>
+        <directory>${project.build.directory}/generated-resources/vendor</directory>
+      </resource>
+    </resources>
+    <plugins>
+      <!-- Mermaid webjar에서 번들 파일 하나만 꺼내 target/generated-resources/vendor에 두고 리소스로 넣는다
+           (클래스패스 io/codeatlas/viewer/vendor/mermaid.min.js). target/classes에 바로 풀지 않는 것은
+           컴파일러의 증분 빌드나 IDE가 그 폴더를 비워도 다음 빌드에서 다시 복사되게 하기 위해서다.
+           ViewerExporter가 이 파일을 viewer.html에 인라인하므로 뷰어는 실행 중에 네트워크를 쓰지 않는다.
+           의존으로 선언하지 않고 unpack만 해서 webjar의 전이 의존(d3 등)을 끌어오지 않는다. -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-dependency-plugin</artifactId>
+        <version>${maven-dependency-plugin.version}</version>
+        <executions>
+          <execution>
+            <id>unpack-mermaid</id>
+            <phase>generate-resources</phase>
+            <goals>
+              <goal>unpack</goal>
+            </goals>
+            <configuration>
+              <artifactItems>
+                <artifactItem>
+                  <groupId>org.webjars.npm</groupId>
+                  <artifactId>mermaid</artifactId>
+                  <version>${mermaid.version}</version>
+                  <type>jar</type>
+                  <includes>META-INF/resources/webjars/mermaid/${mermaid.version}/dist/mermaid.min.js</includes>
+                  <outputDirectory>${project.build.directory}/generated-resources/vendor/io/codeatlas/viewer/vendor</outputDirectory>
+                  <fileMappers>
+                    <org.codehaus.plexus.components.io.filemappers.FlattenFileMapper/>
+                  </fileMappers>
+                </artifactItem>
+              </artifactItems>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
+  </build>
+</project>

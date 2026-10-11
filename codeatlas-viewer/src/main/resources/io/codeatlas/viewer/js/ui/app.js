@@ -1,0 +1,147 @@
+// 뷰어 시작점: 내장 데이터를 읽어 색인을 만들고 화면을 바꿔 가며 보여 준다.
+(function (root) {
+  'use strict';
+  var CA = root.CodeAtlas = root.CodeAtlas || {};
+  var ui = CA.ui;
+  var h = ui.h;
+  var doc = root.document;
+  var VIEW_ORDER = ['explore', 'calltree', 'classdiagram', 'erd', 'crud', 'diagnostics'];
+
+  function readGraph() {
+    var holder = doc.getElementById('codeatlas-data');
+    if (!holder) throw new Error('데이터 블록(codeatlas-data)이 없다');
+    var graph = JSON.parse(holder.textContent);
+    holder.textContent = '';
+    return graph;
+  }
+
+  function parseHash(hash) {
+    var m = /^#\/([\w-]+)(?:\?(.*))?$/.exec(hash || '');
+    if (!m || VIEW_ORDER.indexOf(m[1]) < 0) return null;
+    var params = {};
+    new root.URLSearchParams(m[2] || '').forEach(function (v, k) { params[k] = v; });
+    return { view: m[1], params: params };
+  }
+
+  function formatHash(view, params) {
+    var query = Object.keys(params || {}).filter(function (k) { return params[k] != null && params[k] !== ''; })
+      .map(function (k) { return encodeURIComponent(k) + '=' + encodeURIComponent(params[k]); }).join('&');
+    return '#/' + view + (query ? '?' + query : '');
+  }
+
+  function formatTime(iso) {
+    if (!iso) return '';
+    var d = new Date(iso);
+    if (isNaN(d.getTime())) return String(iso);
+    var p = function (n) { return (n < 10 ? '0' : '') + n; };
+    return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) + ' ' + p(d.getHours()) + ':' + p(d.getMinutes());
+  }
+
+  function start() {
+    var host = doc.getElementById('app');
+    var graph;
+    try {
+      graph = readGraph();
+    } catch (e) {
+      host.replaceChildren(h('p', { class: 'fatal', text: '내장된 분석 결과를 읽지 못했다: ' + (e && e.message ? e.message : e) }));
+      return;
+    }
+    var index = CA.graph.buildIndex(graph);
+    var views = {};      // 이름 → 만든 화면. 처음 열 때 만든다.
+    var tabs = {};
+    var current = null;
+    var viewsBox = h('div', { class: 'views' });
+    var drawerBody = h('div', { class: 'pane-body' });
+    var drawer = h('div', { class: 'drawer' }, [
+      h('div', { class: 'pane-head' }, [h('span', { class: 'pane-title', text: '노드 상세' }), h('span', { class: 'spacer' }),
+        h('button', { class: 'btn small', type: 'button', text: '닫기', title: 'Esc', on: { click: closeDrawer } })]),
+      drawerBody
+    ]);
+
+    function closeDrawer() { drawer.classList.remove('open'); }
+
+    function activate(name, params) {
+      if (!views[name]) {
+        views[name] = CA.views[name].create(app);
+        viewsBox.insertBefore(views[name].el, drawer);
+      }
+      VIEW_ORDER.forEach(function (v) {
+        if (views[v]) views[v].el.classList.toggle('active', v === name);
+        tabs[v].setAttribute('aria-selected', String(v === name));
+      });
+      current = name;
+      closeDrawer();
+      views[name].show(params || {});
+    }
+
+    var app = {
+      index: index,
+      /** 화면을 바꾼다. 주소의 # 부분도 맞춰서 뒤로 가기가 동작하게 한다. */
+      navigate: function (view, params) {
+        var hash = formatHash(view, params);
+        if (root.location.hash !== hash) {
+          try { root.location.hash = hash; } catch (e) { /* 주소를 못 바꿔도 화면은 바꾼다 */ }
+        }
+        activate(view, params);
+      },
+      /** 화면은 그대로 두고 주소만 맞춘다. */
+      setHash: function (view, params) {
+        var hash = formatHash(view, params);
+        if (root.location.hash === hash) return;
+        try { root.history.replaceState(null, '', hash); } catch (e) { /* file: 주소에서 막히면 그대로 둔다 */ }
+      },
+      /** 노드 상세를 연다. 탐색 화면에서는 그 자리에서, 다른 화면에서는 오른쪽 서랍에서. */
+      showDetail: function (id) {
+        if (current === 'explore') { views.explore.showDetail(id); return; }
+        ui.renderDetail(drawerBody, app, id, { inDrawer: true });
+        drawer.classList.add('open');
+      }
+    };
+    CA.app = app;
+
+    var project = index.project || {};
+    var tabBar = h('div', { class: 'tabs', attrs: { role: 'tablist' } }, VIEW_ORDER.map(function (name) {
+      var def = CA.views[name];
+      var children = [def.title];
+      // 탭에 붙이는 개수. 화면이 badges(app) → [{text, title, alert}]를 주면 그대로 보인다.
+      if (def.badges) {
+        def.badges(app).forEach(function (b) {
+          children.push(h('span', { class: 'count' + (b.alert ? ' alert' : ''), text: b.text, title: b.title }));
+        });
+      }
+      tabs[name] = h('button', { class: 'tab', type: 'button', attrs: { role: 'tab', 'aria-selected': 'false', 'data-view': name }, on: {
+        click: function () { app.navigate(name, {}); }
+      } }, children);
+      return tabs[name];
+    }));
+    var topbar = h('div', { class: 'topbar' }, [
+      h('div', { class: 'brand' }, [h('span', { class: 'brand-mark' }), 'CodeAtlas']),
+      h('div', { class: 'project' }, [
+        h('b', { text: project.name || '(이름 없는 프로젝트)', title: project.root || '' }),
+        h('span', { text: '노드 ' + ui.formatCount(index.nodes.length) + ' · 엣지 ' + ui.formatCount(index.edges.length) }),
+        project.analyzedAt ? h('span', { class: 'opt', text: '분석 ' + formatTime(project.analyzedAt), title: String(project.analyzedAt) }) : null
+      ]),
+      tabBar
+    ]);
+    viewsBox.appendChild(drawer);
+    host.replaceChildren(topbar, viewsBox);
+    if (project.name) doc.title = project.name + ' · CodeAtlas';
+
+    doc.addEventListener('keydown', function (e) { if (e.key === 'Escape') closeDrawer(); });
+    root.addEventListener('hashchange', function () {
+      var target = parseHash(root.location.hash);
+      if (target) activate(target.view, target.params);
+    });
+
+    var initial = parseHash(root.location.hash) || { view: 'explore', params: {} };
+    activate(initial.view, initial.params);
+  }
+
+  try {
+    start();
+  } catch (e) {
+    root.console.error('뷰어를 시작하지 못했다: ' + (e && e.stack ? e.stack : e));
+    var host = doc.getElementById('app');
+    if (host) host.replaceChildren(h('p', { class: 'fatal', text: '뷰어를 시작하지 못했다: ' + (e && e.message ? e.message : e) }));
+  }
+})(typeof globalThis !== 'undefined' ? globalThis : this);

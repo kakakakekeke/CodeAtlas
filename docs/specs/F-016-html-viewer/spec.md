@@ -1,0 +1,485 @@
+---
+type: spec
+id: F-016
+title: HTML 뷰어
+status: implemented  # draft | approved | implemented
+updated: 2026-10-11
+---
+
+# F-016 HTML 뷰어
+
+## 1. 배경
+분석 결과(`graph.json`)는 사람이 직접 읽기 어렵다. PRD 시나리오 1~4(ERD, 클래스 다이어그램, 콜트리, 테이블 역추적)를 설치 없이 폐쇄망에서 보려면 결과를 내장한 정적 파일 하나가 필요하다(ADR-0006). 이 기능은 그래프를 내장한 단일 HTML 뷰어를 만드는 출력기다.
+
+## 2. 범위
+- 포함: `viewer.html`을 만드는 출력기(`ViewerExporter`), 뷰어의 검색·노드 상세·콜트리·클래스 다이어그램·ERD·CRUD 매트릭스·진단 목록 화면.
+- 제외: 파일로 내보내는 다이어그램·콜트리 출력과 CLI 조회 명령(F-013~F-015), 소스 본문 표시(그래프에 본문이 없다), 그래프 편집.
+
+## 3. 요구사항
+
+| ID | 요구사항 | 출처 |
+|---|---|---|
+| F-016-R1 | 시스템은 그래프를 `graph.json` 형식(design 4.4)으로 내장한 단일 파일 `viewer.html`을 출력 폴더에 만들어야 한다. 출력기는 `ServiceLoader`로 발견된다. | 사용자 요청, design 4.1, ADR-0006 |
+| F-016-R2 | 시스템은 뷰어가 실행 중 네트워크 요청을 하지 않게 스크립트, 스타일, 외부 라이브러리를 모두 파일 안에 넣어야 한다. | 사용자 요청, PRD 7 (폐쇄망) |
+| F-016-R3 | 만약 그래프 데이터에 `</script>` 같은 HTML 종료 문자열이 들어 있으면, 시스템은 문서 구조가 깨지지 않게 내장하고 원래 값을 그대로 복원해야 한다. | 사용자 요청 |
+| F-016-R4 | 시스템은 노드를 종류별로 거르고 이름으로 검색하게 해야 한다. 검색은 주석(`attrs.comment`)과 요청의 URL 원문(`attrs.url`)에서도 찾고, 정의 없이 참조만 된 노드(`declared=false`)와 합성 멤버(`synthetic=true`)는 숨길 수 있다. | 사용자 요청 |
+| F-016-R5 | 노드가 선택되면, 시스템은 속성, 소스 위치, 들어오는 엣지와 나가는 엣지 목록, 엣지의 신뢰도를 보여야 한다. 계약의 표시(`synthetic`, `lombok`, `external`, `anonymous`, `local`, 미해결 `category`·`expectedPrefix`)는 꼬리표로 보이고, 엣지의 모든 속성을 펼쳐 볼 수 있으며, 값이 노드 ID인 속성(`evidence`, `definedBy` 등)은 그 노드로 이동할 수 있다. | 사용자 요청, design 3.5 |
+| F-016-R6 | 노드가 콜트리의 기준으로 선택되면, 시스템은 호출하는 쪽과 호출되는 쪽 트리를 각각 보여야 한다. 트리는 `REQUESTS`, `MATCHES`, `ROUTES_TO`, `CALLS`, `EXECUTES`, `READS`, `WRITES`, `CONTAINS`(루틴→구문, 뷰→정의 쿼리, JSP→인라인 스크립트 모듈, 모듈·함수→함수, 잡→스텝, DB 패키지→루틴), `RENDERS`, `INCLUDES`, `USES`, `TRIGGERS_ON`(테이블 변경→트리거) 엣지를 따라 화면에서 테이블까지 한 트리로 이어진다. 트리거는 쓰기의 `op`와 트리거의 `triggerEvent`가 맞을 때만 잇는다. | 사용자 요청, PRD 시나리오 3·4, design 3.4 |
+| F-016-R7 | 시스템은 콜트리에서 인터페이스 메서드를 `OVERRIDES`의 역방향으로 구현체 메서드까지 펼칠 수 있어야 한다. 간접 구현(재정의의 재정의)까지 전이적으로 보이고, 호출하는 타입의 주입 정보(`INJECTS`의 `candidates`, `INFERRED` 주입의 `resolvedFrom`)가 있으면 그 구현으로 좁힌다(끌 수 있다). | 사용자 요청 |
+| F-016-R8 | 만약 콜트리의 자식이 자기 조상과 같은 노드이면, 시스템은 순환으로 표시하고 그 아래를 펼치지 않아야 한다. 자식은 펼칠 때 계산한다. "모두 펼치기"는 화면 이동(`RENDERS` 너머)에서 멈추고 그 사실을 알리며, 고르면 끝까지 펼친다. | 사용자 요청 |
+| F-016-R9 | 패키지나 타입이 선택되면, 시스템은 그 범위의 타입과 관계를 클래스 다이어그램으로 그려야 한다. `EXTENDS`, `IMPLEMENTS`, `ASSOCIATES`, `DEPENDS_ON`과 멤버 표시를 각각 켜고 끌 수 있다. 범위 밖 상위 타입, 소스 없는 타입(`external`, `declared=false`), 익명·로컬 타입, 합성 멤버(`synthetic`)도 각각 켜고 끌 수 있다. | 사용자 요청, PRD 시나리오 2 |
+| F-016-R10 | 시스템은 테이블 전체 또는 선택한 테이블과 지정한 깊이의 이웃을 컬럼, PK, FK, UK, 주석과 함께 ERD로 그려야 한다. 뷰는 고를 때만 넣는다. | 사용자 요청, PRD 시나리오 1 |
+| F-016-R11 | 시스템은 ERD에서 `REFERENCES`의 `attrs.source`가 `DDL`인 관계와 `INFERRED`인 관계를 선 모양으로 구분하고 범례를 보여야 한다. `declared=false`인 테이블은 다르게 표시한다. 방향을 모르는 추론 관계(`directionKnown=false`)는 카디널리티 표시 없는 선으로 그리고, 그 밖의 관계는 `cardinality`와 FK 컬럼의 `nullable`·`unique`로 양 끝을 정한다. | 사용자 요청, AGENTS.md (추론 관계 구분), design 3.5 |
+| F-016-R12 | 시스템은 테이블과 매퍼 구문 또는 Java 메서드 사이의 C/R/U/D를 표로 보여야 한다. 테이블(뷰) 수준의 `READS`/`WRITES`만 세고 컬럼 수준 엣지는 세지 않는다. | 사용자 요청, design 3.5 |
+| F-016-R13 | 시스템은 진단과 미해결 참조를 따로 표로 보이고, 진단은 코드와 심각도로, 미해결 참조는 분류(`category`)로 거르게 해야 한다. 미해결 참조는 엣지 하나를 한 건으로 세어(`report.md`와 같다) 같은 참조가 진단·노드·엣지로 여러 번 나오지 않게 한다. | 사용자 요청, PRD 5 (조용히 누락되는 것이 없다) |
+| F-016-R14 | 시스템은 목록을 화면에 보이는 행만 그려야 한다(가상 스크롤). | 사용자 요청 |
+| F-016-R15 | 만약 다이어그램 범위의 노드 수가 상한을 넘으면, 시스템은 상한까지만 그리고 경고를 보여야 한다. | 사용자 요청 |
+| F-016-R16 | 시스템은 운영체제의 라이트·다크 설정(`prefers-color-scheme`)을 따라야 한다. | 사용자 요청 |
+| F-016-R17 | 시스템은 CRUD 매트릭스를 표준 산출물(`crud/table-*.csv`, F-015-R10·R20·R21·R25·R26)과 같은 규칙·표기로 보여야 한다: 행의 기준은 SQL 구문, Java 메서드, 엔드포인트, 루틴 넷이고, DB 루틴(프로시저·함수·트리거)을 거쳐서만 닿는 접근은 소문자로 적으며(`Ru`: 직접 R + 간접 u), 루틴만 부르는 구문(CALL)의 행을 넣고, 대상 테이블을 정적으로 알 수 없는 구문의 접근은 마지막 열 `(동적)`과 구문 목록으로 드러낸다. 범례는 대문자·소문자와 `(동적)`을 설명한다. 같은 그래프에서 칸 단위로 표준 산출물과 같아야 하고, CSV 저장은 같은 모양의 파일을 낸다. | 표준 산출물과의 일치(조정자 요청) |
+| F-016-R18 | 시스템은 콜트리를 표준 산출물(`calltree/endpoints.md`, `batch-jobs.md`, F-015-R3·R18·R19·R23)과 같은 규칙으로 펼쳐야 한다: 구현 전개는 인터페이스·추상 메서드에서만 하고 본문 없는 중간 메서드는 거쳐 가기만 하며, 주입 후보는 타입 ID·빈 ID·빈 이름으로 읽고, 트리거는 쓰기의 종류와 `UPDATE OF <컬럼>`까지 맞을 때만 따라가되 알 수 없으면 표시(`[trigger?]`)와 함께 따라가고, 스텝이 타입·빈만 가리키면 그 타입의 public 메서드로 펼치고, 잡의 스텝은 `NEXT` 흐름 순서로 놓는다. `super` 호출, `redirect`·`forward` 호출, 식 안의 시퀀스 참조 구문(`sequence=true`)은 줄에 표시한다. 같은 그래프에서 같은 시작 노드의 전개가 표준 산출물과 같은 노드 집합·같은 부모-자식 관계여야 한다. | 표준 산출물과의 일치(조정자 요청) |
+| F-016-R19 | 방향이 "호출하는 쪽"이고 노드가 상위 메서드를 재정의한 메서드이면, 시스템은 (전이적으로) 재정의한 모든 상위 메서드의 호출자를 "인터페이스 경유"로 표시해 그 노드의 자식으로 넣어야 한다. 주입 좁히기가 켜진 경우 주입이 다른 구현을 가리키는 호출자를 빼고, `super` 호출은 늘 뺀다(F-015-R4·R19와 같다). | 이전 검증의 한계(spec 5절) |
+| F-016-R20 | 추론 관계에 상수로 고정한 키 컬럼(`fixedColumns`·`fixedValues`, F-018-R9)이 있으면, 시스템은 ERD의 관계 라벨과 상세의 엣지 요약에 그것을 적어야 한다(예: `ORDER_STATUS → CODE (GROUP_CD='ORDER_STATUS', 추론 1건)`). ERD의 엔티티, 관계 집합, 방향, 카디널리티, 선 모양, 라벨 표기는 같은 그래프의 표준 산출물 `erd/erd.mmd`와 같아야 한다. | 표준 산출물과의 일치(조정자 요청), F-018-R9 |
+| F-016-R21 | 시스템은 계약에 새로 들어온 속성을 상세에서 읽을 수 있게 보여야 한다: `JOINS`의 좌·우 고정 컬럼, 루틴의 `typeRefs`(가리키는 컬럼·테이블로 이동), 메서드의 `redirects`·`forwards`(경로가 맞는 엔드포인트로 이동), 미해결 `java-call` 엣지의 `argCount`, JS `CALLS`의 `viaProp`, 요청의 `url` 원문, 테이블의 `indexes`(한 줄에 하나씩), 식 안 시퀀스 참조 구문(`sequence=true`). | 그래프 계약 갱신(design 3.5) |
+| F-016-R22 | 시스템은 진단·미해결 화면에 `report.md`의 "Java 호출자가 없는 매퍼 구문"(F-015-R24)과 "대상 테이블을 정적으로 알 수 없는 구문"(F-015-R25)에 해당하는 보기를 같은 판정 규칙으로 두어야 한다. 그래프에 있는 진단 코드는 새 코드(`CALLS_SKIPPED` 등)까지 모두 필터에 나온다. | 표준 산출물과의 일치(조정자 요청) |
+| F-016-R23 | 콜트리와 CRUD의 엔드포인트 기준이 팬아웃 엣지(상위 타입에서 물려받은 매퍼 메서드가 하위 매퍼마다 실행하는 구문으로 가는 `EXECUTES`의 `inherited`·`namespace`·`declaredIn`, 제네릭 상위 메서드의 `callType=reflection` `CALLS`의 `viaTypes`)를 따라갈 때, 시스템은 표준 산출물(F-015-R29)과 같이 경로상 가장 최근의 구체 수신자 타입(호출 엣지의 `receiverType`, `super`·상속 메서드 호출로 이어받은 호출한 쪽의 타입, 그 타입이 `typeArguments`나 참조로 묶는 타입)과 맞는 것만 따라가야 한다. 맞는 것이 없으면 전부 따라가되 `[?]`로 표시하고, 문맥이 없으면 상속 구문은 전부(표시 없음), 리플렉션 팬아웃은 전부 `[?]`다. 호출하는 쪽도 대칭으로 좁힌다. 리플렉션으로 추론한 호출은 `[reflect]`로 표시한다. | 그래프 계약 갱신(design 3.4 "소비자가 지키는 규칙"), F-015-R29·R38 |
+| F-016-R24 | 주입 좁히기(R7, R19)는 호출 타입에서 구현 구체 타입으로 바로 가는 `INJECTS`(XML 주입, 구현 클래스 필드)도 후보로 써야 한다(선언 타입으로 가는 후보 없는 주입이 따로 있으면 좁히지 않는다). 구현 줄의 신뢰도는 그 구현까지 온 `OVERRIDES` 사슬에 추론이 있으면 추론이고, `super` 호출로 도착한 메서드는 구현으로 펼치지 않는다. | F-015-R34 |
+| F-016-R25 | 핸들러가 여러 모듈에 있는 엔드포인트(`ROUTES_TO`가 여럿)를 요청에서 따라갈 때 시스템은 요청을 낸 파일과 같은 모듈 루트의 핸들러가 있으면 그것만 따라가고, 엔드포인트에서 시작하면 전부 보이되 줄마다 `모듈 <경로>`를 적어야 한다. `MATCHES`의 `crossModule=true`는 추론으로 표시한다. 엔드포인트의 표시 이름(콜트리, 탐색 목록, CRUD의 행과 CSV)은 `resolvedPath`가 있으면 `METHOD 치환경로 (원문)`이고 그 경로로도 검색된다. | F-015-R36·R37 |
+| F-016-R26 | 호출되는 쪽 트리의 자식 순서는 표준 산출물(F-015-R31)과 같아야 한다: ① `callType=modelAttribute`(`[before]`) ② 호출 지점의 위치순(엣지 `location`의 줄, 열) ③ 위치를 모르는 호출·구현 전개·테이블·트리거는 노드 ID 순. 호출하는 쪽은 노드 ID 순이다. | F-015-R31·R38 |
+| F-016-R27 | 콜트리는 접근자 호출(Lombok 합성 멤버, 또는 이름이 `get`/`set`/`is` + 소문자가 아닌 글자이고 자신과 재정의 메서드에서 `CALLS`·`EXECUTES`가 나가지 않는 메서드)과 소스 없는 메서드의 줄을 표준 산출물과 같은 기본값(접음)으로 접고 접은 수를 알려야 하며, 토글로 펼 수 있어야 한다. 데이터 적재 구문(`dataLoad=true`)은 콜트리와 CRUD에서 기본으로 빼고 토글로 넣는다. | F-015-R28·R35 |
+| F-016-R28 | 시스템은 콜트리의 시작 노드를 묶음에서 고르게 해야 한다: 엔드포인트, 배치 잡, 그리고 필터·인터셉터(`stereotype`이 `filter`·`interceptor`인 타입의 진입 메서드. 표준 산출물 `calltree/filters.md`가 시작하는 메서드와 같다). | F-015-R39 |
+| F-016-R29 | 시스템은 ERD를 주제 영역(테이블 이름 접두사 묶음)별로 골라 그리게 해야 한다. 영역 목록은 표준 산출물이 큰 ERD를 나눌 때(`erd/index.md`, `ErdSplitter`)와 같은 규칙으로 만든다. 만약 전체 범위가 테이블 수 상한을 넘거나 Mermaid 소스가 한도(45,000자)를 넘으면, 시스템은 그리다 실패하지 않고 상한까지만 그리거나 경고하고 영역 보기로 가는 길을 주어야 한다. | F-013(표준 산출물의 영역 분할) |
+| F-016-R30 | 시스템은 2차 수정에서 계약에 들어온 속성을 상세·탐색에서 읽을 수 있게 보여야 한다: 엔드포인트의 `resolvedPath`·`placeholders`, `MATCHES`의 `strippedPlaceholder`·`trailingSlash`·`crossModule`·`relativeBase`, `EXECUTES`의 `inherited`·`namespace`·`declaredIn`, `CALLS`의 `callType=reflection\|modelAttribute`·`viaTypes`·`inheritedFrom`·`viaPage`, `EXTENDS`·`IMPLEMENTS`의 `typeArguments`, `OVERRIDES`의 `lombok`, 구문의 `dataLoad`·`rowCount`·`dialectVariant`, 빈의 `otherDefinitions`, 모듈·페이지의 `skipped`(탐색에서 기본으로 숨기고 토글), 요청의 `api=option`·`optionKey`, 타입의 `stereotype=filter\|interceptor`. 마무리 단계가 만든 미해결 노드는 "기대한 종류"가 아니라 분류(`category`, 없으면 `expectedPrefix`에서 유도)로 적는다. | 그래프 계약 갱신(design 3.5·3.6) |
+| F-016-R31 | 시스템은 새 진단 코드(`DIALECT_VARIANT_MAPPERS`, `DATA_LOAD_GROUPED`, `DDL_NOT_APPLIED`, `REFLECTION_CALL`, `UNRESOLVED_BEAN_PLACEHOLDER`, 폴더 단위 `FILE_SKIPPED`)를 코드 필터와 표에 설명과 함께 보이고, 위치가 없는 진단과 폴더를 가리키는 진단을 구분해 적어야 한다. `report.md`의 "데이터 적재 스크립트"와 "DDL에 없는 테이블"(참조 구문 수와 의심 표시)에 해당하는 보기를 같은 셈법으로 둔다. | 그래프 계약 갱신(design 3.7), F-015-R28·R32 |
+| F-016-R32 | 시스템은 큰 그래프(graph.json 150MB급)에서도 색인·콜트리 전개·CRUD 집계를 화면이 멈추지 않게 처리해야 한다: 엣지가 많은 노드의 엣지는 종류별로 한 번만 나누고, 타입 계층·재정의·판정은 한 번 계산한 것을 다시 쓰며, CRUD의 엔드포인트 기준은 고를 때 나눠서 계산하고 진행을 보인다. | PRD 7(규모), 실제 프로젝트 검증 |
+| F-016-R33 | 뷰어는 3차 수정(2026-10-11)에서 바뀐 표준 산출물의 규칙을 같게 따라야 한다: 요청으로 진입한 핸들러에만 붙는 `[before]`(F-015-R41), redirect·forward로 넘어가는 핸들러에서 "모두 펼치기"가 멈추고 엔드포인트 기준 CRUD가 redirect를 따라가지 않음(R42), 접근자 접기의 필드 대응 조건(R43), 조건을 넘겨받는 제네릭 상위 클래스의 호출자 거르기(R44), 뷰 컨트롤러 엔드포인트와 모듈별 화면(R46), 클라이언트 라우트의 `[route]`와 미해결 집계 제외(R47), 레이아웃 줄과 "쓰는 화면 n개" 접기(R48), `[ambiguous n]` 묶음 줄(R49), `(로드 미확인)`(R50), ERD의 관계 영역·허브(F-013-R17), 방향 미상의 까닭(F-013-R18), DDL에 없는 컬럼을 ERD에 넣지 않음(F-013-R19). 대조 테스트(AC30, AC34, AC56, AC57)가 샘플과 다른 프로젝트의 산출물에서 일치해야 한다. | 3차 검증 |
+| F-016-R34 | 시스템은 CRUD 매트릭스에서 추론한 관계를 거쳐서만 닿은 칸을 표준 산출물과 같은 규칙·표기(칸 끝의 `?`, F-015-R52)로 보여야 한다: 엔드포인트·메서드 기준에만 붙고, 범례가 `?`를 설명하며, 칸을 따로 칠하고 풀어 쓴 말을 붙이고, CSV 저장도 같은 글자를 낸다. | F-015-R52 |
+| F-016-R35 | 시스템은 3차 수정에서 계약에 들어온 속성을 상세·라벨에서 읽는 말로 보여야 한다: `JOINS`의 `wrapped`·`leftWrapped`·`rightWrapped`("(함수 적용)"), `REFERENCES`의 `fromUpgrade`("(upgrade 스크립트)": 엣지 요약과 ERD 라벨), 고정 값(`fixedValues` 등)은 첫 `=`에서만 잘라 `컬럼='값'`, 요청의 `api=tag`·`api=route`·`optionKey=arg`·`clientRoute`, JSP→JS `INCLUDES`의 `minOf`, `EXECUTES`의 `prefixMatch`, `RENDERS`의 `via=tiles`·`definition`·`candidate`·`suffixMatch`, 레이아웃 `INCLUDES`, XML 빈 설정의 `inheritedFrom`, JS `CALLS`의 `loadUnverified`. | 그래프 계약 갱신(3차) |
+| F-016-R36 | 시스템은 진단·미해결 화면에 `report.md`의 "SQL과 DDL의 컬럼 불일치"(테이블, 컬럼, 참조하는 구문)와 "화면 요청"(구분별 건수, 요약 문장, 미연결 요청)에 해당하는 보기를 같은 내용·순서로 두어야 한다. | F-015-R51·R54 |
+| F-016-R37 | 콜트리 화면은 화면 내 이동(클라이언트 라우트)을 그런 요청이 있는 그래프에서 기본으로 접고(접은 수를 알리고 토글로 편다) 그 밖의 3차 화면 요소(레이아웃 펼치기와 `[layout]` 줄, `[ambiguous n]` 묶음 줄의 펼침, `[redirect]`·`[forward]` 한 줄과 "화면 이동 펼치기")와 함께 조각 테스트로 고정해야 한다. | 3차 수정의 남은 일, 실제 그래프 확인 |
+| F-016-R38 | 시스템은 테이블 상세에 그 테이블의 "DDL에 없는데 SQL이 참조하는 컬럼"(정의가 있는 테이블의 `declared=false` 컬럼)을 구문과 함께 따로 보이고, 방향 미상 추론 관계의 까닭(`declaredOpposite`: 선언된 FK와 반대, `pseudoKey`: 유일하지 않은 키, 그 밖: 키 정보 없음)을 관계 상세와 ERD 범례에 적어야 한다. | F-013-R18·R19 |
+| F-016-R39 | 뷰어는 `file://`로 열었을 때 막히거나 브라우저마다 다르게 실패하는 API(fetch, XHR, 동적 import, Worker, 저장소, 쿠키, 주소 바꾸기)에 기대지 않아야 한다. | 남은 일(`file://` 확인) |
+| F-016-R40 | 뷰어는 3차 재검증(M14)에서 바뀐 표준 산출물의 규칙을 같게 따라야 한다: 같은 줄 중첩 호출의 평가 순서(F-015-R55), `MATCHES` 후보 묶음(R56), 부수 효과 없는 생성자·`*Example` 빌더 호출 접기(R57. 빌더는 접은 수를 따로 알린다), 위 방향의 공통 JSP `[shared]`(R58), `borrowedFrom` 표시와 보기(R59), 시스템 카탈로그(R60), 화면 요청 통계의 새 구분(R54), 현재 정의에 없는 upgrade 외래 키의 표시. | 3차 재검증 M14 |
+| F-016-R41 | 뷰어는 분석기 4차 수정이 그래프에 새로 남기는 것을 표준 산출물과 같게 읽어야 한다(F-015-R62~R67): `MATCHES.module`에 따른 핸들러·화면 고르기(양방향), 다른 방법으로 풀린 미해결 `EXECUTES`의 숨김과 `resolvedBy` 노드의 미해결 참조 제외, 실행·뷰 줄의 `접두 일치`·`인자 구문`·`동적 뷰 이름 후보`(화면에서는 관계 이름에 `EXECUTES(접두 일치)`처럼 붙는다), 요청 이름의 `POST|PUT`·`(자기 페이지로 제출)`(트리, 검색 결과, 상세 제목, 진단의 미연결 요청), 동적 데코레이터의 추론 레이아웃 줄과 `[ambiguous n]` 묶음. 상세의 꼬리표·요약·엣지 요약에도 적는다(`자기 페이지로 제출`, `메서드 POST\|PUT`, `인자로 넘긴 구문 ID로 이음`, `동적 조각이 든 뷰 이름의 후보`, `동적 데코레이터 이름 …`, `요청의 모듈 …`). |
+| F-016-R42 | 노드 상세는 분석기가 다음 단계에 넘기려고 남긴 중간 정보(`JAVA_METHOD`의 `statementIdLiterals`·`statementIdLiteralLines`, `JSP_PAGE`의 `formFields`)를 속성 표에 쏟지 않고 접힌 "분석 중간 정보" 아래에 둔다(속성 수에도 세지 않는다). 진단의 위치 표시는 메시지 문구에 기대지 않는다(벤더 요약 메시지의 꼴이 바뀌어도 같다). |
+| F-016-R43 | 뷰어는 4차 재검증 후속(5차 수정)에서 바뀐 표준 산출물의 규칙을 같게 따라야 한다: 위 방향 요청 줄의 모듈 표시(F-015-R68. 화면에서는 관계 이름 `MATCHES(모듈 <경로>)`)와 `crossModule`+`module`(R69), 미해결 selfSubmit 대상의 풀어 쓴 이름(트리, 미해결 참조 목록, 짧은 이름)과 `후보 엔드포인트` 묶음 줄(R70·R71), 엔드포인트의 호출자에 forward·redirect 핸들러(R72), 미해결 참조 건수가 신뢰도 `UNRESOLVED` 엣지 수와 다른 까닭의 문장(R73), 데이터 적재 묶음의 `borrowedFrom`("보충한 구문"에서 빼고 적재 파일·꼬리표·요약·트리 줄에 `다른 방언 파일: <방언>`. R75), 좁혀진 동적 뷰의 표시(R76. 관계 이름 `RENDERS(동적 뷰 이름: 프로퍼티 값으로 정함)`, 엣지 요약, 상세의 엣지 속성 `narrowedBy`), 추론 관계의 부모 쪽 0..1(F-013-R28. 화면의 ERD, 표준 산출물과 같은 글자, 범례), 시스템 카탈로그를 ERD에서 빼고 수를 알림(F-013-R29). |
+
+## 4. 수용 기준
+
+테스트 위치: JS는 `codeatlas-viewer/src/test/js/*.test.js`(`node --test "codeatlas-viewer/src/test/js/*.test.js"`), Java는 `codeatlas-viewer/src/test/java`(`mvn -q -pl codeatlas-viewer test`). Maven 테스트가 `target/viewer-sample/viewer.html`을 만들고, 그 뒤에 돌린 JS 테스트가 그 파일도 검사한다(F-016-AC18).
+
+### F-016-AC1 (대상: F-016-R1)
+- Given 노드, 엣지, 진단이 있는 `GraphModel`
+- When `ViewerExporter.export`를 실행하면
+- Then 출력 폴더에 `viewer.html`이 생기고, 그 안의 데이터 블록을 JSON으로 읽으면 원본과 같은 노드, 엣지, 진단이 나온다. `ServiceLoader`로 `Exporter`를 찾으면 `viewer`가 있다.
+
+### F-016-AC2 (대상: F-016-R2)
+- Given 생성된 `viewer.html`
+- When 태그의 `src`, `href` 속성과 CSS의 `url()`, `@import`를 살피면
+- Then `http://`, `https://`, `//`로 시작하는 참조가 없고, 외부 라이브러리(Mermaid)가 파일 안에 들어 있다.
+
+### F-016-AC3 (대상: F-016-R3)
+- Given 이름과 속성에 `</script>`, `<!--`, U+2028이 들어 있는 노드
+- When 내보내고 데이터 블록을 다시 읽으면
+- Then 데이터 블록은 첫 `</script>`에서 끝나고 값이 원본과 같다.
+
+### F-016-AC4 (대상: F-016-R4)
+- Given 픽스처 그래프
+- When 종류를 `JAVA_METHOD`로 거르고 `order`를 검색하면
+- Then 이름이나 전체 이름에 `order`가 들어 있는 Java 메서드만 나오고, 이름이 정확히 맞거나 앞부분이 맞는 것이 먼저 온다. 여러 낱말은 모두 맞아야 한다.
+
+### F-016-AC5 (대상: F-016-R5)
+- Given 픽스처 그래프의 `OrderServiceImpl#placeOrder`
+- When 노드 상세를 만들면
+- Then 속성, 위치, 종류별로 묶인 들어오는 엣지와 나가는 엣지가 있고 각 엣지에 신뢰도가 있다. 미해결 호출은 `UNRESOLVED`로 나온다.
+
+### F-016-AC6 (대상: F-016-R6)
+- Given 픽스처 그래프의 JSP 페이지 `order/list.jsp`
+- When 호출되는 쪽 트리를 끝까지 펼치면
+- Then 한 경로에 JS 함수 → HTTP 요청 → 엔드포인트 → 컨트롤러 메서드 → 서비스 → 매퍼 메서드 → 매퍼 구문 → 테이블 `ORDERS`가 차례로 있다.
+
+### F-016-AC7 (대상: F-016-R6)
+- Given 픽스처 그래프의 테이블 `ORDER_HISTORY`
+- When 호출하는 쪽 트리를 끝까지 펼치면
+- Then 루틴 안의 구문 → 루틴 → 매퍼 구문 → 매퍼 메서드를 거쳐 엔드포인트와 화면까지 올라간다.
+
+### F-016-AC8 (대상: F-016-R7)
+- Given 인터페이스 메서드 `OrderService#placeOrder`와 그것을 구현한 `OrderServiceImpl#placeOrder`
+- When 인터페이스 메서드의 호출되는 쪽 자식을 구하면 구현체 메서드가 "구현" 관계로 나오고
+- Then 구현체 메서드의 호출하는 쪽 자식을 구하면 인터페이스 메서드를 부르는 곳이 "인터페이스 경유"로 나와 그 호출자로 이어진다(F-016-R19로 바뀜: 전에는 인터페이스 메서드가 한 줄로 끼어 있었다).
+
+### F-016-AC9 (대상: F-016-R8)
+- Given 서로를 호출하는 두 메서드
+- When 트리를 펼치면
+- Then 조상과 같은 노드는 순환으로 표시되고 자식이 없다. 펼치지 않은 노드의 자식은 계산되어 있지 않다.
+
+### F-016-AC10 (대상: F-016-R9)
+- Given 픽스처 그래프
+- When 패키지 `com.shop.service`를 범위로 고르고 Mermaid 소스를 만들면
+- Then 그 패키지의 타입만 들어 있고, 관계 종류를 끄면 그 관계의 선이 없어지고, 멤버 표시를 끄면 필드와 메서드가 없다. 타입을 골라 깊이 1로 넓히면 관계로 이어진 이웃 타입이 들어온다.
+
+### F-016-AC11 (대상: F-016-R10)
+- Given 픽스처 그래프
+- When 테이블 `ORDERS`를 깊이 1로 고르면
+- Then `ORDERS`와 `REFERENCES`로 이어진 이웃 테이블만 들어 있고, Mermaid 소스에 컬럼의 자료형과 `PK`, `FK` 표시가 있다. 범위를 주지 않으면 모든 테이블이 들어 있다.
+
+### F-016-AC12 (대상: F-016-R11)
+- Given `source`가 `DDL`인 관계와 `INFERRED`인 관계, `declared=false`인 테이블
+- When ERD의 Mermaid 소스를 만들면
+- Then DDL 관계는 실선(`--`), 추론 관계는 점선(`..`)이고, `declared=false`인 테이블에는 구분 클래스와 표시가 붙는다. 범례 항목은 이 세 가지를 설명한다.
+
+### F-016-AC13 (대상: F-016-R12)
+- Given 픽스처 그래프
+- When 매퍼 구문 기준과 Java 메서드 기준으로 CRUD 매트릭스를 만들면
+- Then `INSERT`는 C, 조회는 R, `UPDATE`는 U, `DELETE`는 D, `MERGE`는 C와 U로 나오고, 메서드 기준에서는 `EXECUTES`로 실행하는 구문과 그 구문이 호출하는 루틴 안의 구문까지 합쳐진다(루틴을 거친 접근은 소문자다, F-016-AC28).
+
+### F-016-AC14 (대상: F-016-R13)
+- Given 진단과 미해결 노드·엣지가 있는 픽스처 그래프
+- When 진단 목록과 미해결 참조 목록을 만들고 코드와 분류로 거르면
+- Then 진단은 진단 수만큼, 미해결 참조는 미해결 엣지 수만큼 행으로 나오고(미해결 노드는 따로 행이 되지 않는다) 고른 코드·분류의 행만 남는다. 코드별·분류별 개수가 나온다.
+
+### F-016-AC15 (대상: F-016-R14)
+- Given 5만 행짜리 목록과 높이 600px의 창
+- When 스크롤 위치에서 그릴 범위를 계산하면
+- Then 보이는 행과 여유분만 범위에 들어가고 범위는 0과 행 수 사이에 있다. 5만 노드 그래프의 색인과 검색이 끝난다.
+
+### F-016-AC16 (대상: F-016-R15)
+- Given 상한보다 타입이나 테이블이 많은 범위
+- When 범위를 고르면
+- Then 결과는 상한 개수까지만 들어 있고 잘렸다는 표시와 전체 개수가 있다.
+
+### F-016-AC17 (대상: F-016-R16)
+- Given 뷰어의 스타일시트
+- When 내용을 살피면
+- Then `prefers-color-scheme: dark` 규칙이 있고 색은 CSS 변수로 정의되어 있다.
+
+### F-016-AC18 (대상: F-016-R1, F-016-R2)
+- Given 픽스처 그래프로 조립한 `viewer.html`
+- When 스크립트 블록을 Node로 구문 검사하고 가짜 DOM에서 실행하면
+- Then 구문 오류와 실행 오류가 없고 모든 화면이 한 번씩 그려진다.
+
+아래 AC19~AC27은 `samples/sample-shop`의 실제 분석 결과로 뷰어를 열어 보고 더한 것이다. 재현 테스트는 `real-shapes.test.js`(실제 그래프의 노드·엣지 모양을 옮긴 작은 조각), `viewer-html.test.js`(화면), `sample-shop.test.js`(실제 `graph.json`이 있을 때만 돈다)에 있다.
+
+### F-016-AC19 (대상: F-016-R6)
+- Given 분석기가 실제로 내는 엣지 조합: `CONTAINS`(JSP_PAGE→JS_MODULE 인라인 스크립트, DB_VIEW→SQL_STATEMENT, DB_PACKAGE→DB_ROUTINE), `TRIGGERS_ON`, `USES`(BATCH_STEP→JAVA_TYPE와 그 타입의 역할 메서드), 같은 대상의 `CALLS`와 `CONTAINS`(JS), `NEXT`
+- When 콜트리를 양쪽으로 펼치면
+- Then JSP → 인라인 스크립트 → 요청 → 엔드포인트, 구문 → 뷰 → 정의 쿼리 → 테이블, 패키지 → 루틴이 이어진다. 테이블을 바꾸는 구문 아래에는 그 `op`에 걸린 트리거만(`triggerEvent`가 없으면 표시와 함께. 컬럼 지정 트리거의 판정은 F-016-AC31) 나오고, 트리거에서 위로는 그 이벤트로 테이블을 바꾸는 구문만 올라간다. 역할 메서드가 있는 `USES` 타입 줄과 `CALLS`와 겹치는 `CONTAINS` 줄은 접히고, 잡의 스텝은 `NEXT` 순서로 나온다. `redirect`·`forward`·`ref` 같은 호출 방식은 관계 이름에 적히고, 요청 노드에는 요청 지점이 붙는다.
+
+### F-016-AC20 (대상: F-016-R8)
+- Given 컨트롤러가 화면을 그리고(`RENDERS`) 그 화면의 요청이 다른 엔드포인트로 이어지는 그래프
+- When "모두 펼치기"를 하면
+- Then 아래로는 컨트롤러가 그리는 화면에서, 위로는 화면을 그리는 컨트롤러에서 멈추고 멈춘 곳의 수를 알린다. "화면 이동 펼치기"를 켜면 끝까지 펼친다. 기준 노드가 화면이면 그 화면의 요청은 펼친다.
+
+### F-016-AC21 (대상: F-016-R11)
+- Given `directionKnown=false`인 추론 관계, `cardinality`가 `N:1`·`1:1`인 추론 관계, FK 컬럼이 `nullable`이거나 `unique`인 DDL 관계
+- When ERD의 Mermaid 소스를 만들고 그리면
+- Then 방향 미상 관계는 소스에 `}o..o{`와 "방향 미상"으로 적히고(표준 산출물 `erd.mmd`와 같다) 그린 선에서는 끝 표시가 지워진다. `N:1`은 `||..o{`, `1:1`과 unique FK는 `o|`, nullable FK는 `|o`다. 범례는 DDL, 추론, 방향 미상, 카디널리티 모름(5차 수정, F-013-R27: 방향만 DDL로 확인한 추론 관계. 양쪽 끝 표시를 남긴다), DDL 없음 다섯 가지다.
+
+### F-016-AC22 (대상: F-016-R10)
+- Given `primaryKey`·`uniqueKeys`가 테이블 속성에 있는 테이블, 주석이 있는 테이블, `declared=false`인 테이블과 `CONTAINS` 없이 참조만 된 그 컬럼, 뷰
+- When ERD의 Mermaid 소스를 만들면
+- Then PK와 UK가 표시되고, 테이블 주석이 이름 옆에 적히고, 정의 없는 테이블에는 참조된 컬럼만 나온다. 뷰는 고를 때만 `(VIEW)` 표시와 함께 들어간다. `classDef` 값에는 공백을 쓰지 않는다(Mermaid가 지운다).
+
+### F-016-AC23 (대상: F-016-R9)
+- Given 인터페이스, 그 구현, 다른 패키지의 제네릭 상위 클래스, 소스 없는 상위 타입, 익명 타입, 중첩 타입, 합성 멤버가 있는 그래프
+- When 패키지를 범위로 고르면
+- Then 익명·로컬 타입과 합성 멤버는 고를 때만 나오고, "범위 밖 상위 타입"을 켜면 상속·구현 대상이 들어오고, "외부 타입"을 끄면 소스 없는 타입이 빠진다. 인터페이스 멤버는 public으로, 중첩 타입은 `Outer.Inner`로, 제네릭은 `Base<T extends X>`로 적힌다(라벨의 꺾쇠는 엔터티로 적는다). 패키지 목록은 소스 없는 패키지를 구분한다.
+
+### F-016-AC24 (대상: F-016-R12)
+- Given 대상 테이블에 테이블 수준 `WRITES`와 컬럼 수준 `READS`·`WRITES`만 있는 DELETE·UPDATE·MERGE 구문
+- When 구문 기준 CRUD 매트릭스를 만들면
+- Then DELETE는 `D`, UPDATE는 `U`, MERGE는 `CU`다(컬럼 엣지는 세지 않는다). 같은 테이블에 테이블 수준 `READS`가 있을 때만 `R`이 붙는다. 컬럼은 열이 되지 않는다.
+
+### F-016-AC25 (대상: F-016-R13)
+- Given 같은 미해결 노드를 두 곳에서 참조하는 엣지, 마무리 단계가 만든 미해결 노드(`expectedPrefix`), 미해결 노드가 `from`인 엣지, 엣지 없는 미해결 노드, 같은 지점의 진단
+- When 진단·미해결 화면을 열면
+- Then 미해결 참조는 엣지 하나가 한 건(엣지 없는 노드는 그 노드가 한 건)으로, 진단은 진단대로 한 번씩 나온다. 분류는 `category`, 없으면 `expectedPrefix`에서 유도한 분류다(`java:method` → `java-call`. F-016-AC51에서 바뀜: 전에는 `expectedPrefix` 그대로였다). 미해결 참조를 알린 진단은 같은 지점의 미해결 참조와 이어져 그 참조한 노드로 이동한다. 탭에는 미해결 수와 진단 수가 따로 적힌다.
+
+### F-016-AC26 (대상: F-016-R4, F-016-R5)
+- Given 참조만 된 노드(외부 타입·메서드, 정의 없는 테이블의 컬럼), 주석이 있는 테이블, URL 원문이 있는 요청, 합성·Lombok·익명 노드, 근거 구문 ID를 가진 `REFERENCES` 엣지
+- When 검색하고 상세를 열면
+- Then 참조만 된 노드의 이름은 ID에서 복원되어 타입·테이블과 함께 보이고, 주석과 URL 원문으로도 찾으며, 정의 없는 노드와 합성 멤버를 숨길 수 있다. 상세에는 꼬리표와 종류별 요약(요청의 URL 원문, 루틴의 매개변수, 컬럼의 자료형·주석)이 나오고, 엣지의 모든 속성을 펼쳐 근거 구문으로 이동할 수 있다.
+
+### F-016-AC27 (대상: F-016-R7)
+- Given `Vip#m -OVERRIDES→ Default#m -OVERRIDES→ I#m`과, 호출하는 타입의 `INJECTS`(`candidates`, `INFERRED`·`resolvedFrom`)
+- When `I#m`의 호출되는 쪽 자식을 구하면
+- Then 주입 정보가 없으면 직접·간접 구현이 모두 나온다. 주입 정보가 있으면 그 구현 타입에 선언된 재정의(없으면 가장 가까운 상위 클래스의 구현)만 "구현(주입)"으로 나오고 숨긴 수가 남는다. "모든 구현 보기"를 켜면 좁히지 않는다. 구현으로 내려온 메서드와 `super` 호출 아래에는 하위 재정의를 다시 늘어놓지 않는다. 본문이 있는 클래스 메서드를 직접 부른 곳 아래에도 하위 재정의를 펼치지 않는다(F-016-AC32: 구현 전개는 인터페이스·추상 메서드에서만 한다).
+
+아래 AC28~AC40은 뷰어를 표준 산출물(`codeatlas-export`, F-013·F-015)의 규칙·표기와 맞추면서 더한 것이다. 재현 테스트는 `crud-parity.test.js`, `calltree-parity.test.js`, `new-attrs.test.js`(실제 그래프의 모양을 옮긴 조각), `viewer-parity.test.js`(화면), `sample-export.test.js`(같은 `graph.json`으로 만든 표준 산출물 파일과 뷰어의 결과를 견준다. `codeatlas-cli/target/final-out/`이 있을 때만 돌고, 다른 위치는 환경 변수 `CODEATLAS_OUT`으로 준다)에 있다.
+
+### F-016-AC28 (대상: F-016-R17)
+- Given 메서드 —`EXECUTES`→ CALL 구문 —`CALLS`→ 루틴(다른 루틴과 함수를 부르고, 재귀·자기 호출이 있다), 같은 CALL 구문과 테이블을 읽는 구문을 함께 실행하는 메서드, 루틴을 바로 `EXECUTES`하는 메서드, 그 메서드를 부르는 엔드포인트, 루틴이 갱신하는 테이블에 걸린 트리거
+- When 구문·메서드·엔드포인트·루틴 기준으로 CRUD 매트릭스를 만들면
+- Then CALL 구문의 행에 루틴(과 그 루틴이 부른 루틴)의 접근이 소문자로(`ru`, `c`) 나오고, 직접 읽기도 하는 메서드는 `Ru`, 루틴 기준은 자기 본문이 대문자·부른 루틴이 소문자(`Ru`, `rU`. 재귀로 돌아온 자기 구문은 간접으로 세지 않는다), 엔드포인트 기준은 루틴 본문의 구문이 소문자이고 트리거가 쓰는 테이블은 그 트리거를 일으키는 쓰기를 거칠 때만 들어간다. 걸음 수 상한 0이면 루틴 안으로 들어가지 않는다. 행은 노드 ID 순이다.
+- 화면: 기준을 넷 가운데 고르고, 소문자뿐인 칸은 따로 칠한다.
+
+### F-016-AC29 (대상: F-016-R17)
+- Given `unresolved:sql-dynamic:`으로 가는 `READS`/`WRITES`가 있는 구문(매퍼 구문, 정적 테이블과 함께 읽는 구문, 루틴 안의 구문)
+- When CRUD 매트릭스를 만들면
+- Then 그 구문의 행이 있고 마지막 열이 `(동적)`이며(테이블 목록에는 넣지 않는다), 구문 기준에는 "대상 테이블을 정적으로 알 수 없는 구문" 목록(구문, 접근 종류, 위치, 알아낸 원문 조각)이 붙는다. 그 구문에 닿는 메서드·루틴·엔드포인트의 매트릭스에도 `(동적)` 열이 생긴다. 동적 구문이 없으면 열과 목록이 없다. 범례는 대문자·소문자와 `(동적)`을 설명하고, `(동적)` 열도 테이블 이름 필터로 거른다.
+
+### F-016-AC30 (대상: F-016-R17)
+- Given `samples/sample-shop`의 `graph.json`과 표준 산출물 `crud/table-statement.csv`, `table-method.csv`, `table-endpoint.csv`, `table-routine.csv`
+- When 같은 그래프로 뷰어의 매트릭스를 네 기준으로 만들면
+- Then 행, 열, 모든 칸이 파일과 같고, 뷰어의 CSV(머리줄 `<기준>,위치,<테이블…>[,(동적)]`, RFC 4180, 줄 끝 `\n`, UTF-8 BOM)가 파일과 바이트까지 같다.
+
+### F-016-AC31 (대상: F-016-R18)
+- Given 한 테이블에 걸린 트리거 셋(`AFTER UPDATE OF ORDER_STATUS`, `BEFORE INSERT OR DELETE`, `triggerEvent` 없음)과 그 테이블을 쓰는 구문들(INSERT, 그 컬럼을 쓰는 UPDATE, 다른 컬럼만 쓰는 UPDATE, 컬럼 엣지가 없는 UPDATE, DELETE, 그 컬럼을 쓰는 MERGE, `truncate=true`, 종류를 모르는 쓰기)과 읽는 구문
+- When 각 구문에서 아래로, 각 트리거에서 위로 펼치면
+- Then 컬럼 지정 트리거는 그 컬럼을 쓰는 UPDATE·MERGE 아래에만 있고, 컬럼 엣지가 없는 UPDATE와 종류를 모르는 쓰기, 사건을 모르는 트리거는 "트리거?" 표시(`[trigger?]`)와 함께 나온다. TRUNCATE와 읽기 아래에는 트리거가 없고, 테이블에서 시작하면 표시 없이 모두 나온다. 위로는 그 트리거를 일으키는 구문만 나오고 불확실한 것은 구문 줄에 표시가 붙는다.
+
+### F-016-AC32 (대상: F-016-R18)
+- Given 인터페이스 메서드 ⇐ 추상 클래스의 추상 메서드 ⇐ `Default` ⇐ `Vip`(`super` 호출), 재정의가 없는 `Gold extends Vip`, 주입 정보가 여러 꼴인 호출 타입들(`candidates`가 타입 ID / 빈 이름, `resolvedFrom`이 ID / 바이너리 이름인 추론 주입 하나, 추론 주입 둘, 정보 없음)
+- When 아래로 펼치면
+- Then 구현은 인터페이스·추상 메서드 아래에만 나오고(본문 없는 중간 메서드는 줄이 되지 않는다. 본문이 있는 클래스 메서드를 부른 곳 아래에는 하위 재정의를 펼치지 않는다), 주입 정보가 가리키는 구현만 "구현(주입)"으로 남으며(빈 이름은 `DEFINES_BEAN`으로 타입을 찾고, 추론 주입이 둘이면 좁히지 않는다), `super` 호출은 `CALLS(super)`로 적힌다.
+- 컬럼 엣지만 있는 테이블도 한 줄로 접어 보이고(위로도 그 구문이 나온다), 같은 대상의 엣지가 여럿이면 가장 확실한 신뢰도를, 대상이 미해결 노드면 미해결로 적는다.
+
+### F-016-AC33 (대상: F-016-R18)
+- Given 타입만 `USES`하는 스텝, 빈만 `USES`하는 스텝, 타입의 빈과 그 타입의 역할 메서드를 함께 `USES`하는 스텝 / `zFirst → aSecond → mThird`, `aSecond → bFail`, `mThird → aSecond`(재시도)와 `NEXT` 없는 스텝 둘이 든 잡
+- When 펼치면
+- Then 스텝 → 타입 → public 메서드(생성자·private 제외), 스텝 → 빈 → 정의한 타입 → 메서드로 이어지고 역할 메서드가 있는 타입·빈 줄은 접힌다. 위로는 메서드 → 타입(→ 빈) → 스텝으로 올라간다. 잡의 스텝은 `zFirst, aSecond, bFail, mThird`와 흐름 밖 스텝(ID 순)의 순서이고, 합류하는 스텝은 그것으로 오는 스텝들 뒤에 놓인다.
+
+### F-016-AC34 (대상: F-016-R18)
+- Given `samples/sample-shop`의 `graph.json`과 표준 산출물 `calltree/endpoints.md`, `calltree/batch-jobs.md`
+- When 엔드포인트(대표 5개와 전체)와 배치 잡에서 뷰어의 "호출되는 쪽"을 펼치면("화면 이동 펼치기"는 끄고 주입 좁히기는 켠 상태)
+- Then 트리의 모든 자리에서 자식의 집합(같은 노드, 구현 표시, `[trigger?]`, 신뢰도, 테이블의 접근 글자, `super`·`redirect`·`forward`·역할 표시)이 텍스트 트리와 같고, 잡 아래 스텝은 순서까지 같다. 줄의 표기와 `[see above]`로 접힌 반복은 견주지 않는다(자식의 순서와 새 표식은 F-016-AC56에서 견준다). 뷰 아래의 정의 쿼리는 뷰어만 펼친다(F-016-R6). 뷰어의 기본 옵션(접근자·소스 없는 메서드 접음, 데이터 적재 구문 제외)이 표준 산출물의 기본값과 같다(F-016-AC47).
+
+### F-016-AC35 (대상: F-016-R19)
+- Given AC32의 그래프
+- When `Vip#discount`와 `Default#discount`에서 "호출하는 쪽"을 구하면
+- Then `Vip` 쪽에는 인터페이스 메서드의 호출자 가운데 `Default`를 주입받는 것을 뺀 나머지가 "인터페이스 경유"로 나오고 자기 자신의 `super` 호출은 호출자가 아니다. `Default` 쪽에는 `Default`를 주입받는 호출자와 주입 정보가 없는 호출자가 "인터페이스 경유"로, `Vip#discount`가 `CALLS(super)`로 나온다. "모든 구현 보기"를 켜면 좁히지 않는다. 줄에는 거친 상위 메서드가 남는다.
+
+### F-016-AC36 (대상: F-016-R20)
+- Given `fixedColumns=[GROUP_CD]`, `fixedValues=[GROUP_CD=ORDER_STATUS]`인 추론 `REFERENCES`(`TB_ORDER → TB_CODE`, `N:1`)
+- When ERD의 Mermaid 소스를 만들면
+- Then 관계 줄이 `TB_CODE ||..o{ TB_ORDER : "ORDER_STATUS → CODE (GROUP_CD='ORDER_STATUS', 추론 1건)"`이다. 문자열 값은 따옴표로, 바인드(`?`)와 숫자는 그대로, 한 컬럼에 값이 여럿이면 `in (...)`, 값을 모르면 `=상수`로 적는다. 고정 컬럼이 없는 추론 관계는 `컬럼 (추론 n건)`, 방향을 모르면 `(추론 n건, 방향 미상)`이다.
+
+### F-016-AC37 (대상: F-016-R20)
+- Given `samples/sample-shop`의 `graph.json`과 표준 산출물 `erd/erd.mmd`
+- When 뷰어의 전체 ERD를 만들면
+- Then 엔티티, 관계의 집합(부모·자식), 양 끝 표시, 실선·점선이 파일과 같고, 뷰어가 덧붙이는 것(이름이 다른 상대 컬럼, 고정 컬럼)이 없는 관계는 라벨의 글자까지 같다. 고정 컬럼이 있는 관계의 라벨에는 `GROUP_CD='…'`이 있다.
+
+### F-016-AC38 (대상: F-016-R21)
+- Given 고정 컬럼이 있는 `REFERENCES`·`JOINS`, `argCount`가 다른 두 미해결 `java-call` 엣지와 인자 수를 모르는 메서드 참조, `viaProp`이 붙은 JS `CALLS`, 뷰 이름·메서드 `forwards`에서 온 `redirect`·`forward` 호출, `typeRefs`가 있는 루틴, `redirects`·`forwards`가 있는 메서드, `indexes`(`DESC` 포함)가 있는 테이블, `sequence=true`인 구문, JSP 원문 그대로의 `url`이 있는 요청
+- When 상세를 만들면
+- Then 엣지 줄에 한 줄 요약이 나온다(`ORDER_STATUS → CODE (GROUP_CD='ORDER_STATUS') · N:1 · 추론 1건`, `TB_CODE.CODE = TB_ORDER.ORDER_STATUS · TB_CODE 고정 GROUP_CD='ORDER_STATUS'`, `미해결 호출 · 인자 1개`, `prop onCancel로 받은 함수 호출`, `redirect /order/list · 뷰 이름 redirect:/order/list`). `typeRefs`의 값은 그 컬럼·테이블로, `redirects`의 값은 경로가 맞는 엔드포인트가 하나일 때 그리로 갈 수 있다. `indexes`는 한 줄에 하나씩 보이고 요약에 개수가 적힌다. `sequence=true`인 구문에는 "시퀀스 참조 식" 꼬리표가 붙는다. 요청의 URL 원문은 적힌 그대로 보이고 검색된다. 미해결 참조 목록에도 인자 수가 적힌다.
+
+### F-016-AC39 (대상: F-016-R22)
+- Given 실행 메서드를 부르는 곳이 없는 매퍼 구문, 인터페이스로 불리고 구현이 실행하는 구문, 스텝이 메서드를 `USES`하는 구문, 핸들러가 직접 실행하는 구문, 자기 자신만 부르는 메서드의 구문, 메서드와 배치 스텝이 함께 실행하는 구문, `EXECUTES`가 없는 구문, 동적 구문, `CALLS_SKIPPED` 진단
+- When 진단·미해결 목록을 만들면
+- Then "Java 호출자 없는 구문"에 첫째와 자기 호출뿐인 것만 실행 메서드와 함께(구문 ID 순) 나오고, "동적 구문"에 그 구문이 접근 종류·위치·원문 조각과 함께 나온다. 두 목록은 글자로 거를 수 있고 누르면 구문 상세가 열린다. `CALLS_SKIPPED`가 코드 필터에 나오고 줄 번호가 0인 위치는 파일만 적힌다.
+
+### F-016-AC40 (대상: F-016-R22)
+- Given `samples/sample-shop`의 `graph.json`과 표준 산출물 `report.md`
+- When 뷰어의 목록을 만들면
+- Then "Java 호출자가 없는 매퍼 구문"(구문, 위치, 실행 메서드)과 "대상 테이블을 정적으로 알 수 없는 구문"(구문 ID, 접근 종류, 위치)이 리포트의 절과 같은 내용·같은 순서이고, 진단 코드별 건수가 리포트의 표와 같다.
+
+아래 AC41~AC58은 2차 수정(2026-10-11)에서 바뀐 표준 산출물의 규칙과 그래프 계약에 뷰어를 다시 맞추면서 더한 것이다. 재현 테스트는 `calltree-context.test.js`(표준 산출물 테스트의 `ReceiverNarrowingTest`·`DispatchNarrowingTest`·`ModuleAndMarkerTest`와 같은 모양의 그래프와 같은 기대 텍스트 트리. 도우미 `fixtures/java-graph.js`, `tools/export-tree.js`), `erd-areas.test.js`, `align-detail.test.js`(도우미 `fixtures/align-graphs.js`), `viewer-align.test.js`(화면), `sample-export.test.js`(표준 산출물 대조. `CODEATLAS_OUT`으로 다른 프로젝트의 산출물 폴더를 주면 샘플에만 있는 단언은 건너뛴다)에 있다.
+
+### F-016-AC41 (대상: F-016-R23)
+- Given `CrudDao#findList`·`#insert`에서 `DictDao`·`UserDao`·`LogDao`의 같은 id 구문으로 가는 추론 `EXECUTES`(`namespace` + `inherited`, `namespace` + `declaredIn`, 엣지 attrs 없음 세 꼴), 수신자 타입 없이 그 메서드를 부르는 `CrudService#findPage`·`#save`, 그것을 상속한 `DictService`(DAO는 `DEPENDS_ON`으로만), `UserService`(`typeArguments`, `save`를 재정의하고 `super.save` 호출, 다른 DAO도 주입), `MixService`(DAO 둘을 참조), 그 메서드들을 `receiverType`이 있는 꼴·없는 꼴·구문 없는 `OrphanDao`로 부르는 엔드포인트
+- When 각 엔드포인트에서 호출되는 쪽을 펼치면
+- Then `receiverType=DictDao`·`DictService`이면 `DictDao`의 구문만, `UserService#save → CrudService#save (super)` 아래에는 `UserDao.insert`만(타입 인자가 정한다), `MixService` 경유에는 참조하는 두 DAO의 구문이 나온다. 수신자 타입이 없으면 셋 다(표시 없음), `OrphanDao`이면 셋 다 `[?]`다. 같은 메서드를 수신자 타입이 다른 두 곳에서 부르면 호출 지점마다 따로 줄이 되고, 수신자가 namespace의 하위 인터페이스여도 맞는다. 표준 산출물 테스트와 같은 텍스트 트리가 나온다.
+- 화면: `[?]` 줄에 "수신자?" 꼬리표가 붙는다.
+
+### F-016-AC42 (대상: F-016-R23)
+- Given AC41의 그래프
+- When 구문 `DictDao.findList`·`UserDao.insert`·`LogDao.insert`에서 호출하는 쪽을 펼치고, CRUD를 엔드포인트 기준으로 만들면
+- Then 상속 메서드 위로는 수신자 타입(또는 호출한 쪽 서비스가 묶는 DAO)이 그 구문의 namespace와 맞는 호출자만 나오고, 어느 것과도 맞지 않는 호출자(`OrphanDao`)는 `[?]`, 수신자 타입을 모르는 호출자는 표시 없이 남는다. 엔드포인트 기준 매트릭스에는 엔드포인트마다 자기 DAO의 테이블만 나온다(`POST /user`는 `SYS_USER`만). 메서드 기준은 좁히지 않는다.
+
+### F-016-AC43 (대상: F-016-R23)
+- Given `BaseServiceImpl#selectAll`에서 매퍼마다 나가는 `callType=reflection` `CALLS`(`receiverType`=매퍼, `viaTypes`=그 매퍼로 타입 인자를 고정한 하위 서비스)와 `viaTypes`가 없는 리플렉션 호출
+- When 양쪽으로 펼치면
+- Then 호출 엣지의 `receiverType`이 `viaTypes`의 타입(또는 그 상·하위 타입)인 엣지만 따라가고 줄에 `[reflect]`가 붙는다. 문맥 없이 시작하면 전부 `[?] [reflect]`다. `viaTypes`가 없는 리플렉션 호출은 그대로 따라간다. 위로도 같다.
+- 화면: 줄에 "리플렉션" 꼬리표가 붙는다.
+
+### F-016-AC44 (대상: F-016-R24)
+- Given 인터페이스 구현 둘과, 구현 타입으로 XML 주입(`RESOLVED`, `resolvedFrom=spring:bean:…`, `via=xml`)을 받는 호출 타입, 구현 클래스를 필드로 주입받는 호출 타입, 주입 정보가 없는 호출 타입, 인터페이스로 가는 후보 없는 주입과 구현 타입 주입이 함께 있는 호출 타입 / 추론 `OVERRIDES`로 이어진 구현과 그것을 재정의한 구현, `super`로 인터페이스의 default 메서드를 부르는 구현
+- Then 앞의 둘은 주입받는 구현만 펼치고 뒤의 둘은 전부 펼친다("모든 구현 보기"면 전부). 위로도 다른 구현을 주입받는 호출자는 빠진다. 추론 `OVERRIDES`를 거친 구현 줄(간접 구현 포함)은 추론이고, `super`로 도착한 메서드 아래에는 구현 줄이 없다.
+
+### F-016-AC45 (대상: F-016-R25)
+- Given `GET /user/list`의 핸들러가 `web-admin`과 `web-front` 모듈에 하나씩, 두 모듈의 화면과 핸들러가 없는 `web-other` 모듈의 화면(그 `MATCHES`에 `crossModule=true`) / `resolvedPath`가 있는 엔드포인트
+- Then `web-admin` 화면에서 내려가면 `web-admin`의 핸들러만, `web-other` 화면에서는 추론(`~`)인 엔드포인트 아래에 두 핸들러가 `모듈 web-admin`, `모듈 web-front`와 함께 나오고, 엔드포인트에서 시작해도 그렇다(관계 이름 `ROUTES_TO(모듈 …)`). `web-admin` 핸들러의 호출하는 쪽에 `web-front` 화면의 요청은 없다. `resolvedPath`가 있는 엔드포인트는 콜트리·탐색·CRUD의 행과 CSV에 `ANY /a/sys/user/list (/${adminPath}/sys/user/list)`로 적히고 치환한 경로로 검색된다.
+
+### F-016-AC46 (대상: F-016-R26)
+- Given 한 핸들러에서 줄 10(열 5와 30), 12, 15(`EXECUTES`), 20에서 나가는 호출, 같은 대상을 다시 부르는 호출, 위치 없는 호출 둘, `callType=modelAttribute` 호출 둘(엣지의 위치는 핸들러보다 아래), 테이블 둘을 읽는 구문
+- Then 자식이 `[before]`(ID 순), `10:5, 10:30, 12, 15, 20`, 위치 없는 것(ID 순) 순이고 구문 아래의 테이블은 ID 순이다. 같은 대상을 여러 번 부르면 처음 부른 자리에 한 줄(횟수 표시)이다. 호출하는 쪽은 ID 순이고 `[before]`는 핸들러 줄에 붙는다.
+- 화면: `[before]` 줄에 "요청 전" 꼬리표가 붙는다.
+
+### F-016-AC47 (대상: F-016-R27)
+- Given 호출 없는 getter, `is` getter, Lombok 합성 setter와 빌더, 다른 메서드를 부르는 getter, 재정의한 쪽이 호출을 하는 getter, 이름이 `settle`인 메서드, 생성자, `external=true`인 메서드, `declared=false`인 메서드를 부르는 메서드
+- When 호출되는 쪽을 펼치면
+- Then 기본으로 접근자 넷과 소스 없는 메서드 둘의 줄이 접히고 접은 수(`{ accessors: 4, external: 2, dataLoad: 0 }`)를 알 수 있다. `showAccessors`·`showExternal`로 편다. 시작 노드와 호출하는 쪽의 접근자는 접지 않는다.
+- 화면: "접근자 보기", "외부 메서드 보기" 토글(기본 꺼짐)이 있고, 접은 줄이 있는 노드에 "접힘 n" 꼬리표가 붙는다.
+
+### F-016-AC48 (대상: F-016-R27)
+- Given 매퍼 구문이 읽는 테이블과, 데이터 적재 구문 넷(`dataLoad=true`, 하나는 `rowCount` 없음), 값 자리에서 사용자 정의 함수를 부르는 적재 구문
+- Then 테이블의 호출하는 쪽과 CRUD 구문 기준에 적재 구문이 없고(뺀 수를 알린다: `dataLoadExcluded`) 적재만 되는 테이블은 열이 되지 않는다. 함수를 부르는 적재 구문도 그 함수가 접근하는 테이블 때문에 행이 되지 않는다. `includeDataLoad`면 들어온다.
+- 화면: 콜트리와 CRUD에 "데이터 적재 포함" 토글(적재 구문이 있을 때만 보인다)이 있고 CRUD 요약에 "데이터 적재 구문 n개 제외"가 적힌다.
+
+### F-016-AC49 (대상: F-016-R28)
+- Given 인터셉터(`preHandle`, `afterCompletion`, 그 밖의 메서드), 필터(`doFilter`, `init`), 진입 메서드가 없는 필터, 같은 이름의 메서드를 가진 컨트롤러
+- Then `filterEntries`가 필터·인터셉터의 진입 메서드만 ID 순으로 준다(타입, 종류, 표시 이름 포함).
+- 화면: 콜트리에 "엔드포인트", "배치 잡", "필터·인터셉터" 묶음 단추(개수 표시, 없는 묶음은 없다)가 있고, 누르면 목록이 열려 고른 노드가 기준이 된다. 상세에서 필터·인터셉터 타입은 진입 메서드의 콜트리로 가는 단추가 있다.
+
+### F-016-AC50 (대상: F-016-R29)
+- Given `SYS_`·`CMS_` 테이블 셋씩과 2개 이하인 묶음들 / 접두사가 없는 스키마 / 다이어그램이 한도를 넘는 묶음
+- Then 영역이 `CMS`, `SYS`, `기타`(3개 미만인 묶음을 합침. 끝에 놓인다)로 나오고 영역마다 테이블 수, 영역 안 관계 수, 다른 영역과의 관계 수, 표준 산출물의 Mermaid 글자 수, 파일 이름 조각이 있다. 접두사가 없으면 `ALL` 한 묶음이다. 한도를 넘는 묶음은 둘째 토큰까지로 다시 나누고(`SYS_USER`, `SYS_MENU`), 그래도 넘으면 한도 안에 드는 가장 적은 조각 수로 잘라 `<영역>-n`으로 만든다. 영역을 범위로 고르면 그 영역의 테이블과 관계로 이어진 다른 영역의 테이블(컬럼 없이 `이름 (다른 영역)`)이 들어온다.
+- 화면: ERD의 범위가 "전체 / 영역 / 선택한 테이블"이고, 영역 목록에서 골라 그린다. 전체 범위가 테이블 수 상한을 넘으면 상한까지만 그리고 "영역으로 보기" 단추를 준다. Mermaid 소스가 45,000자를 넘으면 그리되 알린다.
+
+### F-016-AC51 (대상: F-016-R30)
+- Given 2차 수정의 속성을 가진 노드와 엣지(실제 분석 결과에서 본 값), 마무리 단계가 만든 미해결 노드(`expectedPrefix` + `category`, 그리고 `category`가 없는 전의 그래프)
+- Then 꼬리표: "자리표시자 미치환"(`placeholders`는 있고 `resolvedPath`는 없음), "데이터 적재", "방언 oracle", "벤더 (분석 안 함)"·"압축 파일 (분석 안 함)"·"벤더", "옵션 객체의 URL", "필터"·"인터셉터", "분류 mybatis-statement"(전의 그래프는 `java:method` → "분류 java-call"). 요약: `치환한 경로 … · 자리표시자 ${adminPath}`, `데이터 적재 120행`, `옵션 키 async.url · 호출 $.fn.zTree.init`, `같은 이름의 다른 정의 2개`(`otherDefinitions`는 한 줄에 하나씩). 엣지 요약: `엔드포인트의 ${adminPath}를 떼고 맞춤 · 끝의 / 차이 무시 · 다른 모듈의 핸들러 · 상대 URL 기준 /a/sys`, `상속 매퍼 메서드 · 하위 매퍼 …의 구문 · 선언 …`, `리플렉션 호출 (추론) · 대상 객체 … · 거치는 하위 타입 …`, `요청 전 처리: …@ModelAttribute 메서드 (추론)`, `classpath에 없는 상위 타입 …에서 물려받은 메서드로 추론`, `다른 스크립트의 전역 함수 · 함께 싣는 페이지 a.jsp`, `타입 인자 <…>`, `Lombok 합성 메서드가 낀 재정의`. 타입 이름인 속성 값(`receiverType`, `viaTypes`, `namespace`, `declaredIn` 등)과 `viaPage`는 그 노드로 갈 수 있다. 진단·미해결의 분류도 같은 값이다.
+
+### F-016-AC52 (대상: F-016-R30)
+- Given `skipped=vendor`인 모듈과 페이지, `skipped=minified`인 모듈, `vendor=true`인(분석한) 모듈
+- Then `hideSkipped`로 앞의 셋이 빠지고 그 수를 알 수 있다.
+- 화면: 탐색에 "분석 안 한 벤더·압축 파일 숨기기 (n)"가 있고 그런 노드가 있으면 기본으로 켜져 있다.
+
+### F-016-AC53 (대상: F-016-R31)
+- Given 새 진단 코드의 진단(위치 없음, 폴더 위치, 파일만, 파일:줄)
+- Then 코드별 개수에 모두 나오고 코드마다 설명이 있다(모르는 코드는 설명 없이 나온다). 위치가 없는 진단은 "프로젝트 전체", 줄 번호 없이 폴더를 가리키는 진단은 `경로/ (폴더)`, 그 밖에는 `파일[:줄]`로 적힌다.
+- 화면: 코드 필터의 단추에 설명이 붙고, 진단 줄을 누르면 전체 메시지와 코드 설명이 아래에 펼쳐진다(요약 진단의 긴 메시지를 읽을 수 있다).
+
+### F-016-AC54 (대상: F-016-R31)
+- Given DDL에 없는 테이블 넷(구문 셋이 참조, 구문 하나가 참조, 참조 없음, 데이터 적재 구문만 참조)과 데이터 적재 구문 넷(파일 둘, 하나는 `rowCount` 없음)
+- Then "데이터 적재 스크립트" 보기에 `파일 2개, 테이블 4개, 행 155건 이상(행 수를 모르는 구문 1개)`와 파일별 행(테이블 수, 행 수 `5 이상`·`150`, 적재하는 테이블)이 나오고, "DDL에 없는 테이블" 보기에 테이블마다 참조하는 구문 수(적재 구문 제외)와 구문 5개까지, 비고(`의심(구문 파싱 복구에서 나왔을 수 있음)`, `데이터 적재 스크립트만 참조`)가 나온다. 적재 구문이 없으면 요약이 없다.
+
+### F-016-AC55 (대상: F-016-R32)
+- Given 엔드포인트가 여럿인 그래프
+- Then 엔드포인트 기준 매트릭스를 나눠서 계산한 것(`createJob`의 `step`을 여러 번)이 한 번에 만든 것과 같고, 계산하는 동안 `done()`/`total`로 진행을 알 수 있다. 구문·메서드·루틴 기준은 한 걸음에 끝난다.
+- 화면: 엔드포인트 기준을 고르면 진행 표시(`엔드포인트 기준 계산 중… n / m`)가 나오고 끝나면 표가 나온다. 한 번 계산한 것은 다시 계산하지 않는다.
+
+### F-016-AC56 (대상: F-016-R18, F-016-R23~R28)
+- Given 표준 산출물 `calltree/endpoints.md`(엔드포인트가 많아 나뉘었으면 `calltree/endpoints/*.md`), `calltree/filters.md`
+- When 뷰어의 기본 옵션으로 같은 시작 노드를 펼치면
+- Then 모든 자리에서 자식의 집합과 순서, 표식(`[impl]`, `[trigger?]`, `[?]`, `[reflect]`, `[before]`, `[cycle]`), 신뢰도(구현 줄 포함), 세부 표시(테이블의 접근 글자, 호출 방식, 역할, 모듈)가 같다. `filters.md`의 절(진입 메서드)의 목록과 순서도 같고, 필터·인터셉터가 없으면 파일도 없다. 노드 수 상한에 잘린 트리는 산출물에 있는 자식만 견준다.
+
+### F-016-AC57 (대상: F-016-R29)
+- Given 표준 산출물 `erd/erd.mmd`, 그리고 한도를 넘어 나뉜 프로젝트의 `erd/index.md`, `erd/erd-<영역>.mmd`
+- Then 뷰어가 만든 표준 산출물 Mermaid 글자가 `erd.mmd`와 글자까지 같고(한도를 넘은 파일의 안내 주석 한 줄 제외), `index.md`는 전체가 한도를 넘을 때만 있으며, 영역의 이름·테이블 수·안팎의 관계 수·파일 이름·글자 수와 영역 간 관계, 영역 다이어그램의 글자가 파일과 같다.
+
+### F-016-AC58 (대상: F-016-R13, F-016-R31)
+- Given 표준 산출물 `report.md`
+- Then "미해결 참조"의 분류별 건수, "DDL에 없는 테이블"의 표(테이블, 구문 수, 구문, 비고), "데이터 적재 스크립트"의 요약 문장과 파일별 표가 뷰어의 보기와 같다.
+
+### F-016-AC59 ~ F-016-AC65 (대상: F-016-R33)
+- AC59: `[before]`가 요청으로 진입한 핸들러 아래에만 붙고 위로는 엔드포인트로만 올라간다(F-015-AC52와 같은 트리).
+- AC60: redirect·forward 줄에서 "모두 펼치기"가 멈추고(멈춘 곳의 수를 알린다. 손으로는 펼친다) 엔드포인트 기준 CRUD에 redirect 대상의 테이블이 없고 forward 대상은 있다(F-015-AC53).
+- AC61: 접근자 판정이 F-015-AC54와 같다.
+- AC62: 조건을 넘겨받은 제네릭 상위 클래스의 메서드가 호출자에서 빠진다(F-015-AC55).
+- AC63: 뷰 컨트롤러 엔드포인트가 `[jsp]`로 이어지고(모듈 규칙 포함) 클라이언트 라우트가 `[route]` 잎이며, 진단 보기의 미해결 분류에 세지 않고 `requestStats`로 따로 센다(F-015-AC57, AC58).
+- AC64: 레이아웃이 `[layout]` 한 줄이고 위로는 "쓰는 화면 n개" 한 줄이다(F-015-AC59).
+- AC65: `[ambiguous n]` 묶음 줄과 `(로드 미확인)`(F-015-AC60, AC61).
+- 테스트: `request-flow.test.js`. 표준 산출물과의 대조는 `sample-export.test.js`(샘플, `CODEATLAS_OUT`으로 준 공통컴포넌트·jeesite·zheng·enterprise의 산출물)가 한다: ERD 영역은 `erd/index.md`의 "허브 테이블"과 관계로 묶었다는 안내까지 견준다.
+
+아래 AC66~AC72는 4차 수정(2026-10-11)에서 더했다. 재현 테스트: `inferred-marks.test.js`(AC66 core), `round4-detail.test.js`(AC67, AC68, AC70 core), `viewer-round4.test.js`(화면 조각), `file-protocol.test.js`(AC71), `round5.test.js`(AC72), 산출물 대조 `sample-export.test.js`.
+
+### F-016-AC66 (대상: F-016-R34)
+- Then F-015-AC63·AC64와 같은 그래프에서 뷰어의 칸이 같다(`T_GUESS=R?`, `T_PROC=ru?`, 상속 매퍼 메서드의 행 `R?` 등). 나눠 계산해도 같고 CSV에 같은 글자가 나온다. "호출 경유 포함"으로 올린 행에는 표시하지 않는다. 범례에 `?` 항목이 있다.
+- 화면: `?`가 붙은 칸은 `inferred` 클래스로 따로 칠하고(읽기·쓰기의 색은 그대로) 풀어 쓴 말에 "추론한 관계를 거쳐서만 닿음"이 붙는다. 표준 산출물의 `crud/README.md`가 뷰어의 범례와 같은 표기를 설명하고 README의 파일 표가 실제 파일과 같다.
+
+### F-016-AC67 (대상: F-016-R35)
+- Then 엣지 요약: `TB_A.ID = TB_B.A_ID (함수 적용: TB_A 쪽)`(양쪽이면 `양쪽`, 쪽을 모르면 `(함수 적용)`), `… · DDL FK_ORDERS_COUPON (upgrade 스크립트)`, `압축본 jeesite.min.js를 싣고 jeesite.js로 분석`, `구문 ID 접두 일치 · …로 시작하는 구문`, `뷰 이름 user.list · tiles 정의 user.*의 template(레이아웃)`(조각이면 `의 조각`), `뷰 이름 접미 일치 (추론)`, `후보 여럿 가운데 하나 (추론)`, `레이아웃: sitemesh 데코레이터`, `부모 빈 baseService에서 물려받은 설정`, `로드 미확인: …`. ERD 라벨(화면과 표준 산출물 글자)에 `FK_ORDERS_COUPON (upgrade 스크립트)`가 나온다.
+- 고정 값: `USE_YN=` → `USE_YN=''`, `EXPR=A=B` → `EXPR='A=B'`(이미 그렇게 동작했고 테스트로 고정했다).
+- 요청: 꼬리표 "태그 속성의 URL"(`api=tag`), "화면 내 이동"(`clientRoute`), "호출 인자의 URL"(`optionKey=arg`)과 요약 `커스텀 태그의 속성에서 읽은 URL (api=tag)`, `클라이언트 라우터 호출 (api=route)`, `호출의 문자열 인자에서 읽은 URL (optionKey=arg)`.
+
+### F-016-AC68 (대상: F-016-R36)
+- Then `collect`의 `columnMismatches`가 테이블 ID 순·컬럼 이름순으로 테이블, 컬럼, 구문 수, 구문(5개까지)을 주고(정의 없는 테이블의 컬럼은 없다) `requestStats`·`requestRows`·`unmatchedRequests`가 F-015-AC67의 수치·문장·순서와 같다.
+- 화면: "컬럼 불일치 n", "화면 요청 n"(요청 수) 보기가 있고, 컬럼 행을 누르면 그 컬럼의 상세가, 미연결 요청을 누르면 그 요청의 상세가 열린다. 같은 그래프의 `report.md`와 견준다(`sample-export.test.js`: 절의 유무, 표의 행, 요약 문장, 미연결 30개, `erd/tables.md`의 같은 줄).
+
+### F-016-AC69 (대상: F-016-R37)
+- 화면: (1) 레이아웃 줄은 `INCLUDES(layout)`·"레이아웃" 꼬리표가 붙은 한 줄이고 "모두 펼치기"가 거기서 멈추며, "레이아웃 펼치기"를 켜면 그 너머까지 간다. 위로는 "쓰는 화면 n개" 한 줄이고 켜면 화면마다 나온다. (2) 화면 내 이동은 탐색과 콜트리에서 기본으로 숨기고(콜트리는 "접힘 n"에 `화면 내 이동 n`) 토글로 보이며, 그런 요청이 없는 그래프에는 콜트리의 토글이 보이지 않는다. (3) `[ambiguous n]` 묶음 줄은 "후보 n개" 꼬리표와 추론 표시가 붙은 한 줄이고 펼치면 후보가 나오며 눌러도 상세가 열리지 않는다. (4) redirect·forward 줄은 "리다이렉트"·"포워드" 꼬리표가 붙은 한 줄이고 "모두 펼치기"가 멈춘 곳의 수를 알리며 "화면 이동 펼치기"를 켜면 끝까지 간다.
+
+### F-016-AC70 (대상: F-016-R38)
+- Then `nodeDetail(...).undeclaredColumns`가 테이블의 DDL에 없는 컬럼과 구문을 준다. 엣지 요약이 `K = K · 방향 미상: 선언된 FK와 반대 · 추론 2건`(`유일하지 않은 키`, `키 정보 없음`)이고 ERD 범례가 세 까닭을 설명한다. ERD 라벨은 표준 산출물과 같게 둔다(까닭이 없으면 "방향 미상"만).
+- 화면: 테이블 상세에 "DDL에 없는데 SQL이 참조하는 컬럼" 절(컬럼, 구문 수, 구문 링크)이 있고 그런 컬럼이 없으면 절이 없다.
+
+### F-016-AC71 (대상: F-016-R39)
+- Given `location.protocol === 'file:'`, origin `null`, `history.replaceState`가 예외를 던지고, fetch·XHR·WebSocket·Worker·저장소·쿠키 등이 "건드리면 기록하고 예외를 던지는" 덫인 창
+- When 조립한 viewer.html(과 `ViewerExporter`가 만든 파일)의 스크립트를 실행하고 모든 화면을 한 바퀴 돌면(검색, 상세, 콜트리 모두 펼치기와 복사, 다이어그램, CRUD 네 기준과 CSV 저장, 진단의 모든 보기, 해시 이동)
+- Then 덫에 걸린 접근과 화면 오류가 없고, 주소의 `#`으로 화면과 노드가 바로 열린다. 덫을 건드리는 스크립트를 넣으면 기록된다(테스트가 헛돌지 않는다).
+
+### F-016-AC72 (대상: F-016-R40)
+- Then F-015-AC68~AC73과 같은 그래프에서 뷰어의 텍스트 트리·판정·목록이 같다: 중첩 호출의 순서, `[ambiguous 2] GET /list`, 접기(접은 수 `{ accessors: 1, builders: 3 }`), `[shared] [jsp] …/menu.jsp (포함하는 화면 5개)`, `(다른 방언 mysql에서 보충)`과 꼬리표·"보충한 구문" 보기, 시스템 카탈로그의 순서·비고, 화면 요청 통계, `B_ID → ID · FK_A_B (upgrade 스크립트, 현재 정의에 없음)`.
+
+아래 AC73·AC74는 5차 수정(2026-10-11)에서 더했다. 재현 테스트: `round6.test.js`.
+
+### F-016-AC73 (대상: F-016-R41)
+- Then F-015-AC75~AC80과 같은 그래프에서 뷰어의 텍스트 트리가 같다(모듈에 맞는 핸들러·화면만, 미해결 줄 없음과 `(접두 일치)`, `(인자 구문)`, `(동적 뷰 이름 후보)`, `POST|PUT /api/schedule`, `POST (자기 페이지로 제출)`, `~ [ambiguous 2] <화면>` 아래의 `~ [layout]` 두 줄). 화면의 줄은 관계 이름이 `EXECUTES(접두 일치)`이고, 미해결 참조에는 `resolvedBy`가 없는 것만 남으며, `viaArgument`로만 닿은 CRUD 칸은 `R?`, 미연결 요청 목록의 이름은 `POST|PUT /api/schedule`·`GET (자기 페이지로 제출)`이다. 핸들러가 둘인 엔드포인트는 `contextSensitive`다.
+
+### F-016-AC74 (대상: F-016-R42)
+- Then `statementIdLiterals`·`statementIdLiteralLines`가 있는 메서드의 상세에서 그 둘은 `nodeDetail().internalAttrs`에만 있고 화면에서는 접힌 `details.internal-attrs`("분석 중간 정보 2") 안에만 나온다. 다른 속성과 속성 수는 보이는 것만이다. 중간 정보가 없는 노드에는 그 절이 없다. `벤더 스크립트 7개 건너뜀(이름 3, 라이선스 4): <폴더>` 꼴의 `FILE_SKIPPED`도 위치가 `<폴더>/ (폴더)`로 읽힌다(구현은 처음부터 문구에 기대지 않았다: 테스트만 더했다).
+
+### F-016-AC75 (대상: F-016-R43)
+- Then F-015-AC81·AC82와 같은 그래프에서 뷰어의 텍스트 트리가 같다(엔드포인트에서 시작한 위 방향의 `(모듈 admin-web)`·`(모듈 front-web)`, 핸들러에서 올라온 엔드포인트와 선언이 한 모듈뿐인 엔드포인트에는 없음, `crossModule`+`module` 요청은 그 모듈의 핸들러만). 화면의 줄은 관계 이름이 `MATCHES(모듈 admin-web)`이다.
+- 테스트: `round7.test.js`.
+
+### F-016-AC76 (대상: F-016-R43)
+- Then F-015-AC83·AC84와 같은 그래프에서 미해결 줄이 `? [unresolved] POST /place/view.do (자기 페이지로 제출: 이 화면을 그리는 엔드포인트의 경로에 POST 매핑 없음)`·`… 엔드포인트를 찾지 못함)`이고, 그 노드의 짧은 이름은 문맥 없는 문구이며, 미해결 참조 목록의 대상도 같은 두 이름이다. selfSubmit의 묶음 줄은 `[ambiguous 2] 후보 엔드포인트`, 보통 요청의 묶음 줄은 요청 이름이다.
+- 테스트: `round7.test.js`.
+
+### F-016-AC77 (대상: F-016-R43)
+- Then F-015-AC85와 같은 그래프에서 엔드포인트의 위 방향 트리에 `~ [forward] …`·`~ [redirect] …`가 화면 요청과 함께 나오고, 핸들러에서 올라온 엔드포인트에는 다시 나오지 않으며, 핸들러가 엔드포인트 둘을 받으면 `path`가 같은 곳에만 나온다.
+- 테스트: `round7.test.js`.
+
+### F-016-AC78 (대상: F-016-R43)
+- Then F-015-AC86과 같은 그래프에서 `diagnostics.collect().unresolvedDifference`가 리포트와 같은 문장(``신뢰도가 `UNRESOLVED`인 엣지 2건 가운데 1건은 … 여기서 뺐다.``)이고 풀린 것이 없으면 빈 문자열이다. F-015-AC88과 같은 그래프에서 "보충한 구문"에는 매퍼 구문만 있고, 적재 파일 행의 `borrowedNote`는 `다른 방언 파일: mysql`(없으면 빈 문자열), 요약의 `borrowedText`는 `이 가운데 묶음 3개는 … 다른 방언 파일의 것이다(hsql 1개, mysql 2개).`이며, 그 구문의 꼬리표·요약·트리 줄은 "보충"이 아니라 `다른 방언 파일: mysql`이다.
+- 테스트: `round7.test.js`.
+
+### F-016-AC79 (대상: F-016-R43)
+- Then F-013-AC31과 같은 그래프에서 표준 산출물과 같은 글자(`exportMermaid`)와 화면의 ERD(`toMermaid`) 둘 다 추론 관계가 `|o..o{`·`|o..o|`이고 DDL 외래 키는 그대로이며, 머리 주석과 범례 설명에 "0 또는 1"이 있다. 범례의 추론 관계 그림은 부모 쪽이 세로 금 하나와 동그라미다.
+- 테스트: `round7.test.js`, `erd-direction-only.test.js`(범례 그림).
+
+### F-016-AC80 (대상: F-016-R43)
+- Then F-013-AC32와 같은 그래프에서 `exportModel`의 엔티티·관계에 카탈로그가 없고 `systemCatalogs`가 그 이름이며, 표준 산출물과 같은 글자의 머리에 `시스템 카탈로그 2개(…)는 프로젝트 스키마가 아니라서 뺐다.`가 있고 `splitAreas().fullChars`가 그 글자 수와 같다. 화면의 ERD는 전체 범위·고른 테이블의 이웃 어디에도 카탈로그를 넣지 않고 `selectScope().systemCatalogs`로 수를 준다(요약 줄에 `시스템 카탈로그 2개 제외`).
+- 테스트: `round7.test.js`.
+
+### F-016-AC81 (대상: F-016-R43)
+- Then F-015-AC89와 같은 그래프에서 트리의 줄이 `(동적 뷰 이름: 프로퍼티 값으로 정함)`·`(동적 뷰 이름 후보)`·`(동적 뷰 이름: 모듈 이름으로 정함)`이고, 화면의 관계 이름은 `RENDERS(…)`, 추론의 까닭은 `…(narrowedBy=property)` 등, 엣지 요약은 `프로퍼티 값으로 정한 동적 뷰 이름 (추론)` 등이다.
+- 테스트: `round7.test.js`.
+
+## 5. 가정
+- 5차 수정의 후속(2026-10-11, R43): 테스트 도구(`tools/export-tree.js`)는 위 방향의 구문 줄에 접근 글자(`(C)`)를 적지 않는다(전부터의 한계). 그래서 적재 묶음의 트리 줄은 도구 표기로 `(다른 방언 파일: mysql)`이고 표준 산출물은 `(C, 다른 방언 파일: mysql)`이다. 미해결 selfSubmit의 풀어 쓴 이름은 트리 노드의 `labelText`로 싣는다(같은 미해결 노드가 요청마다 다른 이름이 된다). 진단 보기의 "미해결 참조" 머리에는 리포트와 같은 문장을 그대로 보인다(진단 목록의 메시지는 원문 그대로다: 뷰어는 `diagnostics.md`의 `(접두 일치로 풀림)` 표시를 따로 붙이지 않는다. 풀린 참조의 진단 행은 같은 지점의 미해결 참조 행과 이어지지 않을 뿐이다).
+- ERD 영역과 upgrade 외래 키(4차 수정, F-013-R21~R26): ERD 영역(`erd.splitAreas`)은 표준 산출물과 같은 규칙이다. 30개를 넘는 관계 묶음은 중심 테이블을 빼고 다시 묶고(`centers`), 남은 테이블은 이름의 공통 접두사로 묶으며(`<접두사>*`, `byNames`), 허브와의 관계는 `outerRelations`에 넣지 않고 `hubRelations`로 따로 센다. 영역 목록에는 표시 이름 `label`(`논리명(물리명)`)을 보이고 영역의 키(`name`)와 파일 이름은 물리명이다. 같은 그래프에서 `erd/index.md`·`erd-<영역>.mmd`와 글자까지 같다(`sample-export.test.js`. 한도를 바꾼 산출물은 `CODEATLAS_MERMAID_MAX_CHARS`). `fromUpgrade=true`이면서 추론(`source=INFERRED`이거나 엣지 신뢰도 `INFERRED`: 실제 그래프는 `source=DDL` + 신뢰도 `INFERRED` + `note`)인 `REFERENCES`는 점선으로 그리고 화면 라벨·표준 산출물 라벨·엣지 요약에 `(upgrade 스크립트, 현재 정의에 없음)`을 적는다. 뷰어 쪽 테스트는 `erd-areas.test.js`·`erd.test.js`의 `F-013-AC24~AC29 (뷰어)`와 `round5.test.js`다.
+- 4차 수정(2026-10-11)의 화면과 한계. (1) 콜트리의 "화면 내 이동 숨기기"는 표준 산출물과 일부러 다르게 둔 기본값이다: 표준 산출물(`calltree/*.md`)은 엔드포인트에서 시작해 화면을 펼치지 않으므로 `[route]` 줄이 사실상 나오지 않지만(코퍼스 9개 프로젝트의 산출물에서 0줄), 뷰어는 React 컴포넌트에서 시작할 수 있고 거기서는 `[route]`가 트리 대부분을 차지한다(front-back의 `EgovHeader.jsx`: 81줄 가운데 59줄, `routes/index.jsx`: 2,999줄 가운데 990줄). core(`childLinks`)의 기본은 보이는 것이고(`hideClientRoutes`) 화면이 그런 요청이 있을 때 켠다. (2) `[shared]` 줄은 손으로도 펼 수 없다("레이아웃 펼치기"를 켜야 한다). (3) 묶음 줄의 이름은 화면에서는 짧은 이름이고, 표준 산출물과 견줄 때는 요청의 표시 이름이다. (4) `file://`: 실제 브라우저로는 확인하지 못했다(브라우저 도구가 `file://` 주소를 열지 못한다). 대신 AC71의 테스트가 `file:` 환경을 흉내 내 스크립트를 실제로 실행한다. 이 테스트가 보지 못하는 것: Mermaid가 진짜 DOM에서 그리는지(가짜 DOM에는 Mermaid를 빼고 켠다. 번들에 워커·`importScripts` 호출이 없는 것은 글자로 본다), 동적 `import()`(실행 중에 덫으로 잡을 수 없어 실행하는 스크립트의 글자에서 찾는다). (5) `wrapped` `JOINS`, `borrowedFrom`, `systemCatalog`, `INFERRED`인 `fromUpgrade`는 코퍼스 그래프에 없어 손으로 만든 조각으로만 확인했다(`fromUpgrade`인 DDL 관계는 zheng에 4건 있어 대조 테스트로 확인했다).
+- 3차 수정의 화면: 콜트리에 "레이아웃 펼치기" 토글을 더했고 "화면 이동 펼치기"가 redirect·forward 너머도 맡는다. 묶음 줄(`[ambiguous n]`)과 "쓰는 화면 n개" 줄은 그래프의 노드가 아니라서 눌러도 상세로 가지 않는다. 탐색에 "화면 내 이동(클라이언트 라우트) 숨기기"(그런 요청이 있으면 기본 켬)를 더했다. `tilesDefinitions`·`tilesAttributes`·`viewDeclarations`는 상세에서 한 줄에 하나씩 보인다. ERD 영역 안내에 허브 테이블을 적는다. 화면 쪽은 조각 테스트 없이 넣었다(core 판정은 `request-flow.test.js`가 본다).
+- 다이어그램은 Mermaid로 그린다. Mermaid(`org.webjars.npm:mermaid` 11.17.2)는 빌드 때 Maven으로 받아 번들 파일 하나를 HTML에 넣는다. 그래서 `viewer.html`은 Mermaid 크기(약 3.6MB)만큼 커진다. 뷰어는 다이어그램을 처음 그릴 때 Mermaid를 실행한다.
+- Mermaid 소스가 실제로 그려지는지는 자동 테스트로 확인하지 못한다(Node에 DOM이 없다). 픽스처와 특수문자 이름을 넣은 소스를 브라우저에서 한 번 그려 확인했다. Mermaid가 소스를 그리지 못하면 뷰어는 오류와 소스를 보여 준다.
+- 뷰어는 최근 버전의 Chrome, Edge, Firefox를 대상으로 한다. 파일을 더블클릭해 `file://`로 연다. 실제 샘플 결과는 `http://localhost`로 띄워 확인했고(`file://`은 확인에 쓴 브라우저 도구가 열지 못했다), `file://`에서 막히는 API(`fetch`, XHR, 동적 import, 워커, 저장소)를 쓰지 않는다는 것은 자산 검사(AC2)로 확인한다.
+- 그래프는 design 3.2의 마무리 단계를 거친 것이다(엣지 양 끝의 노드가 있다). 없는 노드를 가리키는 엣지가 있어도 뷰어는 ID만 보여 주고 멈추지 않는다.
+- CRUD의 메서드 기준 행은 구문을 직접 실행하는(`EXECUTES`) 메서드다. 호출을 거슬러 올라간 메서드까지 넣는 "호출 경유 포함"은 선택 사항으로 둔다.
+- ERD에는 기본으로 `DB_TABLE`만 그린다. 뷰(`DB_VIEW`)는 "뷰 포함"을 켜면 그린다(표준 산출물의 `export.erd.views`와 같은 기본값).
+- Mermaid erDiagram에는 카디널리티 없는 관계 선이 없다. 방향 미상 관계는 소스에 `}o..o{`로 적고, 뷰어가 그린 뒤 SVG에서 그 선의 끝 표시를 지운다. 점선 테두리(DDL 없는 테이블, 소스 없는 타입)도 같은 방식으로 그린 뒤에 입힌다. 복사한 Mermaid 소스를 다른 도구에서 그리면 이 두 가지는 Mermaid 기본 모양으로 나온다.
+- 표준 산출물과 맞춘 규칙(R17~R29, R31)의 기준은 `codeatlas-export`의 현재 동작이다(F-015의 `FlowNavigator`, `CallTrees`, `CrudMatrix`, `BatchFlow`, `SummaryReport`, `DataLoads`, F-013의 ERD 모델·Mermaid 렌더러·`ErdSplitter`). 뷰어는 같은 규칙을 JS로 다시 구현했고, 두 구현이 어긋나지 않는지는 `sample-export.test.js`가 같은 그래프의 산출물 파일과 견주어 확인한다(파일이 없으면 건너뛴다). 2차 수정 뒤에는 샘플과 공개 프로젝트 8개의 산출물(jeesite, zheng, jpetstore, 전자정부 템플릿 넷, 공통컴포넌트의 Oracle 한 벌과 방언 전체)에 돌려 네 CSV(바이트까지), 모든 엔드포인트 트리(공통컴포넌트는 1,202개 트리의 36,672줄), `filters.md`, `erd.mmd`와 영역 분할, `report.md`의 절이 같은 것을 확인했다. 다른 프로젝트의 산출물로 돌릴 때는 `CODEATLAS_OUT=<산출물 폴더> node --test codeatlas-viewer/src/test/js/sample-export.test.js`다.
+- 표준 산출물과 일부러 다르게 둔 것(뷰어만 더 하는 것):
+  - 콜트리가 뷰 아래로 정의 쿼리(`DB_VIEW → SQL_STATEMENT`)를, DB 패키지 아래로 루틴을 따라간다(R6). 표준 산출물은 뷰에서 멈춘다. CRUD의 엔드포인트 기준은 표준 산출물처럼 뷰에서 멈춘다(뷰 뒤의 기반 테이블은 칸에 넣지 않는다).
+  - 위로 올라갈 때 JS 함수에서 그 함수가 정의된 모듈·바깥 함수로는 다른 호출자가 없을 때만 올라간다(AC19). 표준 산출물은 늘 올라간다.
+  - 콜트리는 같은 테이블로 가는 `READS`와 `WRITES`를 따로 줄로 보이고(표준 산출물은 `TB_ORDER (RU)` 한 줄), 호출 방식이 다른 호출(`CALLS`와 `CALLS(methodRef)`)도 따로 줄로 보이며, 반복되는 가지를 `[see above]`로 접지 않는다(펼칠 때 계산한다). 자식의 순서는 표준 산출물과 같다(R26, 2차 수정에서 맞춤): 뷰어의 줄을 표준 산출물의 "걸음"(같은 노드·같은 표시·같은 문맥이면 하나)으로 묶어 순서를 정하고, 한 걸음 안의 줄은 관계 이름순으로 붙여 놓는다. 걸음의 종류는 표준 산출물처럼 정한다(같은 대상으로 가는 `CONTAINS`와 `CALLS`가 함께 있으면 `CONTAINS` 걸음이라 호출 지점 순이 아니라 ID 순 구역에 놓인다. JS 모듈이 자기 함수를 최상위에서 부를 때 그렇다).
+  - (2차 수정에서 없어진 차이) 구현 줄의 신뢰도와 `super` 호출 아래의 구현 전개는 이제 표준 산출물과 같다(R24): 구현까지 온 `OVERRIDES` 사슬에 추론이 있으면 추론, `super`로 도착하면 펼치지 않음.
+  - CRUD의 "호출 경유 포함"(메서드 기준에서 호출을 거슬러 올라간 메서드까지 행으로)은 뷰어에만 있다. 끈 상태가 표준 산출물과 같다.
+  - ERD의 추론 관계 라벨에 이름이 다른 상대 컬럼(`A → B`)과 고정 컬럼을 덧붙인다. 그 밖의 라벨은 표준 산출물과 글자까지 같다.
+- 콜트리의 주입 좁히기는 위로 올라갈 때도 한다(R19). 주입 정보는 `INJECTS`가 선언 타입으로 가면서 `candidates`가 있거나, `INFERRED`이면서 `resolvedFrom`이 선언 타입이거나, 대상이 선언 타입의 하위 구체 클래스일 때 쓴다(R24, F-015-R34와 같다. 2차 수정 전에는 XML로 구현 타입을 바로 주입한 경우를 쓰지 않았다). 선언 타입으로 가는 후보 없는 주입이 따로 있으면 마지막 규칙으로는 좁히지 않는다.
+- 수신자 문맥(R23)은 "모든 구현 보기"와 무관하게 늘 적용한다(표준 산출물에도 끄는 옵션이 없다). 문맥은 트리의 줄(link)에 실어 다음 전개에 넘긴다. 규칙의 세부(문맥을 정하는 순서, 상속 구문의 판정, "맞다"의 뜻, 호출하는 쪽의 판정)는 F-015 spec 5절 "수신자 문맥(R29)의 세부"를 그대로 옮겼다.
+- 접기(R27): 소스 없는 메서드의 판정은 표준 산출물과 같다(노드나 소유 타입이 `external`이거나 `declared=false`인 Java 메서드. `external=true`인 다른 종류의 노드 — 프로젝트 밖으로 가는 요청 등 — 도 함께 접힌다). 양방향에 적용한다. 접근자는 호출되는 쪽에서 `CALLS` 걸음으로 닿은 줄만 접는다. CRUD의 엔드포인트 기준은 접지 않고 따라간다(표준 산출물의 매트릭스와 같다). "접힘 n"은 그 노드의 바로 아래에서 접은 걸음 수다.
+- 데이터 적재 구문(R27): 값 자리에서 사용자 정의 함수를 부르는 적재 구문도 CRUD 구문 기준의 행에서 뺀다(F-015-R28의 문구대로). 표준 산출물의 현재 구현은 이 경우 그 구문의 행을 낸다(그 함수가 접근하는 테이블이 소문자로 나온다): 표준 산출물 쪽 버그로 보고했다. 실제 프로젝트 8개의 산출물에는 이런 구문이 없어 CSV는 바이트까지 같다.
+- ERD의 영역(R29): 영역의 경계는 "표준 산출물이 그린 Mermaid의 글자 수"로 정해지므로 뷰어가 그 글자를 똑같이 만든다(`erd.js`의 `exportModel`·`exportMermaid`. 화면에 그리는 Mermaid와는 표기가 조금 다르다). 표준 산출물은 전체가 한도(`export.mermaid.maxChars` 기본 45,000자)를 넘을 때만 나누지만, 뷰어는 한도 안이어도 같은 규칙의 영역 목록을 준다. 한도는 기본값으로 고정했다(분석 때 옵션으로 바꿨으면 산출물의 영역과 달라질 수 있다). 영역 목록은 뷰어의 "추론 관계 포함", "뷰 포함", "주석", "컬럼" 선택을 따른다(기본 상태가 표준 산출물의 기본값이다). 영역 보기에는 테이블 수 상한을 걸지 않는다(영역의 크기가 글자 수로 이미 묶여 있다).
+- 진단의 위치(R31): 줄 번호가 없는 위치가 폴더인지는 스캔한 파일(`FILE` 노드)이면 파일, 스캔한 파일의 상위 경로면 폴더, 둘 다 아니면 마지막 조각에 확장자가 없을 때 폴더로 본다.
+- 미해결 분류(R30): 대상은 해석됐는데 엣지의 신뢰도만 `UNRESOLVED`인 경우는 엣지 종류로 묶는다(`report.md`와 같다).
+- CRUD의 걸음 수 상한은 표준 산출물의 기본값(20)으로 고정했다. 화면에서 바꾸는 입력은 두지 않았다.
+- `redirects`·`forwards`의 값은 `attrs.path`가 그 값과 같은 엔드포인트가 정확히 하나일 때만 그 엔드포인트로 잇는다(HTTP 메서드는 가리지 않는다). `{*}`가 든 경로와 JSP 경로는 잇지 않는다. 실제 호출 관계는 링커가 만든 `CALLS(redirect|forward)`·`RENDERS` 엣지에 있다.
+
+## 6. 미확정 사항
+- [확인 필요] 대상 프로젝트 규모(PRD 7). 합성 그래프(노드 6만, 엣지 7만, HTML 25MB)를 브라우저에서 열어 보는 데까지 확인했다. 실제 샘플(노드 1,158, 엣지 2,788, HTML 5.2MB)은 로딩 0.05~0.25초, 화면 전환 10ms 이내, 전체 ERD(테이블 18개)를 처음 그리는 데 약 0.8초였다. 구현을 막는 항목은 아니어서 status는 implemented로 두었다.
+- 큰 실제 그래프의 측정값(2차 수정, 2026-10-11. Node 24, core 로직만. 공개 프로젝트의 분석 결과): jeesite(graph.json 17MB, 노드 1.3만, 엣지 3만), 전자정부 공통컴포넌트 Oracle 한 벌(83MB, 노드 4.4만, 엣지 14만), 같은 프로젝트의 방언 전체(156MB, 노드 7만, 엣지 33만) 순으로 — JSON 읽기 29 / 142 / 288ms, 색인 5 / 18 / 36ms, 첫 검색 4 / 7 / 15ms, 모든 엔드포인트(221 / 1,202 / 1,202개)의 콜트리 모두 펼치기 64 / 151 / 152ms(가장 느린 트리 5ms), CRUD 구문 기준 3 / 15 / 74ms, 엔드포인트 기준 17 / 108 / 144ms, 진단·미해결 모으기 5 / 17 / 37ms, ERD 영역 나누기 3 / 7 / 7ms. 1초를 넘는 연산은 없었다. 브라우저에서는 87MB짜리 `viewer.html`이 약 1초에 열렸다(localhost). 이보다 큰 그래프(엣지 수백만)는 재지 않았다.
+
+## 7. 관련 문서
+- 기능정의서: [features.md](../../features.md)
+- 그래프 계약: [F-001 design.md](../F-001-analysis-pipeline/design.md)
+- 작업: [tasks.md](tasks.md)
+- 관련 ADR: [0006](../../decisions/0006-graph-json-and-static-viewer.md)
+
+## 8. design.md에 반영할 것
+design.md 반영됨(R43, 2026-10-11): 뷰어가 따르는 규칙은 F-015-R68~R76, F-013-R28·R29와 같은 3.4 항목들에 적었다(뷰어의 관계 이름 `MATCHES(모듈 <경로>)`는 "핸들러가 여러 모듈에 있는 엔드포인트"에 있다).
+
+design.md 반영됨(2026-10-11): F-001 design.md 3.4 "소비자가 지키는 규칙"에 F-015 spec 8절과 같은 항목으로 넣었고(뷰어도 같은 규칙이라고 적었다), 뷰어에만 있는 것은 "중간 정보는 상세에 쏟지 않는다"와 "추론의 근거 표시"(관계 이름)에 적었다. `file://`로 직접 여는 것을 실제 브라우저로 확인하지 못했다는 것은 7절에 있다.
+- 3.4·3.5의 읽는 쪽 설명에 F-015 spec 8절과 같은 내용(뷰어도 같은 규칙이다). 뷰어에만 있는 것: 상세의 "분석 중간 정보" 접기(`statementIdLiterals`, `statementIdLiteralLines`, `formFields`), 화면의 관계 이름 `EXECUTES(접두 일치)`·`EXECUTES(인자 구문)`·`RENDERS(동적 뷰 이름 후보)`.

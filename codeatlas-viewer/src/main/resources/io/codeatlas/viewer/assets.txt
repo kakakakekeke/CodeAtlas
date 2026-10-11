@@ -1,0 +1,22 @@
+# viewer.html에 끼워 넣을 자산. 적힌 순서대로 잇는다. (.css는 <style>, .js는 <script>)
+css/viewer.css
+js/core/graph.js
+js/core/search.js
+js/core/vlist.js
+js/core/calltree.js
+js/core/classdiagram.js
+js/core/erd.js
+js/core/crud.js
+js/core/diagnostics.js
+js/core/diagram.js
+js/ui/dom.js
+js/ui/widgets.js
+js/ui/detail.js
+js/ui/diagram.js
+js/ui/view-explore.js
+js/ui/view-calltree.js
+js/ui/view-classdiagram.js
+js/ui/view-erd.js
+js/ui/view-crud.js
+js/ui/view-diagnostics.js
+js/ui/app.js

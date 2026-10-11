@@ -1,0 +1,3924 @@
+{
+ "schemaVersion": 1,
+ "project": {
+  "name": "sample-shop",
+  "root": "/work/sample-shop",
+  "analyzedAt": "2026-10-11T09:00:00Z"
+ },
+ "nodes": [
+  {
+   "id": "batch:job:settlementJob",
+   "kind": "BATCH_JOB",
+   "name": "settlementJob",
+   "qualifiedName": "settlementJob",
+   "location": {
+    "file": "src/main/java/com/shop/batch/SettlementTasklet.java",
+    "startLine": 1,
+    "startColumn": 1,
+    "endLine": 1,
+    "endColumn": 1
+   },
+   "attrs": {
+    "declared": true
+   }
+  },
+  {
+   "id": "batch:step:settlementJob/loadStep",
+   "kind": "BATCH_STEP",
+   "name": "loadStep",
+   "qualifiedName": "settlementJob/loadStep",
+   "location": {
+    "file": "src/main/java/com/shop/batch/SettlementTasklet.java",
+    "startLine": 2,
+    "startColumn": 1,
+    "endLine": 2,
+    "endColumn": 1
+   },
+   "attrs": {
+    "declared": true
+   }
+  },
+  {
+   "id": "batch:step:settlementJob/mergeStep",
+   "kind": "BATCH_STEP",
+   "name": "mergeStep",
+   "qualifiedName": "settlementJob/mergeStep",
+   "location": {
+    "file": "src/main/java/com/shop/batch/SettlementTasklet.java",
+    "startLine": 3,
+    "startColumn": 1,
+    "endLine": 3,
+    "endColumn": 1
+   },
+   "attrs": {
+    "declared": true
+   }
+  },
+  {
+   "id": "db:column:COUPONS.CODE",
+   "kind": "DB_COLUMN",
+   "name": "CODE",
+   "qualifiedName": "COUPONS.CODE",
+   "location": {
+    "file": "ddl/schema.sql",
+    "startLine": 40,
+    "startColumn": 1,
+    "endLine": 40,
+    "endColumn": 1
+   },
+   "attrs": {
+    "declared": true,
+    "dataType": "VARCHAR2(20)",
+    "nullable": true,
+    "primaryKey": false,
+    "ordinal": 2,
+    "comment": ""
+   }
+  },
+  {
+   "id": "db:column:COUPONS.COUPON_ID",
+   "kind": "DB_COLUMN",
+   "name": "COUPON_ID",
+   "qualifiedName": "COUPONS.COUPON_ID",
+   "location": {
+    "file": "ddl/schema.sql",
+    "startLine": 39,
+    "startColumn": 1,
+    "endLine": 39,
+    "endColumn": 1
+   },
+   "attrs": {
+    "declared": true,
+    "dataType": "NUMBER(12)",
+    "nullable": false,
+    "primaryKey": true,
+    "ordinal": 1,
+    "comment": ""
+   }
+  },
+  {
+   "id": "db:column:CUSTOMERS.CUSTOMER_ID",
+   "kind": "DB_COLUMN",
+   "name": "CUSTOMER_ID",
+   "qualifiedName": "CUSTOMERS.CUSTOMER_ID",
+   "location": {
+    "file": "ddl/schema.sql",
+    "startLine": 21,
+    "startColumn": 1,
+    "endLine": 21,
+    "endColumn": 1
+   },
+   "attrs": {
+    "declared": true,
+    "dataType": "NUMBER(12)",
+    "nullable": false,
+    "primaryKey": true,
+    "ordinal": 1,
+    "comment": ""
+   }
+  },
+  {
+   "id": "db:column:CUSTOMERS.NAME",
+   "kind": "DB_COLUMN",
+   "name": "NAME",
+   "qualifiedName": "CUSTOMERS.NAME",
+   "location": {
+    "file": "ddl/schema.sql",
+    "startLine": 22,
+    "startColumn": 1,
+    "endLine": 22,
+    "endColumn": 1
+   },
+   "attrs": {
+    "declared": true,
+    "dataType": "VARCHAR2(100 CHAR)",
+    "nullable": false,
+    "primaryKey": false,
+    "ordinal": 2,
+    "comment": ""
+   }
+  },
+  {
+   "id": "db:column:ORDERS.CREATED_AT",
+   "kind": "DB_COLUMN",
+   "name": "CREATED_AT",
+   "qualifiedName": "ORDERS.CREATED_AT",
+   "location": {
+    "file": "ddl/schema.sql",
+    "startLine": 5,
+    "startColumn": 1,
+    "endLine": 5,
+    "endColumn": 1
+   },
+   "attrs": {
+    "declared": true,
+    "dataType": "TIMESTAMP WITH TIME ZONE",
+    "nullable": true,
+    "primaryKey": false,
+    "ordinal": 4,
+    "comment": ""
+   }
+  },
+  {
+   "id": "db:column:ORDERS.CUSTOMER_ID",
+   "kind": "DB_COLUMN",
+   "name": "CUSTOMER_ID",
+   "qualifiedName": "ORDERS.CUSTOMER_ID",
+   "location": {
+    "file": "ddl/schema.sql",
+    "startLine": 3,
+    "startColumn": 1,
+    "endLine": 3,
+    "endColumn": 1
+   },
+   "attrs": {
+    "declared": true,
+    "dataType": "NUMBER(12)",
+    "nullable": false,
+    "primaryKey": false,
+    "ordinal": 2,
+    "comment": ""
+   }
+  },
+  {
+   "id": "db:column:ORDERS.ORDER_ID",
+   "kind": "DB_COLUMN",
+   "name": "ORDER_ID",
+   "qualifiedName": "ORDERS.ORDER_ID",
+   "location": {
+    "file": "ddl/schema.sql",
+    "startLine": 2,
+    "startColumn": 1,
+    "endLine": 2,
+    "endColumn": 1
+   },
+   "attrs": {
+    "declared": true,
+    "dataType": "NUMBER(12)",
+    "nullable": false,
+    "primaryKey": true,
+    "ordinal": 1,
+    "comment": "주문 번호"
+   }
+  },
+  {
+   "id": "db:column:ORDERS.STATUS",
+   "kind": "DB_COLUMN",
+   "name": "STATUS",
+   "qualifiedName": "ORDERS.STATUS",
+   "location": {
+    "file": "ddl/schema.sql",
+    "startLine": 4,
+    "startColumn": 1,
+    "endLine": 4,
+    "endColumn": 1
+   },
+   "attrs": {
+    "declared": true,
+    "dataType": "VARCHAR2(10)",
+    "nullable": false,
+    "primaryKey": false,
+    "ordinal": 3,
+    "comment": ""
+   }
+  },
+  {
+   "id": "db:column:ORDER_ITEMS.ITEM_ID",
+   "kind": "DB_COLUMN",
+   "name": "ITEM_ID",
+   "qualifiedName": "ORDER_ITEMS.ITEM_ID",
+   "location": {
+    "file": "ddl/schema.sql",
+    "startLine": 11,
+    "startColumn": 1,
+    "endLine": 11,
+    "endColumn": 1
+   },
+   "attrs": {
+    "declared": true,
+    "dataType": "NUMBER(12)",
+    "nullable": false,
+    "primaryKey": true,
+    "ordinal": 1,
+    "comment": ""
+   }
+  },
+  {
+   "id": "db:column:ORDER_ITEMS.ORDER_ID",
+   "kind": "DB_COLUMN",
+   "name": "ORDER_ID",
+   "qualifiedName": "ORDER_ITEMS.ORDER_ID",
+   "location": {
+    "file": "ddl/schema.sql",
+    "startLine": 12,
+    "startColumn": 1,
+    "endLine": 12,
+    "endColumn": 1
+   },
+   "attrs": {
+    "declared": true,
+    "dataType": "NUMBER(12)",
+    "nullable": false,
+    "primaryKey": false,
+    "ordinal": 2,
+    "comment": ""
+   }
+  },
+  {
+   "id": "db:column:ORDER_ITEMS.PRODUCT_ID",
+   "kind": "DB_COLUMN",
+   "name": "PRODUCT_ID",
+   "qualifiedName": "ORDER_ITEMS.PRODUCT_ID",
+   "location": {
+    "file": "ddl/schema.sql",
+    "startLine": 13,
+    "startColumn": 1,
+    "endLine": 13,
+    "endColumn": 1
+   },
+   "attrs": {
+    "declared": true,
+    "dataType": "NUMBER(12)",
+    "nullable": false,
+    "primaryKey": false,
+    "ordinal": 3,
+    "comment": ""
+   }
+  },
+  {
+   "id": "db:column:ORDER_ITEMS.QTY",
+   "kind": "DB_COLUMN",
+   "name": "QTY",
+   "qualifiedName": "ORDER_ITEMS.QTY",
+   "location": {
+    "file": "ddl/schema.sql",
+    "startLine": 14,
+    "startColumn": 1,
+    "endLine": 14,
+    "endColumn": 1
+   },
+   "attrs": {
+    "declared": true,
+    "dataType": "NUMBER(5,0)",
+    "nullable": true,
+    "primaryKey": false,
+    "ordinal": 4,
+    "comment": ""
+   }
+  },
+  {
+   "id": "db:column:PRODUCTS.NAME",
+   "kind": "DB_COLUMN",
+   "name": "NAME",
+   "qualifiedName": "PRODUCTS.NAME",
+   "location": {
+    "file": "ddl/schema.sql",
+    "startLine": 28,
+    "startColumn": 1,
+    "endLine": 28,
+    "endColumn": 1
+   },
+   "attrs": {
+    "declared": true,
+    "dataType": "VARCHAR2(200)",
+    "nullable": false,
+    "primaryKey": false,
+    "ordinal": 2,
+    "comment": ""
+   }
+  },
+  {
+   "id": "db:column:PRODUCTS.PRICE",
+   "kind": "DB_COLUMN",
+   "name": "PRICE",
+   "qualifiedName": "PRODUCTS.PRICE",
+   "location": {
+    "file": "ddl/schema.sql",
+    "startLine": 29,
+    "startColumn": 1,
+    "endLine": 29,
+    "endColumn": 1
+   },
+   "attrs": {
+    "declared": true,
+    "dataType": "NUMBER(10,2)",
+    "nullable": true,
+    "primaryKey": false,
+    "ordinal": 3,
+    "comment": ""
+   }
+  },
+  {
+   "id": "db:column:PRODUCTS.PRODUCT_ID",
+   "kind": "DB_COLUMN",
+   "name": "PRODUCT_ID",
+   "qualifiedName": "PRODUCTS.PRODUCT_ID",
+   "location": {
+    "file": "ddl/schema.sql",
+    "startLine": 27,
+    "startColumn": 1,
+    "endLine": 27,
+    "endColumn": 1
+   },
+   "attrs": {
+    "declared": true,
+    "dataType": "NUMBER(12)",
+    "nullable": false,
+    "primaryKey": true,
+    "ordinal": 1,
+    "comment": ""
+   }
+  },
+  {
+   "id": "db:column:SETTLEMENTS.CNT",
+   "kind": "DB_COLUMN",
+   "name": "CNT",
+   "qualifiedName": "SETTLEMENTS.CNT",
+   "location": {
+    "file": "ddl/schema.sql",
+    "startLine": 35,
+    "startColumn": 1,
+    "endLine": 35,
+    "endColumn": 1
+   },
+   "attrs": {
+    "declared": true,
+    "dataType": "NUMBER(9)",
+    "nullable": true,
+    "primaryKey": false,
+    "ordinal": 2,
+    "comment": ""
+   }
+  },
+  {
+   "id": "db:column:SETTLEMENTS.CUSTOMER_ID",
+   "kind": "DB_COLUMN",
+   "name": "CUSTOMER_ID",
+   "qualifiedName": "SETTLEMENTS.CUSTOMER_ID",
+   "location": {
+    "file": "ddl/schema.sql",
+    "startLine": 34,
+    "startColumn": 1,
+    "endLine": 34,
+    "endColumn": 1
+   },
+   "attrs": {
+    "declared": true,
+    "dataType": "NUMBER(12)",
+    "nullable": false,
+    "primaryKey": true,
+    "ordinal": 1,
+    "comment": ""
+   }
+  },
+  {
+   "id": "db:package:PKG_ORDER",
+   "kind": "DB_PACKAGE",
+   "name": "PKG_ORDER",
+   "qualifiedName": "PKG_ORDER",
+   "location": {
+    "file": "ddl/pkg_order.pkb",
+    "startLine": 1,
+    "startColumn": 1,
+    "endLine": 1,
+    "endColumn": 1
+   },
+   "attrs": {
+    "declared": true
+   }
+  },
+  {
+   "id": "db:routine:PKG_ORDER.CLOSE_ORDER",
+   "kind": "DB_ROUTINE",
+   "name": "CLOSE_ORDER",
+   "qualifiedName": "PKG_ORDER.CLOSE_ORDER",
+   "location": {
+    "file": "ddl/pkg_order.pkb",
+    "startLine": 5,
+    "startColumn": 1,
+    "endLine": 20,
+    "endColumn": 1
+   },
+   "attrs": {
+    "declared": true,
+    "routineType": "PROCEDURE",
+    "parameters": [
+     "P_ORDER_ID IN NUMBER"
+    ],
+    "dialect": "oracle"
+   }
+  },
+  {
+   "id": "db:routine:PKG_ORDER.WRITE_LOG",
+   "kind": "DB_ROUTINE",
+   "name": "WRITE_LOG",
+   "qualifiedName": "PKG_ORDER.WRITE_LOG",
+   "location": {
+    "file": "ddl/pkg_order.pkb",
+    "startLine": 22,
+    "startColumn": 1,
+    "endLine": 30,
+    "endColumn": 1
+   },
+   "attrs": {
+    "declared": true,
+    "routineType": "PROCEDURE",
+    "parameters": [
+     "P_MSG IN VARCHAR2"
+    ],
+    "dialect": "oracle"
+   }
+  },
+  {
+   "id": "db:sequence:SEQ_ORDER",
+   "kind": "DB_SEQUENCE",
+   "name": "SEQ_ORDER",
+   "qualifiedName": "SEQ_ORDER",
+   "location": {
+    "file": "ddl/schema.sql",
+    "startLine": 44,
+    "startColumn": 1,
+    "endLine": 44,
+    "endColumn": 1
+   },
+   "attrs": {
+    "declared": true
+   }
+  },
+  {
+   "id": "db:table:COUPONS",
+   "kind": "DB_TABLE",
+   "name": "COUPONS",
+   "qualifiedName": "COUPONS",
+   "location": {
+    "file": "ddl/schema.sql",
+    "startLine": 38,
+    "startColumn": 1,
+    "endLine": 41,
+    "endColumn": 1
+   },
+   "attrs": {
+    "declared": true,
+    "schema": "SHOP"
+   }
+  },
+  {
+   "id": "db:table:CUSTOMERS",
+   "kind": "DB_TABLE",
+   "name": "CUSTOMERS",
+   "qualifiedName": "CUSTOMERS",
+   "location": {
+    "file": "ddl/schema.sql",
+    "startLine": 20,
+    "startColumn": 1,
+    "endLine": 23,
+    "endColumn": 1
+   },
+   "attrs": {
+    "declared": true,
+    "schema": "SHOP"
+   }
+  },
+  {
+   "id": "db:table:ORDERS",
+   "kind": "DB_TABLE",
+   "name": "ORDERS",
+   "qualifiedName": "ORDERS",
+   "location": {
+    "file": "ddl/schema.sql",
+    "startLine": 1,
+    "startColumn": 1,
+    "endLine": 6,
+    "endColumn": 1
+   },
+   "attrs": {
+    "declared": true,
+    "schema": "SHOP",
+    "comment": "주문"
+   }
+  },
+  {
+   "id": "db:table:ORDER_HISTORY",
+   "kind": "DB_TABLE",
+   "name": "ORDER_HISTORY",
+   "qualifiedName": "ORDER_HISTORY",
+   "location": null,
+   "attrs": {
+    "declared": false
+   }
+  },
+  {
+   "id": "db:table:ORDER_ITEMS",
+   "kind": "DB_TABLE",
+   "name": "ORDER_ITEMS",
+   "qualifiedName": "ORDER_ITEMS",
+   "location": {
+    "file": "ddl/schema.sql",
+    "startLine": 10,
+    "startColumn": 1,
+    "endLine": 15,
+    "endColumn": 1
+   },
+   "attrs": {
+    "declared": true,
+    "schema": "SHOP"
+   }
+  },
+  {
+   "id": "db:table:PRODUCTS",
+   "kind": "DB_TABLE",
+   "name": "PRODUCTS",
+   "qualifiedName": "PRODUCTS",
+   "location": {
+    "file": "ddl/schema.sql",
+    "startLine": 26,
+    "startColumn": 1,
+    "endLine": 30,
+    "endColumn": 1
+   },
+   "attrs": {
+    "declared": true,
+    "schema": "SHOP"
+   }
+  },
+  {
+   "id": "db:table:SETTLEMENTS",
+   "kind": "DB_TABLE",
+   "name": "SETTLEMENTS",
+   "qualifiedName": "SETTLEMENTS",
+   "location": {
+    "file": "ddl/schema.sql",
+    "startLine": 33,
+    "startColumn": 1,
+    "endLine": 36,
+    "endColumn": 1
+   },
+   "attrs": {
+    "declared": true,
+    "schema": "SHOP"
+   }
+  },
+  {
+   "id": "file:ddl/schema.sql",
+   "kind": "FILE",
+   "name": "schema.sql",
+   "qualifiedName": "ddl/schema.sql",
+   "location": null,
+   "attrs": {
+    "declared": true
+   }
+  },
+  {
+   "id": "file:src/main/java/com/shop/web/OrderController.java",
+   "kind": "FILE",
+   "name": "OrderController.java",
+   "qualifiedName": "src/main/java/com/shop/web/OrderController.java",
+   "location": null,
+   "attrs": {
+    "declared": true
+   }
+  },
+  {
+   "id": "file:src/main/resources/mapper/OrderMapper.xml",
+   "kind": "FILE",
+   "name": "OrderMapper.xml",
+   "qualifiedName": "src/main/resources/mapper/OrderMapper.xml",
+   "location": null,
+   "attrs": {
+    "declared": true
+   }
+  },
+  {
+   "id": "http:endpoint:GET /orders",
+   "kind": "HTTP_ENDPOINT",
+   "name": "GET /orders",
+   "qualifiedName": "GET /orders",
+   "location": {
+    "file": "src/main/java/com/shop/web/OrderController.java",
+    "startLine": 19,
+    "startColumn": 1,
+    "endLine": 19,
+    "endColumn": 1
+   },
+   "attrs": {
+    "declared": true,
+    "httpMethod": "GET",
+    "path": "/orders"
+   }
+  },
+  {
+   "id": "http:endpoint:GET /orders/{id}",
+   "kind": "HTTP_ENDPOINT",
+   "name": "GET /orders/{id}",
+   "qualifiedName": "GET /orders/{id}",
+   "location": {
+    "file": "src/main/java/com/shop/web/OrderController.java",
+    "startLine": 29,
+    "startColumn": 1,
+    "endLine": 29,
+    "endColumn": 1
+   },
+   "attrs": {
+    "declared": true,
+    "httpMethod": "GET",
+    "path": "/orders/{id}"
+   }
+  },
+  {
+   "id": "http:endpoint:POST /orders",
+   "kind": "HTTP_ENDPOINT",
+   "name": "POST /orders",
+   "qualifiedName": "POST /orders",
+   "location": {
+    "file": "src/main/java/com/shop/web/OrderController.java",
+    "startLine": 39,
+    "startColumn": 1,
+    "endLine": 39,
+    "endColumn": 1
+   },
+   "attrs": {
+    "declared": true,
+    "httpMethod": "POST",
+    "path": "/orders"
+   }
+  },
+  {
+   "id": "http:endpoint:POST /orders/{id}/close",
+   "kind": "HTTP_ENDPOINT",
+   "name": "POST /orders/{id}/close",
+   "qualifiedName": "POST /orders/{id}/close",
+   "location": {
+    "file": "src/main/java/com/shop/web/OrderController.java",
+    "startLine": 49,
+    "startColumn": 1,
+    "endLine": 49,
+    "endColumn": 1
+   },
+   "attrs": {
+    "declared": true,
+    "httpMethod": "POST",
+    "path": "/orders/{id}/close"
+   }
+  },
+  {
+   "id": "http:request:GET /legacy/{*}@src/main/webapp/js/order.js:25",
+   "kind": "HTTP_REQUEST",
+   "name": "GET /legacy/{*}",
+   "qualifiedName": "GET /legacy/{*}",
+   "location": {
+    "file": "src/main/webapp/js/order.js",
+    "startLine": 25,
+    "startColumn": 1,
+    "endLine": 25,
+    "endColumn": 1
+   },
+   "attrs": {
+    "declared": true,
+    "httpMethod": "GET",
+    "url": "'/legacy/' + code",
+    "dynamic": true,
+    "api": "jquery"
+   }
+  },
+  {
+   "id": "http:request:GET /orders/{*}@src/main/webapp/WEB-INF/views/order/list.jsp:20",
+   "kind": "HTTP_REQUEST",
+   "name": "GET /orders/{*}",
+   "qualifiedName": "GET /orders/{*}",
+   "location": {
+    "file": "src/main/webapp/WEB-INF/views/order/list.jsp",
+    "startLine": 20,
+    "startColumn": 1,
+    "endLine": 20,
+    "endColumn": 1
+   },
+   "attrs": {
+    "declared": true,
+    "httpMethod": "GET",
+    "url": "/orders/${order.id}",
+    "dynamic": true,
+    "api": "link"
+   }
+  },
+  {
+   "id": "http:request:GET /orders@src/main/webapp/js/order.js:5",
+   "kind": "HTTP_REQUEST",
+   "name": "GET /orders",
+   "qualifiedName": "GET /orders",
+   "location": {
+    "file": "src/main/webapp/js/order.js",
+    "startLine": 5,
+    "startColumn": 1,
+    "endLine": 5,
+    "endColumn": 1
+   },
+   "attrs": {
+    "declared": true,
+    "httpMethod": "GET",
+    "url": "/orders",
+    "dynamic": false,
+    "api": "fetch"
+   }
+  },
+  {
+   "id": "http:request:POST /orders/{*}/close@src/main/webapp/WEB-INF/views/order/detail.jsp:15",
+   "kind": "HTTP_REQUEST",
+   "name": "POST /orders/{*}/close",
+   "qualifiedName": "POST /orders/{*}/close",
+   "location": {
+    "file": "src/main/webapp/WEB-INF/views/order/detail.jsp",
+    "startLine": 15,
+    "startColumn": 1,
+    "endLine": 15,
+    "endColumn": 1
+   },
+   "attrs": {
+    "declared": true,
+    "httpMethod": "POST",
+    "url": "/orders/${order.id}/close",
+    "dynamic": true,
+    "api": "form"
+   }
+  },
+  {
+   "id": "http:request:POST /orders@src/main/webapp/js/order.js:13",
+   "kind": "HTTP_REQUEST",
+   "name": "POST /orders",
+   "qualifiedName": "POST /orders",
+   "location": {
+    "file": "src/main/webapp/js/order.js",
+    "startLine": 13,
+    "startColumn": 1,
+    "endLine": 13,
+    "endColumn": 1
+   },
+   "attrs": {
+    "declared": true,
+    "httpMethod": "POST",
+    "url": "/orders",
+    "dynamic": false,
+    "api": "axios"
+   }
+  },
+  {
+   "id": "java:field:com.shop.domain.Order#id",
+   "kind": "JAVA_FIELD",
+   "name": "id",
+   "qualifiedName": "com.shop.domain.Order#id",
+   "location": {
+    "file": "src/main/java/com/shop/domain/Order.java",
+    "startLine": 7,
+    "startColumn": 1,
+    "endLine": 7,
+    "endColumn": 1
+   },
+   "attrs": {
+    "declared": true,
+    "modifiers": [
+     "private"
+    ],
+    "type": "long"
+   }
+  },
+  {
+   "id": "java:field:com.shop.domain.Order#items",
+   "kind": "JAVA_FIELD",
+   "name": "items",
+   "qualifiedName": "com.shop.domain.Order#items",
+   "location": {
+    "file": "src/main/java/com/shop/domain/Order.java",
+    "startLine": 8,
+    "startColumn": 1,
+    "endLine": 8,
+    "endColumn": 1
+   },
+   "attrs": {
+    "declared": true,
+    "modifiers": [
+     "private"
+    ],
+    "type": "java.util.List<com.shop.domain.OrderItem>"
+   }
+  },
+  {
+   "id": "java:field:com.shop.domain.Order#status",
+   "kind": "JAVA_FIELD",
+   "name": "status",
+   "qualifiedName": "com.shop.domain.Order#status",
+   "location": {
+    "file": "src/main/java/com/shop/domain/Order.java",
+    "startLine": 9,
+    "startColumn": 1,
+    "endLine": 9,
+    "endColumn": 1
+   },
+   "attrs": {
+    "declared": true,
+    "modifiers": [
+     "private"
+    ],
+    "type": "com.shop.domain.OrderStatus"
+   }
+  },
+  {
+   "id": "java:field:com.shop.service.BaseService#MAX_RETRY",
+   "kind": "JAVA_FIELD",
+   "name": "MAX_RETRY",
+   "qualifiedName": "com.shop.service.BaseService#MAX_RETRY",
+   "location": {
+    "file": "src/main/java/com/shop/service/BaseService.java",
+    "startLine": 6,
+    "startColumn": 1,
+    "endLine": 6,
+    "endColumn": 1
+   },
+   "attrs": {
+    "declared": true,
+    "modifiers": [
+     "protected",
+     "static",
+     "final"
+    ],
+    "type": "int"
+   }
+  },
+  {
+   "id": "java:field:com.shop.service.OrderServiceImpl#orderMapper",
+   "kind": "JAVA_FIELD",
+   "name": "orderMapper",
+   "qualifiedName": "com.shop.service.OrderServiceImpl#orderMapper",
+   "location": {
+    "file": "src/main/java/com/shop/service/OrderServiceImpl.java",
+    "startLine": 17,
+    "startColumn": 1,
+    "endLine": 17,
+    "endColumn": 1
+   },
+   "attrs": {
+    "declared": true,
+    "modifiers": [
+     "private",
+     "final"
+    ],
+    "type": "com.shop.mapper.OrderMapper"
+   }
+  },
+  {
+   "id": "java:method:com.shop.batch.SettlementTasklet#execute(org.springframework.batch.core.StepContribution,org.springframework.batch.core.scope.context.ChunkContext)",
+   "kind": "JAVA_METHOD",
+   "name": "execute",
+   "qualifiedName": "com.shop.batch.SettlementTasklet#execute(StepContribution, ChunkContext)",
+   "location": {
+    "file": "src/main/java/com/shop/batch/SettlementTasklet.java",
+    "startLine": 18,
+    "startColumn": 1,
+    "endLine": 26,
+    "endColumn": 1
+   },
+   "attrs": {
+    "declared": true,
+    "modifiers": [
+     "public"
+    ],
+    "returnType": "org.springframework.batch.repeat.RepeatStatus",
+    "parameterTypes": [
+     "org.springframework.batch.core.StepContribution",
+     "org.springframework.batch.core.scope.context.ChunkContext"
+    ],
+    "signature": "execute(StepContribution, ChunkContext): RepeatStatus"
+   }
+  },
+  {
+   "id": "java:method:com.shop.domain.Order#<init>()",
+   "kind": "JAVA_METHOD",
+   "name": "<init>",
+   "qualifiedName": "com.shop.domain.Order#<init>()",
+   "location": {
+    "file": "src/main/java/com/shop/domain/Order.java",
+    "startLine": 11,
+    "startColumn": 1,
+    "endLine": 19,
+    "endColumn": 1
+   },
+   "attrs": {
+    "declared": true,
+    "modifiers": [
+     "public"
+    ],
+    "returnType": "void",
+    "parameterTypes": [],
+    "signature": "<init>(): void",
+    "constructor": true
+   }
+  },
+  {
+   "id": "java:method:com.shop.legacy.LegacyDao#find()",
+   "kind": "UNRESOLVED",
+   "name": "java:method:com.shop.legacy.LegacyDao#find()",
+   "qualifiedName": "java:method:com.shop.legacy.LegacyDao#find()",
+   "location": null,
+   "attrs": {
+    "declared": false,
+    "expectedPrefix": "java:method"
+   }
+  },
+  {
+   "id": "java:method:com.shop.mapper.OrderMapper#callCloseOrder(long)",
+   "kind": "JAVA_METHOD",
+   "name": "callCloseOrder",
+   "qualifiedName": "com.shop.mapper.OrderMapper#callCloseOrder(long)",
+   "location": {
+    "file": "src/main/java/com/shop/mapper/OrderMapper.java",
+    "startLine": 14,
+    "startColumn": 1,
+    "endLine": 22,
+    "endColumn": 1
+   },
+   "attrs": {
+    "declared": true,
+    "modifiers": [
+     "public",
+     "abstract"
+    ],
+    "returnType": "void",
+    "parameterTypes": [
+     "long"
+    ],
+    "signature": "callCloseOrder(long): void"
+   }
+  },
+  {
+   "id": "java:method:com.shop.mapper.OrderMapper#deleteItems(long)",
+   "kind": "JAVA_METHOD",
+   "name": "deleteItems",
+   "qualifiedName": "com.shop.mapper.OrderMapper#deleteItems(long)",
+   "location": {
+    "file": "src/main/java/com/shop/mapper/OrderMapper.java",
+    "startLine": 15,
+    "startColumn": 1,
+    "endLine": 23,
+    "endColumn": 1
+   },
+   "attrs": {
+    "declared": true,
+    "modifiers": [
+     "public",
+     "abstract"
+    ],
+    "returnType": "int",
+    "parameterTypes": [
+     "long"
+    ],
+    "signature": "deleteItems(long): int"
+   }
+  },
+  {
+   "id": "java:method:com.shop.mapper.OrderMapper#insertItem(com.shop.domain.OrderItem)",
+   "kind": "JAVA_METHOD",
+   "name": "insertItem",
+   "qualifiedName": "com.shop.mapper.OrderMapper#insertItem(OrderItem)",
+   "location": {
+    "file": "src/main/java/com/shop/mapper/OrderMapper.java",
+    "startLine": 13,
+    "startColumn": 1,
+    "endLine": 21,
+    "endColumn": 1
+   },
+   "attrs": {
+    "declared": true,
+    "modifiers": [
+     "public",
+     "abstract"
+    ],
+    "returnType": "int",
+    "parameterTypes": [
+     "com.shop.domain.OrderItem"
+    ],
+    "signature": "insertItem(OrderItem): int"
+   }
+  },
+  {
+   "id": "java:method:com.shop.mapper.OrderMapper#insertOrder(com.shop.domain.Order)",
+   "kind": "JAVA_METHOD",
+   "name": "insertOrder",
+   "qualifiedName": "com.shop.mapper.OrderMapper#insertOrder(Order)",
+   "location": {
+    "file": "src/main/java/com/shop/mapper/OrderMapper.java",
+    "startLine": 12,
+    "startColumn": 1,
+    "endLine": 20,
+    "endColumn": 1
+   },
+   "attrs": {
+    "declared": true,
+    "modifiers": [
+     "public",
+     "abstract"
+    ],
+    "returnType": "int",
+    "parameterTypes": [
+     "com.shop.domain.Order"
+    ],
+    "signature": "insertOrder(Order): int"
+   }
+  },
+  {
+   "id": "java:method:com.shop.mapper.OrderMapper#selectOrder(long)",
+   "kind": "JAVA_METHOD",
+   "name": "selectOrder",
+   "qualifiedName": "com.shop.mapper.OrderMapper#selectOrder(long)",
+   "location": {
+    "file": "src/main/java/com/shop/mapper/OrderMapper.java",
+    "startLine": 11,
+    "startColumn": 1,
+    "endLine": 19,
+    "endColumn": 1
+   },
+   "attrs": {
+    "declared": true,
+    "modifiers": [
+     "public",
+     "abstract"
+    ],
+    "returnType": "com.shop.domain.Order",
+    "parameterTypes": [
+     "long"
+    ],
+    "signature": "selectOrder(long): Order"
+   }
+  },
+  {
+   "id": "java:method:com.shop.mapper.OrderMapper#selectOrders()",
+   "kind": "JAVA_METHOD",
+   "name": "selectOrders",
+   "qualifiedName": "com.shop.mapper.OrderMapper#selectOrders()",
+   "location": {
+    "file": "src/main/java/com/shop/mapper/OrderMapper.java",
+    "startLine": 10,
+    "startColumn": 1,
+    "endLine": 18,
+    "endColumn": 1
+   },
+   "attrs": {
+    "declared": true,
+    "modifiers": [
+     "public",
+     "abstract"
+    ],
+    "returnType": "java.util.List",
+    "parameterTypes": [],
+    "signature": "selectOrders(): List"
+   }
+  },
+  {
+   "id": "java:method:com.shop.service.BaseService#log(java.lang.String)",
+   "kind": "JAVA_METHOD",
+   "name": "log",
+   "qualifiedName": "com.shop.service.BaseService#log(String)",
+   "location": {
+    "file": "src/main/java/com/shop/service/BaseService.java",
+    "startLine": 8,
+    "startColumn": 1,
+    "endLine": 16,
+    "endColumn": 1
+   },
+   "attrs": {
+    "declared": true,
+    "modifiers": [
+     "protected"
+    ],
+    "returnType": "void",
+    "parameterTypes": [
+     "java.lang.String"
+    ],
+    "signature": "log(String): void"
+   }
+  },
+  {
+   "id": "java:method:com.shop.service.OrderService#closeOrder(long)",
+   "kind": "JAVA_METHOD",
+   "name": "closeOrder",
+   "qualifiedName": "com.shop.service.OrderService#closeOrder(long)",
+   "location": {
+    "file": "src/main/java/com/shop/service/OrderService.java",
+    "startLine": 11,
+    "startColumn": 1,
+    "endLine": 19,
+    "endColumn": 1
+   },
+   "attrs": {
+    "declared": true,
+    "modifiers": [
+     "public",
+     "abstract"
+    ],
+    "returnType": "void",
+    "parameterTypes": [
+     "long"
+    ],
+    "signature": "closeOrder(long): void"
+   }
+  },
+  {
+   "id": "java:method:com.shop.service.OrderService#findOrders()",
+   "kind": "JAVA_METHOD",
+   "name": "findOrders",
+   "qualifiedName": "com.shop.service.OrderService#findOrders()",
+   "location": {
+    "file": "src/main/java/com/shop/service/OrderService.java",
+    "startLine": 9,
+    "startColumn": 1,
+    "endLine": 17,
+    "endColumn": 1
+   },
+   "attrs": {
+    "declared": true,
+    "modifiers": [
+     "public",
+     "abstract"
+    ],
+    "returnType": "java.util.List",
+    "parameterTypes": [],
+    "signature": "findOrders(): List"
+   }
+  },
+  {
+   "id": "java:method:com.shop.service.OrderService#placeOrder(com.shop.domain.Order)",
+   "kind": "JAVA_METHOD",
+   "name": "placeOrder",
+   "qualifiedName": "com.shop.service.OrderService#placeOrder(Order)",
+   "location": {
+    "file": "src/main/java/com/shop/service/OrderService.java",
+    "startLine": 10,
+    "startColumn": 1,
+    "endLine": 18,
+    "endColumn": 1
+   },
+   "attrs": {
+    "declared": true,
+    "modifiers": [
+     "public",
+     "abstract"
+    ],
+    "returnType": "com.shop.domain.Order",
+    "parameterTypes": [
+     "com.shop.domain.Order"
+    ],
+    "signature": "placeOrder(Order): Order"
+   }
+  },
+  {
+   "id": "java:method:com.shop.service.OrderServiceImpl#closeOrder(long)",
+   "kind": "JAVA_METHOD",
+   "name": "closeOrder",
+   "qualifiedName": "com.shop.service.OrderServiceImpl#closeOrder(long)",
+   "location": {
+    "file": "src/main/java/com/shop/service/OrderServiceImpl.java",
+    "startLine": 50,
+    "startColumn": 1,
+    "endLine": 58,
+    "endColumn": 1
+   },
+   "attrs": {
+    "declared": true,
+    "modifiers": [
+     "public"
+    ],
+    "returnType": "void",
+    "parameterTypes": [
+     "long"
+    ],
+    "signature": "closeOrder(long): void"
+   }
+  },
+  {
+   "id": "java:method:com.shop.service.OrderServiceImpl#findOrders()",
+   "kind": "JAVA_METHOD",
+   "name": "findOrders",
+   "qualifiedName": "com.shop.service.OrderServiceImpl#findOrders()",
+   "location": {
+    "file": "src/main/java/com/shop/service/OrderServiceImpl.java",
+    "startLine": 22,
+    "startColumn": 1,
+    "endLine": 30,
+    "endColumn": 1
+   },
+   "attrs": {
+    "declared": true,
+    "modifiers": [
+     "public"
+    ],
+    "returnType": "java.util.List",
+    "parameterTypes": [],
+    "signature": "findOrders(): List"
+   }
+  },
+  {
+   "id": "java:method:com.shop.service.OrderServiceImpl#placeOrder(com.shop.domain.Order)",
+   "kind": "JAVA_METHOD",
+   "name": "placeOrder",
+   "qualifiedName": "com.shop.service.OrderServiceImpl#placeOrder(Order)",
+   "location": {
+    "file": "src/main/java/com/shop/service/OrderServiceImpl.java",
+    "startLine": 30,
+    "startColumn": 1,
+    "endLine": 38,
+    "endColumn": 1
+   },
+   "attrs": {
+    "declared": true,
+    "modifiers": [
+     "public"
+    ],
+    "returnType": "com.shop.domain.Order",
+    "parameterTypes": [
+     "com.shop.domain.Order"
+    ],
+    "signature": "placeOrder(Order): Order"
+   }
+  },
+  {
+   "id": "java:method:com.shop.service.OrderServiceImpl#retry(com.shop.domain.Order)",
+   "kind": "JAVA_METHOD",
+   "name": "retry",
+   "qualifiedName": "com.shop.service.OrderServiceImpl#retry(Order)",
+   "location": {
+    "file": "src/main/java/com/shop/service/OrderServiceImpl.java",
+    "startLine": 70,
+    "startColumn": 1,
+    "endLine": 78,
+    "endColumn": 1
+   },
+   "attrs": {
+    "declared": true,
+    "modifiers": [
+     "private"
+    ],
+    "returnType": "void",
+    "parameterTypes": [
+     "com.shop.domain.Order"
+    ],
+    "signature": "retry(Order): void"
+   }
+  },
+  {
+   "id": "java:method:com.shop.service.OrderServiceImpl#validate(com.shop.domain.Order)",
+   "kind": "JAVA_METHOD",
+   "name": "validate",
+   "qualifiedName": "com.shop.service.OrderServiceImpl#validate(Order)",
+   "location": {
+    "file": "src/main/java/com/shop/service/OrderServiceImpl.java",
+    "startLine": 60,
+    "startColumn": 1,
+    "endLine": 68,
+    "endColumn": 1
+   },
+   "attrs": {
+    "declared": true,
+    "modifiers": [
+     "private"
+    ],
+    "returnType": "void",
+    "parameterTypes": [
+     "com.shop.domain.Order"
+    ],
+    "signature": "validate(Order): void"
+   }
+  },
+  {
+   "id": "java:method:com.shop.web.OrderController#close(long)",
+   "kind": "JAVA_METHOD",
+   "name": "close",
+   "qualifiedName": "com.shop.web.OrderController#close(long)",
+   "location": {
+    "file": "src/main/java/com/shop/web/OrderController.java",
+    "startLine": 50,
+    "startColumn": 1,
+    "endLine": 58,
+    "endColumn": 1
+   },
+   "attrs": {
+    "declared": true,
+    "modifiers": [
+     "public"
+    ],
+    "returnType": "void",
+    "parameterTypes": [
+     "long"
+    ],
+    "signature": "close(long): void"
+   }
+  },
+  {
+   "id": "java:method:com.shop.web.OrderController#create(com.shop.domain.Order)",
+   "kind": "JAVA_METHOD",
+   "name": "create",
+   "qualifiedName": "com.shop.web.OrderController#create(Order)",
+   "location": {
+    "file": "src/main/java/com/shop/web/OrderController.java",
+    "startLine": 40,
+    "startColumn": 1,
+    "endLine": 48,
+    "endColumn": 1
+   },
+   "attrs": {
+    "declared": true,
+    "modifiers": [
+     "public"
+    ],
+    "returnType": "com.shop.domain.Order",
+    "parameterTypes": [
+     "com.shop.domain.Order"
+    ],
+    "signature": "create(Order): Order"
+   }
+  },
+  {
+   "id": "java:method:com.shop.web.OrderController#detail(long)",
+   "kind": "JAVA_METHOD",
+   "name": "detail",
+   "qualifiedName": "com.shop.web.OrderController#detail(long)",
+   "location": {
+    "file": "src/main/java/com/shop/web/OrderController.java",
+    "startLine": 30,
+    "startColumn": 1,
+    "endLine": 38,
+    "endColumn": 1
+   },
+   "attrs": {
+    "declared": true,
+    "modifiers": [
+     "public"
+    ],
+    "returnType": "java.lang.String",
+    "parameterTypes": [
+     "long"
+    ],
+    "signature": "detail(long): String"
+   }
+  },
+  {
+   "id": "java:method:com.shop.web.OrderController#list(org.springframework.ui.Model)",
+   "kind": "JAVA_METHOD",
+   "name": "list",
+   "qualifiedName": "com.shop.web.OrderController#list(Model)",
+   "location": {
+    "file": "src/main/java/com/shop/web/OrderController.java",
+    "startLine": 20,
+    "startColumn": 1,
+    "endLine": 28,
+    "endColumn": 1
+   },
+   "attrs": {
+    "declared": true,
+    "modifiers": [
+     "public"
+    ],
+    "returnType": "java.lang.String",
+    "parameterTypes": [
+     "org.springframework.ui.Model"
+    ],
+    "signature": "list(Model): String"
+   }
+  },
+  {
+   "id": "java:package:com.shop.batch",
+   "kind": "JAVA_PACKAGE",
+   "name": "batch",
+   "qualifiedName": "com.shop.batch",
+   "location": null,
+   "attrs": {
+    "declared": true
+   }
+  },
+  {
+   "id": "java:package:com.shop.domain",
+   "kind": "JAVA_PACKAGE",
+   "name": "domain",
+   "qualifiedName": "com.shop.domain",
+   "location": null,
+   "attrs": {
+    "declared": true
+   }
+  },
+  {
+   "id": "java:package:com.shop.mapper",
+   "kind": "JAVA_PACKAGE",
+   "name": "mapper",
+   "qualifiedName": "com.shop.mapper",
+   "location": null,
+   "attrs": {
+    "declared": true
+   }
+  },
+  {
+   "id": "java:package:com.shop.service",
+   "kind": "JAVA_PACKAGE",
+   "name": "service",
+   "qualifiedName": "com.shop.service",
+   "location": null,
+   "attrs": {
+    "declared": true
+   }
+  },
+  {
+   "id": "java:package:com.shop.web",
+   "kind": "JAVA_PACKAGE",
+   "name": "web",
+   "qualifiedName": "com.shop.web",
+   "location": null,
+   "attrs": {
+    "declared": true
+   }
+  },
+  {
+   "id": "java:type:com.shop.batch.SettlementTasklet",
+   "kind": "JAVA_TYPE",
+   "name": "SettlementTasklet",
+   "qualifiedName": "com.shop.batch.SettlementTasklet",
+   "location": {
+    "file": "src/main/java/com/shop/batch/SettlementTasklet.java",
+    "startLine": 10,
+    "startColumn": 1,
+    "endLine": 50,
+    "endColumn": 1
+   },
+   "attrs": {
+    "declared": true,
+    "typeKind": "class",
+    "modifiers": [
+     "public"
+    ],
+    "stereotype": "component"
+   }
+  },
+  {
+   "id": "java:type:com.shop.domain.Order",
+   "kind": "JAVA_TYPE",
+   "name": "Order",
+   "qualifiedName": "com.shop.domain.Order",
+   "location": {
+    "file": "src/main/java/com/shop/domain/Order.java",
+    "startLine": 6,
+    "startColumn": 1,
+    "endLine": 46,
+    "endColumn": 1
+   },
+   "attrs": {
+    "declared": true,
+    "typeKind": "class",
+    "modifiers": [
+     "public"
+    ]
+   }
+  },
+  {
+   "id": "java:type:com.shop.domain.OrderItem",
+   "kind": "JAVA_TYPE",
+   "name": "OrderItem",
+   "qualifiedName": "com.shop.domain.OrderItem",
+   "location": {
+    "file": "src/main/java/com/shop/domain/OrderItem.java",
+    "startLine": 4,
+    "startColumn": 1,
+    "endLine": 44,
+    "endColumn": 1
+   },
+   "attrs": {
+    "declared": true,
+    "typeKind": "class",
+    "modifiers": [
+     "public"
+    ]
+   }
+  },
+  {
+   "id": "java:type:com.shop.domain.OrderStatus",
+   "kind": "JAVA_TYPE",
+   "name": "OrderStatus",
+   "qualifiedName": "com.shop.domain.OrderStatus",
+   "location": {
+    "file": "src/main/java/com/shop/domain/OrderStatus.java",
+    "startLine": 3,
+    "startColumn": 1,
+    "endLine": 43,
+    "endColumn": 1
+   },
+   "attrs": {
+    "declared": true,
+    "typeKind": "enum",
+    "modifiers": [
+     "public"
+    ]
+   }
+  },
+  {
+   "id": "java:type:com.shop.mapper.OrderMapper",
+   "kind": "JAVA_TYPE",
+   "name": "OrderMapper",
+   "qualifiedName": "com.shop.mapper.OrderMapper",
+   "location": {
+    "file": "src/main/java/com/shop/mapper/OrderMapper.java",
+    "startLine": 9,
+    "startColumn": 1,
+    "endLine": 49,
+    "endColumn": 1
+   },
+   "attrs": {
+    "declared": true,
+    "typeKind": "interface",
+    "modifiers": [
+     "public"
+    ],
+    "stereotype": "mapper"
+   }
+  },
+  {
+   "id": "java:type:com.shop.service.BaseService",
+   "kind": "JAVA_TYPE",
+   "name": "BaseService",
+   "qualifiedName": "com.shop.service.BaseService",
+   "location": {
+    "file": "src/main/java/com/shop/service/BaseService.java",
+    "startLine": 5,
+    "startColumn": 1,
+    "endLine": 45,
+    "endColumn": 1
+   },
+   "attrs": {
+    "declared": true,
+    "typeKind": "class",
+    "modifiers": [
+     "public",
+     "abstract"
+    ],
+    "typeParameters": [
+     "T"
+    ]
+   }
+  },
+  {
+   "id": "java:type:com.shop.service.OrderService",
+   "kind": "JAVA_TYPE",
+   "name": "OrderService",
+   "qualifiedName": "com.shop.service.OrderService",
+   "location": {
+    "file": "src/main/java/com/shop/service/OrderService.java",
+    "startLine": 8,
+    "startColumn": 1,
+    "endLine": 48,
+    "endColumn": 1
+   },
+   "attrs": {
+    "declared": true,
+    "typeKind": "interface",
+    "modifiers": [
+     "public"
+    ]
+   }
+  },
+  {
+   "id": "java:type:com.shop.service.OrderServiceImpl",
+   "kind": "JAVA_TYPE",
+   "name": "OrderServiceImpl",
+   "qualifiedName": "com.shop.service.OrderServiceImpl",
+   "location": {
+    "file": "src/main/java/com/shop/service/OrderServiceImpl.java",
+    "startLine": 15,
+    "startColumn": 1,
+    "endLine": 55,
+    "endColumn": 1
+   },
+   "attrs": {
+    "declared": true,
+    "typeKind": "class",
+    "modifiers": [
+     "public"
+    ],
+    "stereotype": "service"
+   }
+  },
+  {
+   "id": "java:type:com.shop.web.OrderController",
+   "kind": "JAVA_TYPE",
+   "name": "OrderController",
+   "qualifiedName": "com.shop.web.OrderController",
+   "location": {
+    "file": "src/main/java/com/shop/web/OrderController.java",
+    "startLine": 12,
+    "startColumn": 1,
+    "endLine": 52,
+    "endColumn": 1
+   },
+   "attrs": {
+    "declared": true,
+    "typeKind": "class",
+    "modifiers": [
+     "public"
+    ],
+    "stereotype": "controller"
+   }
+  },
+  {
+   "id": "java:type:org.springframework.batch.core.step.tasklet.Tasklet",
+   "kind": "JAVA_TYPE",
+   "name": "Tasklet",
+   "qualifiedName": "org.springframework.batch.core.step.tasklet.Tasklet",
+   "location": null,
+   "attrs": {
+    "declared": false,
+    "typeKind": "interface",
+    "external": true
+   }
+  },
+  {
+   "id": "js:function:src/main/webapp/js/order.js#loadOrders",
+   "kind": "JS_FUNCTION",
+   "name": "loadOrders",
+   "qualifiedName": "src/main/webapp/js/order.js#loadOrders",
+   "location": {
+    "file": "src/main/webapp/js/order.js",
+    "startLine": 3,
+    "startColumn": 1,
+    "endLine": 11,
+    "endColumn": 1
+   },
+   "attrs": {
+    "declared": true,
+    "async": true,
+    "exported": true
+   }
+  },
+  {
+   "id": "js:function:src/main/webapp/js/order.js#openLegacy",
+   "kind": "JS_FUNCTION",
+   "name": "openLegacy",
+   "qualifiedName": "src/main/webapp/js/order.js#openLegacy",
+   "location": {
+    "file": "src/main/webapp/js/order.js",
+    "startLine": 24,
+    "startColumn": 1,
+    "endLine": 32,
+    "endColumn": 1
+   },
+   "attrs": {
+    "declared": true,
+    "async": false,
+    "exported": true
+   }
+  },
+  {
+   "id": "js:function:src/main/webapp/js/order.js#submitOrder",
+   "kind": "JS_FUNCTION",
+   "name": "submitOrder",
+   "qualifiedName": "src/main/webapp/js/order.js#submitOrder",
+   "location": {
+    "file": "src/main/webapp/js/order.js",
+    "startLine": 12,
+    "startColumn": 1,
+    "endLine": 20,
+    "endColumn": 1
+   },
+   "attrs": {
+    "declared": true,
+    "async": false,
+    "exported": true
+   }
+  },
+  {
+   "id": "js:function:src/main/webapp/js/order.js#submitOrder.<anonymous>@14:20",
+   "kind": "JS_FUNCTION",
+   "name": "<anonymous>@14:20",
+   "qualifiedName": "src/main/webapp/js/order.js#submitOrder.<anonymous>@14:20",
+   "location": {
+    "file": "src/main/webapp/js/order.js",
+    "startLine": 14,
+    "startColumn": 1,
+    "endLine": 22,
+    "endColumn": 1
+   },
+   "attrs": {
+    "declared": true,
+    "async": false,
+    "exported": false
+   }
+  },
+  {
+   "id": "js:module:src/main/webapp/js/order.js",
+   "kind": "JS_MODULE",
+   "name": "order.js",
+   "qualifiedName": "src/main/webapp/js/order.js",
+   "location": {
+    "file": "src/main/webapp/js/order.js",
+    "startLine": 1,
+    "startColumn": 1,
+    "endLine": 1,
+    "endColumn": 1
+   },
+   "attrs": {
+    "declared": true
+   }
+  },
+  {
+   "id": "jsp:page:src/main/webapp/WEB-INF/views/common/header.jsp",
+   "kind": "JSP_PAGE",
+   "name": "header.jsp",
+   "qualifiedName": "src/main/webapp/WEB-INF/views/common/header.jsp",
+   "location": {
+    "file": "src/main/webapp/WEB-INF/views/common/header.jsp",
+    "startLine": 1,
+    "startColumn": 1,
+    "endLine": 1,
+    "endColumn": 1
+   },
+   "attrs": {
+    "declared": true
+   }
+  },
+  {
+   "id": "jsp:page:src/main/webapp/WEB-INF/views/order/detail.jsp",
+   "kind": "JSP_PAGE",
+   "name": "detail.jsp",
+   "qualifiedName": "src/main/webapp/WEB-INF/views/order/detail.jsp",
+   "location": {
+    "file": "src/main/webapp/WEB-INF/views/order/detail.jsp",
+    "startLine": 1,
+    "startColumn": 1,
+    "endLine": 1,
+    "endColumn": 1
+   },
+   "attrs": {
+    "declared": true
+   }
+  },
+  {
+   "id": "jsp:page:src/main/webapp/WEB-INF/views/order/list.jsp",
+   "kind": "JSP_PAGE",
+   "name": "list.jsp",
+   "qualifiedName": "src/main/webapp/WEB-INF/views/order/list.jsp",
+   "location": {
+    "file": "src/main/webapp/WEB-INF/views/order/list.jsp",
+    "startLine": 1,
+    "startColumn": 1,
+    "endLine": 1,
+    "endColumn": 1
+   },
+   "attrs": {
+    "declared": true
+   }
+  },
+  {
+   "id": "mybatis:fragment:com.shop.mapper.OrderMapper.orderColumns",
+   "kind": "SQL_FRAGMENT",
+   "name": "orderColumns",
+   "qualifiedName": "com.shop.mapper.OrderMapper.orderColumns",
+   "location": {
+    "file": "src/main/resources/mapper/OrderMapper.xml",
+    "startLine": 5,
+    "startColumn": 1,
+    "endLine": 5,
+    "endColumn": 1
+   },
+   "attrs": {
+    "declared": true
+   }
+  },
+  {
+   "id": "mybatis:mapper:com.shop.mapper.OrderMapper",
+   "kind": "MYBATIS_MAPPER",
+   "name": "OrderMapper",
+   "qualifiedName": "com.shop.mapper.OrderMapper",
+   "location": {
+    "file": "src/main/resources/mapper/OrderMapper.xml",
+    "startLine": 3,
+    "startColumn": 1,
+    "endLine": 3,
+    "endColumn": 1
+   },
+   "attrs": {
+    "declared": true
+   }
+  },
+  {
+   "id": "mybatis:stmt:com.shop.mapper.OrderMapper.callCloseOrder",
+   "kind": "SQL_STATEMENT",
+   "name": "callCloseOrder",
+   "qualifiedName": "com.shop.mapper.OrderMapper.callCloseOrder",
+   "location": {
+    "file": "src/main/resources/mapper/OrderMapper.xml",
+    "startLine": 50,
+    "startColumn": 1,
+    "endLine": 56,
+    "endColumn": 1
+   },
+   "attrs": {
+    "declared": true,
+    "statementType": "CALL",
+    "sql": "{ CALL PKG_ORDER.CLOSE_ORDER(?) }",
+    "dynamic": false,
+    "dialect": "oracle",
+    "namespace": "com.shop.mapper.OrderMapper",
+    "statementId": "callCloseOrder"
+   }
+  },
+  {
+   "id": "mybatis:stmt:com.shop.mapper.OrderMapper.deleteItems",
+   "kind": "SQL_STATEMENT",
+   "name": "deleteItems",
+   "qualifiedName": "com.shop.mapper.OrderMapper.deleteItems",
+   "location": {
+    "file": "src/main/resources/mapper/OrderMapper.xml",
+    "startLine": 56,
+    "startColumn": 1,
+    "endLine": 62,
+    "endColumn": 1
+   },
+   "attrs": {
+    "declared": true,
+    "statementType": "DELETE",
+    "sql": "DELETE FROM ORDER_ITEMS WHERE ORDER_ID = ?",
+    "dynamic": false,
+    "dialect": "oracle",
+    "namespace": "com.shop.mapper.OrderMapper",
+    "statementId": "deleteItems"
+   }
+  },
+  {
+   "id": "mybatis:stmt:com.shop.mapper.OrderMapper.insertItem",
+   "kind": "SQL_STATEMENT",
+   "name": "insertItem",
+   "qualifiedName": "com.shop.mapper.OrderMapper.insertItem",
+   "location": {
+    "file": "src/main/resources/mapper/OrderMapper.xml",
+    "startLine": 40,
+    "startColumn": 1,
+    "endLine": 46,
+    "endColumn": 1
+   },
+   "attrs": {
+    "declared": true,
+    "statementType": "INSERT",
+    "sql": "INSERT INTO ORDER_ITEMS (ITEM_ID, ORDER_ID, PRODUCT_ID, QTY) SELECT ?, ?, P.PRODUCT_ID, ? FROM PRODUCTS P WHERE P.PRODUCT_ID = ?",
+    "dynamic": false,
+    "dialect": "oracle",
+    "namespace": "com.shop.mapper.OrderMapper",
+    "statementId": "insertItem"
+   }
+  },
+  {
+   "id": "mybatis:stmt:com.shop.mapper.OrderMapper.insertOrder",
+   "kind": "SQL_STATEMENT",
+   "name": "insertOrder",
+   "qualifiedName": "com.shop.mapper.OrderMapper.insertOrder",
+   "location": {
+    "file": "src/main/resources/mapper/OrderMapper.xml",
+    "startLine": 30,
+    "startColumn": 1,
+    "endLine": 36,
+    "endColumn": 1
+   },
+   "attrs": {
+    "declared": true,
+    "statementType": "INSERT",
+    "sql": "INSERT INTO ORDERS (ORDER_ID, CUSTOMER_ID, STATUS) VALUES (SEQ_ORDER.NEXTVAL, ?, ?)",
+    "dynamic": false,
+    "dialect": "oracle",
+    "namespace": "com.shop.mapper.OrderMapper",
+    "statementId": "insertOrder"
+   }
+  },
+  {
+   "id": "mybatis:stmt:com.shop.mapper.OrderMapper.selectByDynamicTable",
+   "kind": "SQL_STATEMENT",
+   "name": "selectByDynamicTable",
+   "qualifiedName": "com.shop.mapper.OrderMapper.selectByDynamicTable",
+   "location": {
+    "file": "src/main/resources/mapper/OrderMapper.xml",
+    "startLine": 60,
+    "startColumn": 1,
+    "endLine": 66,
+    "endColumn": 1
+   },
+   "attrs": {
+    "declared": true,
+    "statementType": "SELECT",
+    "sql": "SELECT * FROM __DYNAMIC__ WHERE ID = ?",
+    "dynamic": true,
+    "dialect": "oracle",
+    "namespace": "com.shop.mapper.OrderMapper",
+    "statementId": "selectByDynamicTable"
+   }
+  },
+  {
+   "id": "mybatis:stmt:com.shop.mapper.OrderMapper.selectOrder",
+   "kind": "SQL_STATEMENT",
+   "name": "selectOrder",
+   "qualifiedName": "com.shop.mapper.OrderMapper.selectOrder",
+   "location": {
+    "file": "src/main/resources/mapper/OrderMapper.xml",
+    "startLine": 20,
+    "startColumn": 1,
+    "endLine": 26,
+    "endColumn": 1
+   },
+   "attrs": {
+    "declared": true,
+    "statementType": "SELECT",
+    "sql": "SELECT * FROM ORDERS O JOIN ORDER_ITEMS I ON I.ORDER_ID = O.ORDER_ID WHERE O.ORDER_ID = ?",
+    "dynamic": false,
+    "dialect": "oracle",
+    "namespace": "com.shop.mapper.OrderMapper",
+    "statementId": "selectOrder"
+   }
+  },
+  {
+   "id": "mybatis:stmt:com.shop.mapper.OrderMapper.selectOrders",
+   "kind": "SQL_STATEMENT",
+   "name": "selectOrders",
+   "qualifiedName": "com.shop.mapper.OrderMapper.selectOrders",
+   "location": {
+    "file": "src/main/resources/mapper/OrderMapper.xml",
+    "startLine": 10,
+    "startColumn": 1,
+    "endLine": 16,
+    "endColumn": 1
+   },
+   "attrs": {
+    "declared": true,
+    "statementType": "SELECT",
+    "sql": "SELECT O.ORDER_ID, O.STATUS, C.NAME FROM ORDERS O JOIN CUSTOMERS C ON C.CUSTOMER_ID = O.CUSTOMER_ID",
+    "dynamic": false,
+    "dialect": "oracle",
+    "namespace": "com.shop.mapper.OrderMapper",
+    "statementId": "selectOrders"
+   }
+  },
+  {
+   "id": "mybatis:stmt:com.shop.mapper.SettlementMapper.mergeSettlement",
+   "kind": "SQL_STATEMENT",
+   "name": "mergeSettlement",
+   "qualifiedName": "com.shop.mapper.SettlementMapper.mergeSettlement",
+   "location": {
+    "file": "src/main/resources/mapper/SettlementMapper.xml",
+    "startLine": 8,
+    "startColumn": 1,
+    "endLine": 14,
+    "endColumn": 1
+   },
+   "attrs": {
+    "declared": true,
+    "statementType": "MERGE",
+    "sql": "MERGE INTO SETTLEMENTS S USING (SELECT CUSTOMER_ID, COUNT(*) CNT FROM ORDERS GROUP BY CUSTOMER_ID) O ON (S.CUSTOMER_ID = O.CUSTOMER_ID) WHEN MATCHED THEN UPDATE SET S.CNT = O.CNT WHEN NOT MATCHED THEN INSERT (CUSTOMER_ID, CNT) VALUES (O.CUSTOMER_ID, O.CNT)",
+    "dynamic": false,
+    "dialect": "oracle",
+    "namespace": "com.shop.mapper.SettlementMapper",
+    "statementId": "mergeSettlement"
+   }
+  },
+  {
+   "id": "spring:bean:orderServiceImpl",
+   "kind": "SPRING_BEAN",
+   "name": "orderServiceImpl",
+   "qualifiedName": "orderServiceImpl",
+   "location": {
+    "file": "src/main/java/com/shop/service/OrderServiceImpl.java",
+    "startLine": 14,
+    "startColumn": 1,
+    "endLine": 14,
+    "endColumn": 1
+   },
+   "attrs": {
+    "declared": true
+   }
+  },
+  {
+   "id": "sql:stmt:PKG_ORDER.CLOSE_ORDER:12",
+   "kind": "SQL_STATEMENT",
+   "name": "INSERT@12",
+   "qualifiedName": "PKG_ORDER.CLOSE_ORDER:12",
+   "location": {
+    "file": "ddl/pkg_order.pkb",
+    "startLine": 12,
+    "startColumn": 1,
+    "endLine": 16,
+    "endColumn": 1
+   },
+   "attrs": {
+    "declared": true,
+    "statementType": "INSERT",
+    "sql": "INSERT INTO ORDER_HISTORY (ORDER_ID, CLOSED_AT) SELECT ORDER_ID, SYSDATE FROM ORDERS WHERE ORDER_ID = P_ORDER_ID",
+    "dynamic": false,
+    "dialect": "oracle"
+   }
+  },
+  {
+   "id": "sql:stmt:PKG_ORDER.CLOSE_ORDER:8",
+   "kind": "SQL_STATEMENT",
+   "name": "UPDATE@8",
+   "qualifiedName": "PKG_ORDER.CLOSE_ORDER:8",
+   "location": {
+    "file": "ddl/pkg_order.pkb",
+    "startLine": 8,
+    "startColumn": 1,
+    "endLine": 10,
+    "endColumn": 1
+   },
+   "attrs": {
+    "declared": true,
+    "statementType": "UPDATE",
+    "sql": "UPDATE ORDERS SET STATUS = 'CLOSED' WHERE ORDER_ID = P_ORDER_ID",
+    "dynamic": false,
+    "dialect": "oracle"
+   }
+  },
+  {
+   "id": "unresolved:java-call:paymentGateway.charge",
+   "kind": "UNRESOLVED",
+   "name": "paymentGateway.charge",
+   "qualifiedName": "paymentGateway.charge",
+   "location": null,
+   "attrs": {
+    "declared": true
+   }
+  },
+  {
+   "id": "unresolved:sql-dynamic:mybatis:stmt:com.shop.mapper.OrderMapper.selectByDynamicTable",
+   "kind": "UNRESOLVED",
+   "name": "__DYNAMIC__",
+   "qualifiedName": "unresolved:sql-dynamic:mybatis:stmt:com.shop.mapper.OrderMapper.selectByDynamicTable",
+   "location": {
+    "file": "src/main/resources/mapper/OrderMapper.xml",
+    "startLine": 61,
+    "startColumn": 1,
+    "endLine": 61,
+    "endColumn": 1
+   },
+   "attrs": {
+    "declared": true
+   }
+  }
+ ],
+ "edges": [
+  {
+   "from": "batch:job:settlementJob",
+   "to": "batch:step:settlementJob/loadStep",
+   "kind": "CONTAINS",
+   "confidence": "RESOLVED",
+   "location": null,
+   "attrs": {}
+  },
+  {
+   "from": "batch:job:settlementJob",
+   "to": "batch:step:settlementJob/mergeStep",
+   "kind": "CONTAINS",
+   "confidence": "RESOLVED",
+   "location": null,
+   "attrs": {}
+  },
+  {
+   "from": "batch:step:settlementJob/loadStep",
+   "to": "batch:step:settlementJob/mergeStep",
+   "kind": "NEXT",
+   "confidence": "RESOLVED",
+   "location": null,
+   "attrs": {
+    "on": "COMPLETED"
+   }
+  },
+  {
+   "from": "batch:step:settlementJob/loadStep",
+   "to": "java:method:com.shop.batch.SettlementTasklet#execute(org.springframework.batch.core.StepContribution,org.springframework.batch.core.scope.context.ChunkContext)",
+   "kind": "USES",
+   "confidence": "RESOLVED",
+   "location": null,
+   "attrs": {
+    "role": "tasklet"
+   }
+  },
+  {
+   "from": "batch:step:settlementJob/mergeStep",
+   "to": "mybatis:stmt:com.shop.mapper.SettlementMapper.mergeSettlement",
+   "kind": "EXECUTES",
+   "confidence": "RESOLVED",
+   "location": null,
+   "attrs": {}
+  },
+  {
+   "from": "db:package:PKG_ORDER",
+   "to": "db:routine:PKG_ORDER.CLOSE_ORDER",
+   "kind": "CONTAINS",
+   "confidence": "RESOLVED",
+   "location": null,
+   "attrs": {}
+  },
+  {
+   "from": "db:package:PKG_ORDER",
+   "to": "db:routine:PKG_ORDER.WRITE_LOG",
+   "kind": "CONTAINS",
+   "confidence": "RESOLVED",
+   "location": null,
+   "attrs": {}
+  },
+  {
+   "from": "db:routine:PKG_ORDER.CLOSE_ORDER",
+   "to": "db:routine:PKG_ORDER.WRITE_LOG",
+   "kind": "CALLS",
+   "confidence": "RESOLVED",
+   "location": {
+    "file": "ddl/pkg_order.pkb",
+    "startLine": 18,
+    "startColumn": 1,
+    "endLine": 18,
+    "endColumn": 1
+   },
+   "attrs": {}
+  },
+  {
+   "from": "db:routine:PKG_ORDER.CLOSE_ORDER",
+   "to": "sql:stmt:PKG_ORDER.CLOSE_ORDER:12",
+   "kind": "CONTAINS",
+   "confidence": "RESOLVED",
+   "location": null,
+   "attrs": {}
+  },
+  {
+   "from": "db:routine:PKG_ORDER.CLOSE_ORDER",
+   "to": "sql:stmt:PKG_ORDER.CLOSE_ORDER:8",
+   "kind": "CONTAINS",
+   "confidence": "RESOLVED",
+   "location": null,
+   "attrs": {}
+  },
+  {
+   "from": "db:table:COUPONS",
+   "to": "db:column:COUPONS.CODE",
+   "kind": "CONTAINS",
+   "confidence": "RESOLVED",
+   "location": null,
+   "attrs": {}
+  },
+  {
+   "from": "db:table:COUPONS",
+   "to": "db:column:COUPONS.COUPON_ID",
+   "kind": "CONTAINS",
+   "confidence": "RESOLVED",
+   "location": null,
+   "attrs": {}
+  },
+  {
+   "from": "db:table:CUSTOMERS",
+   "to": "db:column:CUSTOMERS.CUSTOMER_ID",
+   "kind": "CONTAINS",
+   "confidence": "RESOLVED",
+   "location": null,
+   "attrs": {}
+  },
+  {
+   "from": "db:table:CUSTOMERS",
+   "to": "db:column:CUSTOMERS.NAME",
+   "kind": "CONTAINS",
+   "confidence": "RESOLVED",
+   "location": null,
+   "attrs": {}
+  },
+  {
+   "from": "db:table:ORDERS",
+   "to": "db:column:ORDERS.CREATED_AT",
+   "kind": "CONTAINS",
+   "confidence": "RESOLVED",
+   "location": null,
+   "attrs": {}
+  },
+  {
+   "from": "db:table:ORDERS",
+   "to": "db:column:ORDERS.CUSTOMER_ID",
+   "kind": "CONTAINS",
+   "confidence": "RESOLVED",
+   "location": null,
+   "attrs": {}
+  },
+  {
+   "from": "db:table:ORDERS",
+   "to": "db:column:ORDERS.ORDER_ID",
+   "kind": "CONTAINS",
+   "confidence": "RESOLVED",
+   "location": null,
+   "attrs": {}
+  },
+  {
+   "from": "db:table:ORDERS",
+   "to": "db:column:ORDERS.STATUS",
+   "kind": "CONTAINS",
+   "confidence": "RESOLVED",
+   "location": null,
+   "attrs": {}
+  },
+  {
+   "from": "db:table:ORDERS",
+   "to": "db:table:CUSTOMERS",
+   "kind": "JOINS",
+   "confidence": "RESOLVED",
+   "location": {
+    "file": "src/main/resources/mapper/OrderMapper.xml",
+    "startLine": 12,
+    "startColumn": 1,
+    "endLine": 12,
+    "endColumn": 1
+   },
+   "attrs": {
+    "leftColumns": [
+     "CUSTOMER_ID"
+    ],
+    "rightColumns": [
+     "CUSTOMER_ID"
+    ],
+    "statement": "mybatis:stmt:com.shop.mapper.OrderMapper.selectOrders"
+   }
+  },
+  {
+   "from": "db:table:ORDERS",
+   "to": "db:table:CUSTOMERS",
+   "kind": "REFERENCES",
+   "confidence": "RESOLVED",
+   "location": {
+    "file": "ddl/schema.sql",
+    "startLine": 6,
+    "startColumn": 1,
+    "endLine": 6,
+    "endColumn": 1
+   },
+   "attrs": {
+    "columns": [
+     "CUSTOMER_ID"
+    ],
+    "refColumns": [
+     "CUSTOMER_ID"
+    ],
+    "constraint": "FK_ORDERS_CUSTOMER",
+    "source": "DDL"
+   }
+  },
+  {
+   "from": "db:table:ORDER_HISTORY",
+   "to": "db:table:ORDERS",
+   "kind": "REFERENCES",
+   "confidence": "INFERRED",
+   "location": {
+    "file": "ddl/pkg_order.pkb",
+    "startLine": 16,
+    "startColumn": 1,
+    "endLine": 16,
+    "endColumn": 1
+   },
+   "attrs": {
+    "columns": [
+     "ORDER_ID"
+    ],
+    "refColumns": [
+     "ORDER_ID"
+    ],
+    "source": "INFERRED",
+    "evidenceCount": 1
+   }
+  },
+  {
+   "from": "db:table:ORDER_ITEMS",
+   "to": "db:column:ORDER_ITEMS.ITEM_ID",
+   "kind": "CONTAINS",
+   "confidence": "RESOLVED",
+   "location": null,
+   "attrs": {}
+  },
+  {
+   "from": "db:table:ORDER_ITEMS",
+   "to": "db:column:ORDER_ITEMS.ORDER_ID",
+   "kind": "CONTAINS",
+   "confidence": "RESOLVED",
+   "location": null,
+   "attrs": {}
+  },
+  {
+   "from": "db:table:ORDER_ITEMS",
+   "to": "db:column:ORDER_ITEMS.PRODUCT_ID",
+   "kind": "CONTAINS",
+   "confidence": "RESOLVED",
+   "location": null,
+   "attrs": {}
+  },
+  {
+   "from": "db:table:ORDER_ITEMS",
+   "to": "db:column:ORDER_ITEMS.QTY",
+   "kind": "CONTAINS",
+   "confidence": "RESOLVED",
+   "location": null,
+   "attrs": {}
+  },
+  {
+   "from": "db:table:ORDER_ITEMS",
+   "to": "db:table:ORDERS",
+   "kind": "REFERENCES",
+   "confidence": "RESOLVED",
+   "location": {
+    "file": "ddl/schema.sql",
+    "startLine": 15,
+    "startColumn": 1,
+    "endLine": 15,
+    "endColumn": 1
+   },
+   "attrs": {
+    "columns": [
+     "ORDER_ID"
+    ],
+    "refColumns": [
+     "ORDER_ID"
+    ],
+    "constraint": "FK_ITEMS_ORDER",
+    "source": "DDL"
+   }
+  },
+  {
+   "from": "db:table:ORDER_ITEMS",
+   "to": "db:table:PRODUCTS",
+   "kind": "REFERENCES",
+   "confidence": "INFERRED",
+   "location": {
+    "file": "src/main/resources/mapper/OrderMapper.xml",
+    "startLine": 41,
+    "startColumn": 1,
+    "endLine": 41,
+    "endColumn": 1
+   },
+   "attrs": {
+    "columns": [
+     "PRODUCT_ID"
+    ],
+    "refColumns": [
+     "PRODUCT_ID"
+    ],
+    "source": "INFERRED",
+    "evidenceCount": 2
+   }
+  },
+  {
+   "from": "db:table:PRODUCTS",
+   "to": "db:column:PRODUCTS.NAME",
+   "kind": "CONTAINS",
+   "confidence": "RESOLVED",
+   "location": null,
+   "attrs": {}
+  },
+  {
+   "from": "db:table:PRODUCTS",
+   "to": "db:column:PRODUCTS.PRICE",
+   "kind": "CONTAINS",
+   "confidence": "RESOLVED",
+   "location": null,
+   "attrs": {}
+  },
+  {
+   "from": "db:table:PRODUCTS",
+   "to": "db:column:PRODUCTS.PRODUCT_ID",
+   "kind": "CONTAINS",
+   "confidence": "RESOLVED",
+   "location": null,
+   "attrs": {}
+  },
+  {
+   "from": "db:table:SETTLEMENTS",
+   "to": "db:column:SETTLEMENTS.CNT",
+   "kind": "CONTAINS",
+   "confidence": "RESOLVED",
+   "location": null,
+   "attrs": {}
+  },
+  {
+   "from": "db:table:SETTLEMENTS",
+   "to": "db:column:SETTLEMENTS.CUSTOMER_ID",
+   "kind": "CONTAINS",
+   "confidence": "RESOLVED",
+   "location": null,
+   "attrs": {}
+  },
+  {
+   "from": "http:endpoint:GET /orders",
+   "to": "java:method:com.shop.web.OrderController#list(org.springframework.ui.Model)",
+   "kind": "ROUTES_TO",
+   "confidence": "RESOLVED",
+   "location": {
+    "file": "src/main/java/com/shop/web/OrderController.java",
+    "startLine": 19,
+    "startColumn": 1,
+    "endLine": 19,
+    "endColumn": 1
+   },
+   "attrs": {}
+  },
+  {
+   "from": "http:endpoint:GET /orders/{id}",
+   "to": "java:method:com.shop.web.OrderController#detail(long)",
+   "kind": "ROUTES_TO",
+   "confidence": "RESOLVED",
+   "location": {
+    "file": "src/main/java/com/shop/web/OrderController.java",
+    "startLine": 29,
+    "startColumn": 1,
+    "endLine": 29,
+    "endColumn": 1
+   },
+   "attrs": {}
+  },
+  {
+   "from": "http:endpoint:POST /orders",
+   "to": "java:method:com.shop.web.OrderController#create(com.shop.domain.Order)",
+   "kind": "ROUTES_TO",
+   "confidence": "RESOLVED",
+   "location": {
+    "file": "src/main/java/com/shop/web/OrderController.java",
+    "startLine": 39,
+    "startColumn": 1,
+    "endLine": 39,
+    "endColumn": 1
+   },
+   "attrs": {}
+  },
+  {
+   "from": "http:endpoint:POST /orders/{id}/close",
+   "to": "java:method:com.shop.web.OrderController#close(long)",
+   "kind": "ROUTES_TO",
+   "confidence": "RESOLVED",
+   "location": {
+    "file": "src/main/java/com/shop/web/OrderController.java",
+    "startLine": 49,
+    "startColumn": 1,
+    "endLine": 49,
+    "endColumn": 1
+   },
+   "attrs": {}
+  },
+  {
+   "from": "http:request:GET /orders/{*}@src/main/webapp/WEB-INF/views/order/list.jsp:20",
+   "to": "http:endpoint:GET /orders/{id}",
+   "kind": "MATCHES",
+   "confidence": "INFERRED",
+   "location": null,
+   "attrs": {}
+  },
+  {
+   "from": "http:request:GET /orders@src/main/webapp/js/order.js:5",
+   "to": "http:endpoint:GET /orders",
+   "kind": "MATCHES",
+   "confidence": "RESOLVED",
+   "location": null,
+   "attrs": {}
+  },
+  {
+   "from": "http:request:POST /orders/{*}/close@src/main/webapp/WEB-INF/views/order/detail.jsp:15",
+   "to": "http:endpoint:POST /orders/{id}/close",
+   "kind": "MATCHES",
+   "confidence": "INFERRED",
+   "location": null,
+   "attrs": {}
+  },
+  {
+   "from": "http:request:POST /orders@src/main/webapp/js/order.js:13",
+   "to": "http:endpoint:POST /orders",
+   "kind": "MATCHES",
+   "confidence": "RESOLVED",
+   "location": null,
+   "attrs": {}
+  },
+  {
+   "from": "java:method:com.shop.batch.SettlementTasklet#execute(org.springframework.batch.core.StepContribution,org.springframework.batch.core.scope.context.ChunkContext)",
+   "to": "java:method:com.shop.mapper.OrderMapper#selectOrders()",
+   "kind": "CALLS",
+   "confidence": "RESOLVED",
+   "location": {
+    "file": "src/main/java/com/shop/batch/SettlementTasklet.java",
+    "startLine": 20,
+    "startColumn": 1,
+    "endLine": 20,
+    "endColumn": 1
+   },
+   "attrs": {
+    "callType": "interface"
+   }
+  },
+  {
+   "from": "java:method:com.shop.mapper.OrderMapper#callCloseOrder(long)",
+   "to": "mybatis:stmt:com.shop.mapper.OrderMapper.callCloseOrder",
+   "kind": "EXECUTES",
+   "confidence": "RESOLVED",
+   "location": null,
+   "attrs": {}
+  },
+  {
+   "from": "java:method:com.shop.mapper.OrderMapper#deleteItems(long)",
+   "to": "mybatis:stmt:com.shop.mapper.OrderMapper.deleteItems",
+   "kind": "EXECUTES",
+   "confidence": "RESOLVED",
+   "location": null,
+   "attrs": {}
+  },
+  {
+   "from": "java:method:com.shop.mapper.OrderMapper#insertItem(com.shop.domain.OrderItem)",
+   "to": "mybatis:stmt:com.shop.mapper.OrderMapper.insertItem",
+   "kind": "EXECUTES",
+   "confidence": "RESOLVED",
+   "location": null,
+   "attrs": {}
+  },
+  {
+   "from": "java:method:com.shop.mapper.OrderMapper#insertOrder(com.shop.domain.Order)",
+   "to": "mybatis:stmt:com.shop.mapper.OrderMapper.insertOrder",
+   "kind": "EXECUTES",
+   "confidence": "RESOLVED",
+   "location": null,
+   "attrs": {}
+  },
+  {
+   "from": "java:method:com.shop.mapper.OrderMapper#selectOrder(long)",
+   "to": "mybatis:stmt:com.shop.mapper.OrderMapper.selectOrder",
+   "kind": "EXECUTES",
+   "confidence": "RESOLVED",
+   "location": null,
+   "attrs": {}
+  },
+  {
+   "from": "java:method:com.shop.mapper.OrderMapper#selectOrders()",
+   "to": "mybatis:stmt:com.shop.mapper.OrderMapper.selectOrders",
+   "kind": "EXECUTES",
+   "confidence": "RESOLVED",
+   "location": null,
+   "attrs": {}
+  },
+  {
+   "from": "java:method:com.shop.service.OrderServiceImpl#closeOrder(long)",
+   "to": "java:method:com.shop.mapper.OrderMapper#callCloseOrder(long)",
+   "kind": "CALLS",
+   "confidence": "RESOLVED",
+   "location": {
+    "file": "src/main/java/com/shop/service/OrderServiceImpl.java",
+    "startLine": 52,
+    "startColumn": 1,
+    "endLine": 52,
+    "endColumn": 1
+   },
+   "attrs": {
+    "callType": "interface"
+   }
+  },
+  {
+   "from": "java:method:com.shop.service.OrderServiceImpl#closeOrder(long)",
+   "to": "java:method:com.shop.mapper.OrderMapper#deleteItems(long)",
+   "kind": "CALLS",
+   "confidence": "RESOLVED",
+   "location": {
+    "file": "src/main/java/com/shop/service/OrderServiceImpl.java",
+    "startLine": 53,
+    "startColumn": 1,
+    "endLine": 53,
+    "endColumn": 1
+   },
+   "attrs": {
+    "callType": "interface"
+   }
+  },
+  {
+   "from": "java:method:com.shop.service.OrderServiceImpl#closeOrder(long)",
+   "to": "java:method:com.shop.service.OrderService#closeOrder(long)",
+   "kind": "OVERRIDES",
+   "confidence": "RESOLVED",
+   "location": null,
+   "attrs": {}
+  },
+  {
+   "from": "java:method:com.shop.service.OrderServiceImpl#findOrders()",
+   "to": "java:method:com.shop.legacy.LegacyDao#find()",
+   "kind": "CALLS",
+   "confidence": "UNRESOLVED",
+   "location": {
+    "file": "src/main/java/com/shop/service/OrderServiceImpl.java",
+    "startLine": 26,
+    "startColumn": 1,
+    "endLine": 26,
+    "endColumn": 1
+   },
+   "attrs": {}
+  },
+  {
+   "from": "java:method:com.shop.service.OrderServiceImpl#findOrders()",
+   "to": "java:method:com.shop.mapper.OrderMapper#selectOrders()",
+   "kind": "CALLS",
+   "confidence": "RESOLVED",
+   "location": {
+    "file": "src/main/java/com/shop/service/OrderServiceImpl.java",
+    "startLine": 24,
+    "startColumn": 1,
+    "endLine": 24,
+    "endColumn": 1
+   },
+   "attrs": {
+    "callType": "interface"
+   }
+  },
+  {
+   "from": "java:method:com.shop.service.OrderServiceImpl#findOrders()",
+   "to": "java:method:com.shop.service.OrderService#findOrders()",
+   "kind": "OVERRIDES",
+   "confidence": "RESOLVED",
+   "location": null,
+   "attrs": {}
+  },
+  {
+   "from": "java:method:com.shop.service.OrderServiceImpl#placeOrder(com.shop.domain.Order)",
+   "to": "java:field:com.shop.service.OrderServiceImpl#orderMapper",
+   "kind": "ACCESSES",
+   "confidence": "RESOLVED",
+   "location": {
+    "file": "src/main/java/com/shop/service/OrderServiceImpl.java",
+    "startLine": 33,
+    "startColumn": 1,
+    "endLine": 33,
+    "endColumn": 1
+   },
+   "attrs": {
+    "access": "read"
+   }
+  },
+  {
+   "from": "java:method:com.shop.service.OrderServiceImpl#placeOrder(com.shop.domain.Order)",
+   "to": "java:method:com.shop.mapper.OrderMapper#insertItem(com.shop.domain.OrderItem)",
+   "kind": "CALLS",
+   "confidence": "RESOLVED",
+   "location": {
+    "file": "src/main/java/com/shop/service/OrderServiceImpl.java",
+    "startLine": 35,
+    "startColumn": 1,
+    "endLine": 35,
+    "endColumn": 1
+   },
+   "attrs": {
+    "callType": "interface"
+   }
+  },
+  {
+   "from": "java:method:com.shop.service.OrderServiceImpl#placeOrder(com.shop.domain.Order)",
+   "to": "java:method:com.shop.mapper.OrderMapper#insertItem(com.shop.domain.OrderItem)",
+   "kind": "CALLS",
+   "confidence": "RESOLVED",
+   "location": {
+    "file": "src/main/java/com/shop/service/OrderServiceImpl.java",
+    "startLine": 38,
+    "startColumn": 1,
+    "endLine": 38,
+    "endColumn": 1
+   },
+   "attrs": {
+    "callType": "interface"
+   }
+  },
+  {
+   "from": "java:method:com.shop.service.OrderServiceImpl#placeOrder(com.shop.domain.Order)",
+   "to": "java:method:com.shop.mapper.OrderMapper#insertOrder(com.shop.domain.Order)",
+   "kind": "CALLS",
+   "confidence": "RESOLVED",
+   "location": {
+    "file": "src/main/java/com/shop/service/OrderServiceImpl.java",
+    "startLine": 33,
+    "startColumn": 1,
+    "endLine": 33,
+    "endColumn": 1
+   },
+   "attrs": {
+    "callType": "interface"
+   }
+  },
+  {
+   "from": "java:method:com.shop.service.OrderServiceImpl#placeOrder(com.shop.domain.Order)",
+   "to": "java:method:com.shop.service.BaseService#log(java.lang.String)",
+   "kind": "CALLS",
+   "confidence": "RESOLVED",
+   "location": {
+    "file": "src/main/java/com/shop/service/OrderServiceImpl.java",
+    "startLine": 40,
+    "startColumn": 1,
+    "endLine": 40,
+    "endColumn": 1
+   },
+   "attrs": {
+    "callType": "super"
+   }
+  },
+  {
+   "from": "java:method:com.shop.service.OrderServiceImpl#placeOrder(com.shop.domain.Order)",
+   "to": "java:method:com.shop.service.OrderService#placeOrder(com.shop.domain.Order)",
+   "kind": "OVERRIDES",
+   "confidence": "RESOLVED",
+   "location": null,
+   "attrs": {}
+  },
+  {
+   "from": "java:method:com.shop.service.OrderServiceImpl#placeOrder(com.shop.domain.Order)",
+   "to": "java:method:com.shop.service.OrderServiceImpl#retry(com.shop.domain.Order)",
+   "kind": "CALLS",
+   "confidence": "RESOLVED",
+   "location": {
+    "file": "src/main/java/com/shop/service/OrderServiceImpl.java",
+    "startLine": 44,
+    "startColumn": 1,
+    "endLine": 44,
+    "endColumn": 1
+   },
+   "attrs": {
+    "callType": "virtual"
+   }
+  },
+  {
+   "from": "java:method:com.shop.service.OrderServiceImpl#placeOrder(com.shop.domain.Order)",
+   "to": "java:method:com.shop.service.OrderServiceImpl#validate(com.shop.domain.Order)",
+   "kind": "CALLS",
+   "confidence": "RESOLVED",
+   "location": {
+    "file": "src/main/java/com/shop/service/OrderServiceImpl.java",
+    "startLine": 31,
+    "startColumn": 1,
+    "endLine": 31,
+    "endColumn": 1
+   },
+   "attrs": {
+    "callType": "virtual"
+   }
+  },
+  {
+   "from": "java:method:com.shop.service.OrderServiceImpl#placeOrder(com.shop.domain.Order)",
+   "to": "unresolved:java-call:paymentGateway.charge",
+   "kind": "CALLS",
+   "confidence": "UNRESOLVED",
+   "location": {
+    "file": "src/main/java/com/shop/service/OrderServiceImpl.java",
+    "startLine": 36,
+    "startColumn": 1,
+    "endLine": 36,
+    "endColumn": 1
+   },
+   "attrs": {
+    "callType": "virtual"
+   }
+  },
+  {
+   "from": "java:method:com.shop.service.OrderServiceImpl#retry(com.shop.domain.Order)",
+   "to": "java:method:com.shop.service.OrderServiceImpl#placeOrder(com.shop.domain.Order)",
+   "kind": "CALLS",
+   "confidence": "RESOLVED",
+   "location": {
+    "file": "src/main/java/com/shop/service/OrderServiceImpl.java",
+    "startLine": 72,
+    "startColumn": 1,
+    "endLine": 72,
+    "endColumn": 1
+   },
+   "attrs": {
+    "callType": "virtual"
+   }
+  },
+  {
+   "from": "java:method:com.shop.web.OrderController#close(long)",
+   "to": "java:method:com.shop.service.OrderService#closeOrder(long)",
+   "kind": "CALLS",
+   "confidence": "RESOLVED",
+   "location": {
+    "file": "src/main/java/com/shop/web/OrderController.java",
+    "startLine": 52,
+    "startColumn": 1,
+    "endLine": 52,
+    "endColumn": 1
+   },
+   "attrs": {
+    "callType": "interface"
+   }
+  },
+  {
+   "from": "java:method:com.shop.web.OrderController#create(com.shop.domain.Order)",
+   "to": "java:method:com.shop.service.OrderService#placeOrder(com.shop.domain.Order)",
+   "kind": "CALLS",
+   "confidence": "RESOLVED",
+   "location": {
+    "file": "src/main/java/com/shop/web/OrderController.java",
+    "startLine": 42,
+    "startColumn": 1,
+    "endLine": 42,
+    "endColumn": 1
+   },
+   "attrs": {
+    "callType": "interface"
+   }
+  },
+  {
+   "from": "java:method:com.shop.web.OrderController#create(com.shop.domain.Order)",
+   "to": "java:type:com.shop.domain.Order",
+   "kind": "INSTANTIATES",
+   "confidence": "RESOLVED",
+   "location": {
+    "file": "src/main/java/com/shop/web/OrderController.java",
+    "startLine": 41,
+    "startColumn": 1,
+    "endLine": 41,
+    "endColumn": 1
+   },
+   "attrs": {}
+  },
+  {
+   "from": "java:method:com.shop.web.OrderController#detail(long)",
+   "to": "java:method:com.shop.service.OrderService#findOrders()",
+   "kind": "CALLS",
+   "confidence": "RESOLVED",
+   "location": {
+    "file": "src/main/java/com/shop/web/OrderController.java",
+    "startLine": 32,
+    "startColumn": 1,
+    "endLine": 32,
+    "endColumn": 1
+   },
+   "attrs": {
+    "callType": "interface"
+   }
+  },
+  {
+   "from": "java:method:com.shop.web.OrderController#detail(long)",
+   "to": "jsp:page:src/main/webapp/WEB-INF/views/order/detail.jsp",
+   "kind": "RENDERS",
+   "confidence": "RESOLVED",
+   "location": {
+    "file": "src/main/java/com/shop/web/OrderController.java",
+    "startLine": 34,
+    "startColumn": 1,
+    "endLine": 34,
+    "endColumn": 1
+   },
+   "attrs": {}
+  },
+  {
+   "from": "java:method:com.shop.web.OrderController#list(org.springframework.ui.Model)",
+   "to": "java:method:com.shop.service.OrderService#findOrders()",
+   "kind": "CALLS",
+   "confidence": "RESOLVED",
+   "location": {
+    "file": "src/main/java/com/shop/web/OrderController.java",
+    "startLine": 22,
+    "startColumn": 1,
+    "endLine": 22,
+    "endColumn": 1
+   },
+   "attrs": {
+    "callType": "interface"
+   }
+  },
+  {
+   "from": "java:method:com.shop.web.OrderController#list(org.springframework.ui.Model)",
+   "to": "jsp:page:src/main/webapp/WEB-INF/views/order/list.jsp",
+   "kind": "RENDERS",
+   "confidence": "RESOLVED",
+   "location": {
+    "file": "src/main/java/com/shop/web/OrderController.java",
+    "startLine": 24,
+    "startColumn": 1,
+    "endLine": 24,
+    "endColumn": 1
+   },
+   "attrs": {}
+  },
+  {
+   "from": "java:package:com.shop.batch",
+   "to": "java:type:com.shop.batch.SettlementTasklet",
+   "kind": "CONTAINS",
+   "confidence": "RESOLVED",
+   "location": null,
+   "attrs": {}
+  },
+  {
+   "from": "java:package:com.shop.domain",
+   "to": "java:type:com.shop.domain.Order",
+   "kind": "CONTAINS",
+   "confidence": "RESOLVED",
+   "location": null,
+   "attrs": {}
+  },
+  {
+   "from": "java:package:com.shop.domain",
+   "to": "java:type:com.shop.domain.OrderItem",
+   "kind": "CONTAINS",
+   "confidence": "RESOLVED",
+   "location": null,
+   "attrs": {}
+  },
+  {
+   "from": "java:package:com.shop.domain",
+   "to": "java:type:com.shop.domain.OrderStatus",
+   "kind": "CONTAINS",
+   "confidence": "RESOLVED",
+   "location": null,
+   "attrs": {}
+  },
+  {
+   "from": "java:package:com.shop.mapper",
+   "to": "java:type:com.shop.mapper.OrderMapper",
+   "kind": "CONTAINS",
+   "confidence": "RESOLVED",
+   "location": null,
+   "attrs": {}
+  },
+  {
+   "from": "java:package:com.shop.service",
+   "to": "java:type:com.shop.service.BaseService",
+   "kind": "CONTAINS",
+   "confidence": "RESOLVED",
+   "location": null,
+   "attrs": {}
+  },
+  {
+   "from": "java:package:com.shop.service",
+   "to": "java:type:com.shop.service.OrderService",
+   "kind": "CONTAINS",
+   "confidence": "RESOLVED",
+   "location": null,
+   "attrs": {}
+  },
+  {
+   "from": "java:package:com.shop.service",
+   "to": "java:type:com.shop.service.OrderServiceImpl",
+   "kind": "CONTAINS",
+   "confidence": "RESOLVED",
+   "location": null,
+   "attrs": {}
+  },
+  {
+   "from": "java:package:com.shop.web",
+   "to": "java:type:com.shop.web.OrderController",
+   "kind": "CONTAINS",
+   "confidence": "RESOLVED",
+   "location": null,
+   "attrs": {}
+  },
+  {
+   "from": "java:type:com.shop.batch.SettlementTasklet",
+   "to": "java:method:com.shop.batch.SettlementTasklet#execute(org.springframework.batch.core.StepContribution,org.springframework.batch.core.scope.context.ChunkContext)",
+   "kind": "CONTAINS",
+   "confidence": "RESOLVED",
+   "location": null,
+   "attrs": {}
+  },
+  {
+   "from": "java:type:com.shop.batch.SettlementTasklet",
+   "to": "java:type:com.shop.mapper.OrderMapper",
+   "kind": "ASSOCIATES",
+   "confidence": "RESOLVED",
+   "location": null,
+   "attrs": {
+    "field": "orderMapper",
+    "multiplicity": "1"
+   }
+  },
+  {
+   "from": "java:type:com.shop.batch.SettlementTasklet",
+   "to": "java:type:org.springframework.batch.core.step.tasklet.Tasklet",
+   "kind": "IMPLEMENTS",
+   "confidence": "RESOLVED",
+   "location": null,
+   "attrs": {}
+  },
+  {
+   "from": "java:type:com.shop.domain.Order",
+   "to": "java:field:com.shop.domain.Order#id",
+   "kind": "CONTAINS",
+   "confidence": "RESOLVED",
+   "location": null,
+   "attrs": {}
+  },
+  {
+   "from": "java:type:com.shop.domain.Order",
+   "to": "java:field:com.shop.domain.Order#items",
+   "kind": "CONTAINS",
+   "confidence": "RESOLVED",
+   "location": null,
+   "attrs": {}
+  },
+  {
+   "from": "java:type:com.shop.domain.Order",
+   "to": "java:field:com.shop.domain.Order#status",
+   "kind": "CONTAINS",
+   "confidence": "RESOLVED",
+   "location": null,
+   "attrs": {}
+  },
+  {
+   "from": "java:type:com.shop.domain.Order",
+   "to": "java:method:com.shop.domain.Order#<init>()",
+   "kind": "CONTAINS",
+   "confidence": "RESOLVED",
+   "location": null,
+   "attrs": {}
+  },
+  {
+   "from": "java:type:com.shop.domain.Order",
+   "to": "java:type:com.shop.domain.OrderItem",
+   "kind": "ASSOCIATES",
+   "confidence": "RESOLVED",
+   "location": null,
+   "attrs": {
+    "field": "items",
+    "multiplicity": "*"
+   }
+  },
+  {
+   "from": "java:type:com.shop.domain.Order",
+   "to": "java:type:com.shop.domain.OrderStatus",
+   "kind": "ASSOCIATES",
+   "confidence": "RESOLVED",
+   "location": null,
+   "attrs": {
+    "field": "status",
+    "multiplicity": "1"
+   }
+  },
+  {
+   "from": "java:type:com.shop.mapper.OrderMapper",
+   "to": "java:method:com.shop.mapper.OrderMapper#callCloseOrder(long)",
+   "kind": "CONTAINS",
+   "confidence": "RESOLVED",
+   "location": null,
+   "attrs": {}
+  },
+  {
+   "from": "java:type:com.shop.mapper.OrderMapper",
+   "to": "java:method:com.shop.mapper.OrderMapper#deleteItems(long)",
+   "kind": "CONTAINS",
+   "confidence": "RESOLVED",
+   "location": null,
+   "attrs": {}
+  },
+  {
+   "from": "java:type:com.shop.mapper.OrderMapper",
+   "to": "java:method:com.shop.mapper.OrderMapper#insertItem(com.shop.domain.OrderItem)",
+   "kind": "CONTAINS",
+   "confidence": "RESOLVED",
+   "location": null,
+   "attrs": {}
+  },
+  {
+   "from": "java:type:com.shop.mapper.OrderMapper",
+   "to": "java:method:com.shop.mapper.OrderMapper#insertOrder(com.shop.domain.Order)",
+   "kind": "CONTAINS",
+   "confidence": "RESOLVED",
+   "location": null,
+   "attrs": {}
+  },
+  {
+   "from": "java:type:com.shop.mapper.OrderMapper",
+   "to": "java:method:com.shop.mapper.OrderMapper#selectOrder(long)",
+   "kind": "CONTAINS",
+   "confidence": "RESOLVED",
+   "location": null,
+   "attrs": {}
+  },
+  {
+   "from": "java:type:com.shop.mapper.OrderMapper",
+   "to": "java:method:com.shop.mapper.OrderMapper#selectOrders()",
+   "kind": "CONTAINS",
+   "confidence": "RESOLVED",
+   "location": null,
+   "attrs": {}
+  },
+  {
+   "from": "java:type:com.shop.mapper.OrderMapper",
+   "to": "java:type:com.shop.domain.Order",
+   "kind": "DEPENDS_ON",
+   "confidence": "RESOLVED",
+   "location": null,
+   "attrs": {}
+  },
+  {
+   "from": "java:type:com.shop.mapper.OrderMapper",
+   "to": "java:type:com.shop.domain.OrderItem",
+   "kind": "DEPENDS_ON",
+   "confidence": "RESOLVED",
+   "location": null,
+   "attrs": {}
+  },
+  {
+   "from": "java:type:com.shop.service.BaseService",
+   "to": "java:field:com.shop.service.BaseService#MAX_RETRY",
+   "kind": "CONTAINS",
+   "confidence": "RESOLVED",
+   "location": null,
+   "attrs": {}
+  },
+  {
+   "from": "java:type:com.shop.service.BaseService",
+   "to": "java:method:com.shop.service.BaseService#log(java.lang.String)",
+   "kind": "CONTAINS",
+   "confidence": "RESOLVED",
+   "location": null,
+   "attrs": {}
+  },
+  {
+   "from": "java:type:com.shop.service.OrderService",
+   "to": "java:method:com.shop.service.OrderService#closeOrder(long)",
+   "kind": "CONTAINS",
+   "confidence": "RESOLVED",
+   "location": null,
+   "attrs": {}
+  },
+  {
+   "from": "java:type:com.shop.service.OrderService",
+   "to": "java:method:com.shop.service.OrderService#findOrders()",
+   "kind": "CONTAINS",
+   "confidence": "RESOLVED",
+   "location": null,
+   "attrs": {}
+  },
+  {
+   "from": "java:type:com.shop.service.OrderService",
+   "to": "java:method:com.shop.service.OrderService#placeOrder(com.shop.domain.Order)",
+   "kind": "CONTAINS",
+   "confidence": "RESOLVED",
+   "location": null,
+   "attrs": {}
+  },
+  {
+   "from": "java:type:com.shop.service.OrderService",
+   "to": "java:type:com.shop.domain.Order",
+   "kind": "DEPENDS_ON",
+   "confidence": "RESOLVED",
+   "location": null,
+   "attrs": {}
+  },
+  {
+   "from": "java:type:com.shop.service.OrderServiceImpl",
+   "to": "java:field:com.shop.service.OrderServiceImpl#orderMapper",
+   "kind": "CONTAINS",
+   "confidence": "RESOLVED",
+   "location": null,
+   "attrs": {}
+  },
+  {
+   "from": "java:type:com.shop.service.OrderServiceImpl",
+   "to": "java:method:com.shop.service.OrderServiceImpl#closeOrder(long)",
+   "kind": "CONTAINS",
+   "confidence": "RESOLVED",
+   "location": null,
+   "attrs": {}
+  },
+  {
+   "from": "java:type:com.shop.service.OrderServiceImpl",
+   "to": "java:method:com.shop.service.OrderServiceImpl#findOrders()",
+   "kind": "CONTAINS",
+   "confidence": "RESOLVED",
+   "location": null,
+   "attrs": {}
+  },
+  {
+   "from": "java:type:com.shop.service.OrderServiceImpl",
+   "to": "java:method:com.shop.service.OrderServiceImpl#placeOrder(com.shop.domain.Order)",
+   "kind": "CONTAINS",
+   "confidence": "RESOLVED",
+   "location": null,
+   "attrs": {}
+  },
+  {
+   "from": "java:type:com.shop.service.OrderServiceImpl",
+   "to": "java:method:com.shop.service.OrderServiceImpl#retry(com.shop.domain.Order)",
+   "kind": "CONTAINS",
+   "confidence": "RESOLVED",
+   "location": null,
+   "attrs": {}
+  },
+  {
+   "from": "java:type:com.shop.service.OrderServiceImpl",
+   "to": "java:method:com.shop.service.OrderServiceImpl#validate(com.shop.domain.Order)",
+   "kind": "CONTAINS",
+   "confidence": "RESOLVED",
+   "location": null,
+   "attrs": {}
+  },
+  {
+   "from": "java:type:com.shop.service.OrderServiceImpl",
+   "to": "java:type:com.shop.domain.Order",
+   "kind": "DEPENDS_ON",
+   "confidence": "RESOLVED",
+   "location": null,
+   "attrs": {}
+  },
+  {
+   "from": "java:type:com.shop.service.OrderServiceImpl",
+   "to": "java:type:com.shop.mapper.OrderMapper",
+   "kind": "ASSOCIATES",
+   "confidence": "RESOLVED",
+   "location": null,
+   "attrs": {
+    "field": "orderMapper",
+    "multiplicity": "1"
+   }
+  },
+  {
+   "from": "java:type:com.shop.service.OrderServiceImpl",
+   "to": "java:type:com.shop.mapper.OrderMapper",
+   "kind": "INJECTS",
+   "confidence": "RESOLVED",
+   "location": null,
+   "attrs": {
+    "via": "field"
+   }
+  },
+  {
+   "from": "java:type:com.shop.service.OrderServiceImpl",
+   "to": "java:type:com.shop.service.BaseService",
+   "kind": "EXTENDS",
+   "confidence": "RESOLVED",
+   "location": null,
+   "attrs": {}
+  },
+  {
+   "from": "java:type:com.shop.service.OrderServiceImpl",
+   "to": "java:type:com.shop.service.OrderService",
+   "kind": "IMPLEMENTS",
+   "confidence": "RESOLVED",
+   "location": null,
+   "attrs": {}
+  },
+  {
+   "from": "java:type:com.shop.service.OrderServiceImpl",
+   "to": "spring:bean:orderServiceImpl",
+   "kind": "DEFINES_BEAN",
+   "confidence": "RESOLVED",
+   "location": null,
+   "attrs": {}
+  },
+  {
+   "from": "java:type:com.shop.web.OrderController",
+   "to": "java:method:com.shop.web.OrderController#close(long)",
+   "kind": "CONTAINS",
+   "confidence": "RESOLVED",
+   "location": null,
+   "attrs": {}
+  },
+  {
+   "from": "java:type:com.shop.web.OrderController",
+   "to": "java:method:com.shop.web.OrderController#create(com.shop.domain.Order)",
+   "kind": "CONTAINS",
+   "confidence": "RESOLVED",
+   "location": null,
+   "attrs": {}
+  },
+  {
+   "from": "java:type:com.shop.web.OrderController",
+   "to": "java:method:com.shop.web.OrderController#detail(long)",
+   "kind": "CONTAINS",
+   "confidence": "RESOLVED",
+   "location": null,
+   "attrs": {}
+  },
+  {
+   "from": "java:type:com.shop.web.OrderController",
+   "to": "java:method:com.shop.web.OrderController#list(org.springframework.ui.Model)",
+   "kind": "CONTAINS",
+   "confidence": "RESOLVED",
+   "location": null,
+   "attrs": {}
+  },
+  {
+   "from": "java:type:com.shop.web.OrderController",
+   "to": "java:type:com.shop.domain.Order",
+   "kind": "DEPENDS_ON",
+   "confidence": "RESOLVED",
+   "location": null,
+   "attrs": {}
+  },
+  {
+   "from": "java:type:com.shop.web.OrderController",
+   "to": "java:type:com.shop.service.OrderService",
+   "kind": "ASSOCIATES",
+   "confidence": "RESOLVED",
+   "location": null,
+   "attrs": {
+    "field": "orderService",
+    "multiplicity": "1"
+   }
+  },
+  {
+   "from": "java:type:com.shop.web.OrderController",
+   "to": "java:type:com.shop.service.OrderService",
+   "kind": "INJECTS",
+   "confidence": "RESOLVED",
+   "location": null,
+   "attrs": {
+    "via": "constructor"
+   }
+  },
+  {
+   "from": "js:function:src/main/webapp/js/order.js#loadOrders",
+   "to": "http:request:GET /orders@src/main/webapp/js/order.js:5",
+   "kind": "REQUESTS",
+   "confidence": "RESOLVED",
+   "location": {
+    "file": "src/main/webapp/js/order.js",
+    "startLine": 5,
+    "startColumn": 1,
+    "endLine": 5,
+    "endColumn": 1
+   },
+   "attrs": {}
+  },
+  {
+   "from": "js:function:src/main/webapp/js/order.js#openLegacy",
+   "to": "http:request:GET /legacy/{*}@src/main/webapp/js/order.js:25",
+   "kind": "REQUESTS",
+   "confidence": "RESOLVED",
+   "location": {
+    "file": "src/main/webapp/js/order.js",
+    "startLine": 25,
+    "startColumn": 1,
+    "endLine": 25,
+    "endColumn": 1
+   },
+   "attrs": {}
+  },
+  {
+   "from": "js:function:src/main/webapp/js/order.js#submitOrder",
+   "to": "http:request:POST /orders@src/main/webapp/js/order.js:13",
+   "kind": "REQUESTS",
+   "confidence": "RESOLVED",
+   "location": {
+    "file": "src/main/webapp/js/order.js",
+    "startLine": 13,
+    "startColumn": 1,
+    "endLine": 13,
+    "endColumn": 1
+   },
+   "attrs": {}
+  },
+  {
+   "from": "js:function:src/main/webapp/js/order.js#submitOrder",
+   "to": "js:function:src/main/webapp/js/order.js#submitOrder.<anonymous>@14:20",
+   "kind": "CONTAINS",
+   "confidence": "RESOLVED",
+   "location": null,
+   "attrs": {}
+  },
+  {
+   "from": "js:function:src/main/webapp/js/order.js#submitOrder.<anonymous>@14:20",
+   "to": "js:function:src/main/webapp/js/order.js#loadOrders",
+   "kind": "CALLS",
+   "confidence": "RESOLVED",
+   "location": {
+    "file": "src/main/webapp/js/order.js",
+    "startLine": 16,
+    "startColumn": 1,
+    "endLine": 16,
+    "endColumn": 1
+   },
+   "attrs": {}
+  },
+  {
+   "from": "js:module:src/main/webapp/js/order.js",
+   "to": "js:function:src/main/webapp/js/order.js#loadOrders",
+   "kind": "CONTAINS",
+   "confidence": "RESOLVED",
+   "location": null,
+   "attrs": {}
+  },
+  {
+   "from": "js:module:src/main/webapp/js/order.js",
+   "to": "js:function:src/main/webapp/js/order.js#openLegacy",
+   "kind": "CONTAINS",
+   "confidence": "RESOLVED",
+   "location": null,
+   "attrs": {}
+  },
+  {
+   "from": "js:module:src/main/webapp/js/order.js",
+   "to": "js:function:src/main/webapp/js/order.js#submitOrder",
+   "kind": "CONTAINS",
+   "confidence": "RESOLVED",
+   "location": null,
+   "attrs": {}
+  },
+  {
+   "from": "jsp:page:src/main/webapp/WEB-INF/views/order/detail.jsp",
+   "to": "http:request:POST /orders/{*}/close@src/main/webapp/WEB-INF/views/order/detail.jsp:15",
+   "kind": "REQUESTS",
+   "confidence": "RESOLVED",
+   "location": {
+    "file": "src/main/webapp/WEB-INF/views/order/detail.jsp",
+    "startLine": 15,
+    "startColumn": 1,
+    "endLine": 15,
+    "endColumn": 1
+   },
+   "attrs": {}
+  },
+  {
+   "from": "jsp:page:src/main/webapp/WEB-INF/views/order/detail.jsp",
+   "to": "jsp:page:src/main/webapp/WEB-INF/views/common/header.jsp",
+   "kind": "INCLUDES",
+   "confidence": "RESOLVED",
+   "location": {
+    "file": "src/main/webapp/WEB-INF/views/order/detail.jsp",
+    "startLine": 2,
+    "startColumn": 1,
+    "endLine": 2,
+    "endColumn": 1
+   },
+   "attrs": {}
+  },
+  {
+   "from": "jsp:page:src/main/webapp/WEB-INF/views/order/list.jsp",
+   "to": "http:request:GET /orders/{*}@src/main/webapp/WEB-INF/views/order/list.jsp:20",
+   "kind": "REQUESTS",
+   "confidence": "RESOLVED",
+   "location": {
+    "file": "src/main/webapp/WEB-INF/views/order/list.jsp",
+    "startLine": 20,
+    "startColumn": 1,
+    "endLine": 20,
+    "endColumn": 1
+   },
+   "attrs": {}
+  },
+  {
+   "from": "jsp:page:src/main/webapp/WEB-INF/views/order/list.jsp",
+   "to": "js:module:src/main/webapp/js/order.js",
+   "kind": "INCLUDES",
+   "confidence": "RESOLVED",
+   "location": {
+    "file": "src/main/webapp/WEB-INF/views/order/list.jsp",
+    "startLine": 6,
+    "startColumn": 1,
+    "endLine": 6,
+    "endColumn": 1
+   },
+   "attrs": {}
+  },
+  {
+   "from": "jsp:page:src/main/webapp/WEB-INF/views/order/list.jsp",
+   "to": "jsp:page:src/main/webapp/WEB-INF/views/common/header.jsp",
+   "kind": "INCLUDES",
+   "confidence": "RESOLVED",
+   "location": {
+    "file": "src/main/webapp/WEB-INF/views/order/list.jsp",
+    "startLine": 2,
+    "startColumn": 1,
+    "endLine": 2,
+    "endColumn": 1
+   },
+   "attrs": {}
+  },
+  {
+   "from": "mybatis:mapper:com.shop.mapper.OrderMapper",
+   "to": "mybatis:fragment:com.shop.mapper.OrderMapper.orderColumns",
+   "kind": "CONTAINS",
+   "confidence": "RESOLVED",
+   "location": null,
+   "attrs": {}
+  },
+  {
+   "from": "mybatis:mapper:com.shop.mapper.OrderMapper",
+   "to": "mybatis:stmt:com.shop.mapper.OrderMapper.callCloseOrder",
+   "kind": "CONTAINS",
+   "confidence": "RESOLVED",
+   "location": null,
+   "attrs": {}
+  },
+  {
+   "from": "mybatis:mapper:com.shop.mapper.OrderMapper",
+   "to": "mybatis:stmt:com.shop.mapper.OrderMapper.deleteItems",
+   "kind": "CONTAINS",
+   "confidence": "RESOLVED",
+   "location": null,
+   "attrs": {}
+  },
+  {
+   "from": "mybatis:mapper:com.shop.mapper.OrderMapper",
+   "to": "mybatis:stmt:com.shop.mapper.OrderMapper.insertItem",
+   "kind": "CONTAINS",
+   "confidence": "RESOLVED",
+   "location": null,
+   "attrs": {}
+  },
+  {
+   "from": "mybatis:mapper:com.shop.mapper.OrderMapper",
+   "to": "mybatis:stmt:com.shop.mapper.OrderMapper.insertOrder",
+   "kind": "CONTAINS",
+   "confidence": "RESOLVED",
+   "location": null,
+   "attrs": {}
+  },
+  {
+   "from": "mybatis:mapper:com.shop.mapper.OrderMapper",
+   "to": "mybatis:stmt:com.shop.mapper.OrderMapper.selectByDynamicTable",
+   "kind": "CONTAINS",
+   "confidence": "RESOLVED",
+   "location": null,
+   "attrs": {}
+  },
+  {
+   "from": "mybatis:mapper:com.shop.mapper.OrderMapper",
+   "to": "mybatis:stmt:com.shop.mapper.OrderMapper.selectOrder",
+   "kind": "CONTAINS",
+   "confidence": "RESOLVED",
+   "location": null,
+   "attrs": {}
+  },
+  {
+   "from": "mybatis:mapper:com.shop.mapper.OrderMapper",
+   "to": "mybatis:stmt:com.shop.mapper.OrderMapper.selectOrders",
+   "kind": "CONTAINS",
+   "confidence": "RESOLVED",
+   "location": null,
+   "attrs": {}
+  },
+  {
+   "from": "mybatis:stmt:com.shop.mapper.OrderMapper.callCloseOrder",
+   "to": "db:routine:PKG_ORDER.CLOSE_ORDER",
+   "kind": "CALLS",
+   "confidence": "RESOLVED",
+   "location": {
+    "file": "src/main/resources/mapper/OrderMapper.xml",
+    "startLine": 51,
+    "startColumn": 1,
+    "endLine": 51,
+    "endColumn": 1
+   },
+   "attrs": {}
+  },
+  {
+   "from": "mybatis:stmt:com.shop.mapper.OrderMapper.deleteItems",
+   "to": "db:table:ORDER_ITEMS",
+   "kind": "WRITES",
+   "confidence": "RESOLVED",
+   "location": {
+    "file": "src/main/resources/mapper/OrderMapper.xml",
+    "startLine": 57,
+    "startColumn": 1,
+    "endLine": 57,
+    "endColumn": 1
+   },
+   "attrs": {
+    "op": "DELETE"
+   }
+  },
+  {
+   "from": "mybatis:stmt:com.shop.mapper.OrderMapper.insertItem",
+   "to": "db:table:ORDER_ITEMS",
+   "kind": "WRITES",
+   "confidence": "RESOLVED",
+   "location": {
+    "file": "src/main/resources/mapper/OrderMapper.xml",
+    "startLine": 41,
+    "startColumn": 1,
+    "endLine": 41,
+    "endColumn": 1
+   },
+   "attrs": {
+    "op": "INSERT"
+   }
+  },
+  {
+   "from": "mybatis:stmt:com.shop.mapper.OrderMapper.insertItem",
+   "to": "db:table:PRODUCTS",
+   "kind": "READS",
+   "confidence": "RESOLVED",
+   "location": {
+    "file": "src/main/resources/mapper/OrderMapper.xml",
+    "startLine": 42,
+    "startColumn": 1,
+    "endLine": 42,
+    "endColumn": 1
+   },
+   "attrs": {}
+  },
+  {
+   "from": "mybatis:stmt:com.shop.mapper.OrderMapper.insertOrder",
+   "to": "db:column:ORDERS.STATUS",
+   "kind": "WRITES",
+   "confidence": "RESOLVED",
+   "location": {
+    "file": "src/main/resources/mapper/OrderMapper.xml",
+    "startLine": 31,
+    "startColumn": 1,
+    "endLine": 31,
+    "endColumn": 1
+   },
+   "attrs": {
+    "op": "INSERT"
+   }
+  },
+  {
+   "from": "mybatis:stmt:com.shop.mapper.OrderMapper.insertOrder",
+   "to": "db:table:ORDERS",
+   "kind": "WRITES",
+   "confidence": "RESOLVED",
+   "location": {
+    "file": "src/main/resources/mapper/OrderMapper.xml",
+    "startLine": 31,
+    "startColumn": 1,
+    "endLine": 31,
+    "endColumn": 1
+   },
+   "attrs": {
+    "op": "INSERT"
+   }
+  },
+  {
+   "from": "mybatis:stmt:com.shop.mapper.OrderMapper.insertOrder",
+   "to": "java:type:com.shop.domain.Order",
+   "kind": "USES_TYPE",
+   "confidence": "RESOLVED",
+   "location": null,
+   "attrs": {
+    "role": "parameterType"
+   }
+  },
+  {
+   "from": "mybatis:stmt:com.shop.mapper.OrderMapper.selectByDynamicTable",
+   "to": "unresolved:sql-dynamic:mybatis:stmt:com.shop.mapper.OrderMapper.selectByDynamicTable",
+   "kind": "READS",
+   "confidence": "UNRESOLVED",
+   "location": {
+    "file": "src/main/resources/mapper/OrderMapper.xml",
+    "startLine": 61,
+    "startColumn": 1,
+    "endLine": 61,
+    "endColumn": 1
+   },
+   "attrs": {}
+  },
+  {
+   "from": "mybatis:stmt:com.shop.mapper.OrderMapper.selectOrder",
+   "to": "db:table:ORDERS",
+   "kind": "READS",
+   "confidence": "RESOLVED",
+   "location": {
+    "file": "src/main/resources/mapper/OrderMapper.xml",
+    "startLine": 21,
+    "startColumn": 1,
+    "endLine": 21,
+    "endColumn": 1
+   },
+   "attrs": {}
+  },
+  {
+   "from": "mybatis:stmt:com.shop.mapper.OrderMapper.selectOrder",
+   "to": "db:table:ORDER_ITEMS",
+   "kind": "READS",
+   "confidence": "RESOLVED",
+   "location": {
+    "file": "src/main/resources/mapper/OrderMapper.xml",
+    "startLine": 21,
+    "startColumn": 1,
+    "endLine": 21,
+    "endColumn": 1
+   },
+   "attrs": {}
+  },
+  {
+   "from": "mybatis:stmt:com.shop.mapper.OrderMapper.selectOrders",
+   "to": "db:column:CUSTOMERS.NAME",
+   "kind": "READS",
+   "confidence": "RESOLVED",
+   "location": {
+    "file": "src/main/resources/mapper/OrderMapper.xml",
+    "startLine": 11,
+    "startColumn": 1,
+    "endLine": 11,
+    "endColumn": 1
+   },
+   "attrs": {}
+  },
+  {
+   "from": "mybatis:stmt:com.shop.mapper.OrderMapper.selectOrders",
+   "to": "db:column:ORDERS.STATUS",
+   "kind": "READS",
+   "confidence": "RESOLVED",
+   "location": {
+    "file": "src/main/resources/mapper/OrderMapper.xml",
+    "startLine": 11,
+    "startColumn": 1,
+    "endLine": 11,
+    "endColumn": 1
+   },
+   "attrs": {}
+  },
+  {
+   "from": "mybatis:stmt:com.shop.mapper.OrderMapper.selectOrders",
+   "to": "db:table:CUSTOMERS",
+   "kind": "READS",
+   "confidence": "RESOLVED",
+   "location": {
+    "file": "src/main/resources/mapper/OrderMapper.xml",
+    "startLine": 12,
+    "startColumn": 1,
+    "endLine": 12,
+    "endColumn": 1
+   },
+   "attrs": {}
+  },
+  {
+   "from": "mybatis:stmt:com.shop.mapper.OrderMapper.selectOrders",
+   "to": "db:table:ORDERS",
+   "kind": "READS",
+   "confidence": "RESOLVED",
+   "location": {
+    "file": "src/main/resources/mapper/OrderMapper.xml",
+    "startLine": 12,
+    "startColumn": 1,
+    "endLine": 12,
+    "endColumn": 1
+   },
+   "attrs": {}
+  },
+  {
+   "from": "mybatis:stmt:com.shop.mapper.OrderMapper.selectOrders",
+   "to": "java:type:com.shop.domain.Order",
+   "kind": "USES_TYPE",
+   "confidence": "RESOLVED",
+   "location": null,
+   "attrs": {
+    "role": "resultType"
+   }
+  },
+  {
+   "from": "mybatis:stmt:com.shop.mapper.OrderMapper.selectOrders",
+   "to": "mybatis:fragment:com.shop.mapper.OrderMapper.orderColumns",
+   "kind": "INCLUDES",
+   "confidence": "RESOLVED",
+   "location": {
+    "file": "src/main/resources/mapper/OrderMapper.xml",
+    "startLine": 11,
+    "startColumn": 1,
+    "endLine": 11,
+    "endColumn": 1
+   },
+   "attrs": {}
+  },
+  {
+   "from": "mybatis:stmt:com.shop.mapper.SettlementMapper.mergeSettlement",
+   "to": "db:table:ORDERS",
+   "kind": "READS",
+   "confidence": "RESOLVED",
+   "location": null,
+   "attrs": {}
+  },
+  {
+   "from": "mybatis:stmt:com.shop.mapper.SettlementMapper.mergeSettlement",
+   "to": "db:table:SETTLEMENTS",
+   "kind": "WRITES",
+   "confidence": "RESOLVED",
+   "location": null,
+   "attrs": {
+    "op": "MERGE"
+   }
+  },
+  {
+   "from": "sql:stmt:PKG_ORDER.CLOSE_ORDER:12",
+   "to": "db:table:ORDERS",
+   "kind": "READS",
+   "confidence": "RESOLVED",
+   "location": {
+    "file": "ddl/pkg_order.pkb",
+    "startLine": 14,
+    "startColumn": 1,
+    "endLine": 14,
+    "endColumn": 1
+   },
+   "attrs": {}
+  },
+  {
+   "from": "sql:stmt:PKG_ORDER.CLOSE_ORDER:12",
+   "to": "db:table:ORDER_HISTORY",
+   "kind": "WRITES",
+   "confidence": "RESOLVED",
+   "location": {
+    "file": "ddl/pkg_order.pkb",
+    "startLine": 12,
+    "startColumn": 1,
+    "endLine": 12,
+    "endColumn": 1
+   },
+   "attrs": {
+    "op": "INSERT"
+   }
+  },
+  {
+   "from": "sql:stmt:PKG_ORDER.CLOSE_ORDER:8",
+   "to": "db:table:ORDERS",
+   "kind": "WRITES",
+   "confidence": "RESOLVED",
+   "location": {
+    "file": "ddl/pkg_order.pkb",
+    "startLine": 8,
+    "startColumn": 1,
+    "endLine": 8,
+    "endColumn": 1
+   },
+   "attrs": {
+    "op": "UPDATE"
+   }
+  }
+ ],
+ "diagnostics": [
+  {
+   "severity": "ERROR",
+   "code": "PARSE_FAILED",
+   "message": "ddl/broken.sql: 12행에서 구문을 해석하지 못했다",
+   "location": {
+    "file": "ddl/broken.sql",
+    "startLine": 12,
+    "startColumn": 1,
+    "endLine": 12,
+    "endColumn": 1
+   }
+  },
+  {
+   "severity": "WARN",
+   "code": "UNRESOLVED_REFERENCE",
+   "message": "paymentGateway.charge 의 대상을 찾지 못했다",
+   "location": {
+    "file": "src/main/java/com/shop/service/OrderServiceImpl.java",
+    "startLine": 36,
+    "startColumn": 1,
+    "endLine": 36,
+    "endColumn": 1
+   }
+  },
+  {
+   "severity": "WARN",
+   "code": "UNRESOLVED_REFERENCE",
+   "message": "com.shop.legacy.LegacyDao#find() 의 정의가 없다",
+   "location": {
+    "file": "src/main/java/com/shop/service/OrderServiceImpl.java",
+    "startLine": 26,
+    "startColumn": 1,
+    "endLine": 26,
+    "endColumn": 1
+   }
+  },
+  {
+   "severity": "INFO",
+   "code": "DYNAMIC_SQL",
+   "message": "selectByDynamicTable: ${tableName} 치환이 테이블 자리에 있다",
+   "location": {
+    "file": "src/main/resources/mapper/OrderMapper.xml",
+    "startLine": 61,
+    "startColumn": 1,
+    "endLine": 61,
+    "endColumn": 1
+   }
+  },
+  {
+   "severity": "WARN",
+   "code": "UNSUPPORTED_SYNTAX",
+   "message": "CONNECT BY 절은 건너뛰었다",
+   "location": null
+  }
+ ]
+}
