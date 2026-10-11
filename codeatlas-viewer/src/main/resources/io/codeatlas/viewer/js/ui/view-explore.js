@@ -7,8 +7,11 @@
   var h = ui.h;
   CA.views = CA.views || {};
 
-  function withClass(el, name) {
-    el.classList.add(name);
+  /** 클래스 이름을 붙인다. 이름이 여럿이면(공백으로 나눈 것) 하나씩 넣는다: classList.add는 공백이 든 토큰을 거부한다. */
+  function withClass(el, names) {
+    String(names).split(/\s+/).forEach(function (name) {
+      if (name) el.classList.add(name);
+    });
     return el;
   }
 

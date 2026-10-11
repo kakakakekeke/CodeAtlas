@@ -2,12 +2,23 @@
 // 뷰어의 DOM 스크립트를 Node에서 한 번 돌려 보기 위한 아주 작은 가짜 DOM.
 // 배치·그리기는 하지 않는다. 뷰어가 쓰는 API만 흉내 낸다.
 
+// 실제 DOMTokenList처럼 빈 토큰과 공백이 든 토큰을 거부한다. 브라우저는 여기서 예외를 던져
+// 뷰어 시작을 멈추므로, 가짜 DOM이 너그러우면 그 버그를 테스트가 놓친다.
+function checkToken(method, token) {
+  const t = String(token);
+  if (t === '') throw new SyntaxError(`Failed to execute '${method}' on 'DOMTokenList': The token provided must not be empty.`);
+  if (/\s/.test(t)) {
+    throw new Error(`Failed to execute '${method}' on 'DOMTokenList': The token provided ('${t}') contains HTML space characters, which are not valid in tokens.`);
+  }
+}
+
 class ClassList {
   constructor(el) { this.el = el; this.set = new Set(); }
-  add(...names) { names.forEach((n) => this.set.add(n)); }
-  remove(...names) { names.forEach((n) => this.set.delete(n)); }
+  add(...names) { names.forEach((n) => { checkToken('add', n); this.set.add(n); }); }
+  remove(...names) { names.forEach((n) => { checkToken('remove', n); this.set.delete(n); }); }
   contains(n) { return this.set.has(n); }
   toggle(n, force) {
+    checkToken('toggle', n);
     const on = force === undefined ? !this.set.has(n) : !!force;
     if (on) this.set.add(n); else this.set.delete(n);
     return on;
