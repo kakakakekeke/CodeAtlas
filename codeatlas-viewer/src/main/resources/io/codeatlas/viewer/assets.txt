@@ -10,6 +10,7 @@ js/core/erd.js
 js/core/crud.js
 js/core/diagnostics.js
 js/core/diagram.js
+js/core/sqlformat.js
 js/ui/dom.js
 js/ui/widgets.js
 js/ui/detail.js

@@ -89,6 +89,9 @@ JS 테스트: `node --test "codeatlas-viewer/src/test/js/*.test.js"` · Java 테
 - [x] 실제 브라우저 확인: jeesite 결과를 `http://localhost`로 띄워 탐색의 단추, 브라우저의 뒤로·앞으로 가기, 서랍의 단추를 확인(콘솔 오류 없음). `file://`은 확인에 쓴 브라우저 도구가 열지 못해 `file-protocol.test.js`(덫에 걸린 접근 없음)로 갈음
 - [x] JS 272개(그중 28개는 실제 그래프와 표준 산출물이 있을 때만 돈다) 통과, `mvn -q -pl codeatlas-viewer test` 통과
 
+## 상세의 SQL 정리 (2026-10-12, 사용자 요청)
+- [x] F-016-AC88·AC89(`sql-format.test.js` 10개) → 고치기 전의 뷰어로 실행해 실패 확인(`core/sqlformat.js` 없음) → `core/sqlformat.js`(낱말 단위 정리기: 절 줄바꿈, 쉼표·AND·OR 들여쓰기, 하위 쿼리 들여쓰기, 괄호·CASE 안은 한 줄, 문자열·주석·자리표시·달러 인용 보존), `assets.txt`, `detail.js`(`sql` 값의 정리본과 "원문"·"정리" 단추), `viewer.css` → 통과 (F-016-R46)
+
 ## 마무리
 - [x] 모든 수용 기준 통과 확인 (JS 193개 — 그중 26개는 실제 그래프와 표준 산출물(`codeatlas-cli/target/final-out/`)이 있을 때만 돈다, Java 7개)
 - [x] spec.md의 status를 implemented로 변경
