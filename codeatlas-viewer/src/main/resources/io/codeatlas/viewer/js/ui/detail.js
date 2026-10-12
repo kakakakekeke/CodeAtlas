@@ -1,10 +1,11 @@
-// 노드 상세: 꼬리표, 요약, 속성, 소스 위치, 들어오고 나가는 엣지와 신뢰도.
+// 노드 상세: 꼬리표, 요약, 속성, 소스 위치, 들어오고 나가는 엣지와 신뢰도. 엣지 줄의 풍선(잘린 요약·위치와 모든 속성).
 (function (root) {
   'use strict';
   var CA = root.CodeAtlas = root.CodeAtlas || {};
   var G = CA.graph;
   var ui = CA.ui;
   var h = ui.h;
+  var doc = root.document;
   var PAGE = 50;
 
   // 엣지 줄 오른쪽에 보여 줄 속성. 나머지는 줄을 펼치면 나온다.
@@ -65,7 +66,7 @@
     return table;
   }
 
-  function edgeSection(title, groups, follow) {
+  function edgeSection(title, groups, follow, index, selfId) {
     var total = groups.reduce(function (s, g) { return s + g.items.length; }, 0);
     var section = h('div', { class: 'section' }, [h('h3', {}, [title, h('span', { class: 'n', text: ui.formatCount(total) })])]);
     if (!total) {
@@ -80,7 +81,7 @@
       var more = null;
       function showMore() {
         var until = Math.min(g.items.length, shown + PAGE);
-        for (; shown < until; shown++) box.insertBefore(edgeRow(g.items[shown], follow), more);
+        for (; shown < until; shown++) box.insertBefore(edgeRow(g.items[shown], follow, index, selfId), more);
         if (more && shown >= g.items.length) { more.remove(); more = null; }
         else if (more) more.firstChild.textContent = '더 보기 (' + ui.formatCount(g.items.length - shown) + '개 남음)';
       }
@@ -107,8 +108,159 @@
     return h('div', { class: 'edge-pairs' }, rows);
   }
 
-  /** 엣지 한 줄. 속성이 있으면 ▸를 눌러 모든 속성과 위치를 펼친다(추론 관계의 근거 구문, 주입 후보 등). */
-  function edgeRow(item, follow) {
+  // ---- 엣지 풍선(F-016-R50)
+  // 엣지 줄은 좁은 칸에서 요약과 위치가 `…`로 잘린다. 줄에 마우스를 올리거나 줄을 누르면 잘린 것을 넓은 카드에 항목별로 맞춰 다 보인다.
+  // 풍선은 문서에 하나뿐이다. 마우스로 띄운 것은 줄과 풍선을 떠나면 닫히고, 줄을 눌러 고정한 것은 닫을 때까지 남는다.
+  var pop = {
+    /** 줄에 마우스를 올린 뒤 뜨기까지, 줄과 풍선을 떠난 뒤 닫히기까지의 시간(ms). */
+    showDelay: 350, hideDelay: 200,
+    el: null, row: null, pinned: false, timer: null,
+    /** 풍선을 닫는다. 고정한 풍선을 닫았으면 true(Esc를 누른 쪽이 서랍까지 닫지 않게). */
+    hide: function () {
+      var wasPinned = pop.el != null && pop.pinned;
+      popCancel();
+      if (pop.row) pop.row.classList.remove('pop-on');
+      if (pop.el) pop.el.remove();
+      pop.el = null;
+      pop.row = null;
+      pop.pinned = false;
+      return wasPinned;
+    }
+  };
+
+  function popCancel() {
+    if (pop.timer != null) root.clearTimeout(pop.timer);
+    pop.timer = null;
+  }
+
+  function popLater(fn, ms) {
+    popCancel();
+    pop.timer = root.setTimeout(function () { pop.timer = null; fn(); }, ms);
+  }
+
+  /** 풍선의 한쪽 끝: 종류, 이름(이 노드가 아니면 그 노드로 가는 링크), ID. */
+  function popEnd(index, id, selfId, go) {
+    var node = index.node(id);
+    var label = index.label(id);
+    return [
+      h('div', { class: 'end' }, [
+        node ? ui.kindBadge(node.kind) : h('span', { class: 'tag warn', text: '노드 없음', title: '그래프에 이 ID의 노드가 없다' }),
+        id === selfId ? h('span', { class: 'self', text: label })
+          : h('button', { class: 'link', type: 'button', text: label, on: { click: function () { go(id); } } }),
+        id === selfId ? h('span', { class: 'muted', text: '(이 노드)' }) : null
+      ]),
+      label === id ? null : h('div', { class: 'id', text: id })
+    ];
+  }
+
+  /** 풍선의 내용: 머리(엣지 종류, 신뢰도), 항목 표(출발, 도착, 요약, 위치), 속성 표. */
+  function popCard(index, item, selfId, follow, pinned) {
+    var go = function (id) { pop.hide(); follow(id); };
+    var e = item.edge;
+    var rows = [];
+    function field(name, cls, children) {
+      rows.push(h('dt', { text: name }));
+      rows.push(h('dd', { class: cls }, children));
+    }
+    field('출발', 'node', popEnd(index, e.from, selfId, go));
+    field('도착', 'node', popEnd(index, e.to, selfId, go));
+    if (item.summary) {
+      // 요약은 ` · `로 이은 조각마다 한 줄. 컬럼 쌍이 여럿이면 쌍 표를 그 아래에 둔다.
+      var parts = item.summary.split(' · ').map(function (part) { return h('div', { class: 'part', text: part }); });
+      field('요약', 'summary', item.pairs ? parts.concat([pairTable(item.pairs)]) : parts);
+    }
+    if (item.location) field('위치', 'loc', [item.location]);
+    return h('div', { class: 'edge-pop' + (pinned ? ' pinned' : ''), attrs: { role: pinned ? 'dialog' : 'tooltip', 'aria-label': '엣지 ' + e.kind } }, [
+      h('div', { class: 'edge-pop-head' }, [
+        h('span', { class: 'edge-pop-kind', text: e.kind }),
+        ui.confBadge(item.confidence, false),
+        h('span', { class: 'spacer' }),
+        pinned ? h('button', { class: 'btn small edge-pop-close', type: 'button', text: '닫기', title: 'Esc', on: { click: function () { pop.hide(); } } })
+          : h('span', { class: 'edge-pop-hint', text: '줄을 누르면 고정' })
+      ]),
+      h('dl', { class: 'kv edge-pop-main' }, rows),
+      item.attrs.length ? h('div', { class: 'edge-pop-attrs' }, [
+        h('div', { class: 'edge-pop-title' }, ['속성', h('span', { class: 'n', text: String(item.attrs.length) })]),
+        attrTable(item.attrs, go)
+      ]) : null
+    ]);
+  }
+
+  /**
+   * 풍선을 줄 옆에 놓는다. 상세 칸(탐색의 상세, 서랍)의 왼쪽에 자리가 있으면 거기에(엣지 목록을 가리지 않는다), 없으면 줄의 아래나 위에 놓는다.
+   * 화면 밖으로 나가지 않게 맞추고, 내용이 화면보다 길면 풍선 안에서 스크롤한다.
+   */
+  function popPlace(el, row) {
+    var page = doc.documentElement;
+    var vw = root.innerWidth || page.clientWidth;
+    var vh = root.innerHeight || page.clientHeight;
+    var gap = 8;
+    var r = row.getBoundingClientRect();
+    var host = row.closest('.detail, .drawer');
+    var hostLeft = host ? host.getBoundingClientRect().left : r.left;
+    var beside = hostLeft - 2 * gap >= 380;
+    el.style.maxWidth = Math.min(720, beside ? hostLeft - 2 * gap : vw - 2 * gap) + 'px';
+    el.style.maxHeight = (vh - 2 * gap) + 'px';
+    var width = el.offsetWidth;
+    var height = el.offsetHeight;
+    var left = beside ? hostLeft - gap / 2 - width : Math.min(r.left + 20, vw - gap - width);
+    var top = beside ? r.top - 6 : r.bottom + 2;
+    if (!beside && top + height > vh - gap && r.top - 2 - height >= gap) top = r.top - 2 - height;
+    el.style.left = Math.max(gap, left) + 'px';
+    el.style.top = Math.max(gap, Math.min(top, vh - gap - height)) + 'px';
+  }
+
+  function popShow(row, make, pinned) {
+    pop.hide();
+    var el = make(pinned);
+    el.addEventListener('mouseenter', popCancel);
+    el.addEventListener('mouseleave', function () { if (!pop.pinned) popLater(pop.hide, pop.hideDelay); });
+    doc.body.appendChild(el);
+    popPlace(el, row);
+    row.classList.add('pop-on');
+    pop.el = el;
+    pop.row = row;
+    pop.pinned = pinned;
+  }
+
+  /** 줄에 풍선을 단다. make(pinned)는 풍선 요소를 만든다. */
+  function popAttach(row, make) {
+    row.addEventListener('mouseenter', function () {
+      if (pop.pinned) return;
+      if (pop.row === row) { popCancel(); return; }
+      // 이미 떠 있으면(줄을 따라 훑는 중) 곧바로 바꾼다
+      popLater(function () { popShow(row, make, false); }, pop.el ? Math.min(60, pop.showDelay) : pop.showDelay);
+    });
+    row.addEventListener('mouseleave', function () {
+      if (!pop.pinned) popLater(pop.hide, pop.hideDelay);
+    });
+    row.addEventListener('click', function (e) {
+      // 줄 안의 단추(상대 노드 링크, 펼치기)는 제 일을 한다. 글자를 끌어 고르는 중에도 건드리지 않는다.
+      if (e.target && e.target.closest && e.target.closest('button, a')) return;
+      var selection = root.getSelection ? String(root.getSelection()) : '';
+      if (selection) return;
+      if (pop.pinned && pop.row === row) pop.hide();
+      else popShow(row, make, true);
+    });
+  }
+
+  // 고정한 풍선은 바깥을 누르면 닫힌다(그 줄을 누르는 것은 줄이 처리한다). 마우스로 띄운 풍선은 목록이 스크롤되거나 창 크기가 바뀌면 닫힌다.
+  doc.addEventListener('mousedown', function (e) {
+    if (!pop.el || !pop.pinned || !e.target) return;
+    if (pop.el.contains(e.target) || pop.row.contains(e.target)) return;
+    pop.hide();
+  }, true);
+  doc.addEventListener('scroll', function (e) {
+    if (!pop.el || pop.pinned || (e.target && e.target.nodeType === 1 && pop.el.contains(e.target))) return;
+    pop.hide();
+  }, true);
+  root.addEventListener('resize', function () { pop.hide(); });
+
+  /**
+   * 엣지 한 줄. 속성이 있으면 ▸를 눌러 모든 속성과 위치를 펼친다(추론 관계의 근거 구문, 주입 후보 등).
+   * 요약과 위치는 칸이 좁으면 잘린다: 줄에 마우스를 올리거나 줄을 누르면 풍선에 다 나온다. 브라우저 풍선말(title)은 달지 않는다(풍선이 둘 뜬다).
+   */
+  function edgeRow(item, follow, index, selfId) {
     var extra = edgeExtra(item);
     var details = null;
     var toggle = h('button', { class: 'edge-toggle' + (item.attrs.length ? '' : ' leaf'), type: 'button', text: '▸', attrs: { 'aria-label': '엣지 속성 펼치기', 'aria-expanded': 'false' } });
@@ -116,10 +268,11 @@
       toggle,
       ui.confBadge(item.confidence, true),
       item.other ? ui.kindBadge(item.other.kind) : h('span', { class: 'tag warn', text: '노드 없음', title: '그래프에 이 ID의 노드가 없다' }),
-      h('button', { class: 'link', type: 'button', text: item.label, title: item.otherId, on: { click: function () { follow(item.otherId); } } }),
-      item.summary ? h('span', { class: 'edge-summary', text: item.summary, title: item.fullSummary || item.summary }) : null,
-      extra ? h('span', { class: 'extra', text: extra, title: extra }) : null
+      h('button', { class: 'link', type: 'button', text: item.label, attrs: { 'data-id': item.otherId }, on: { click: function () { follow(item.otherId); } } }),
+      item.summary ? h('span', { class: 'edge-summary', text: item.summary }) : null,
+      extra ? h('span', { class: 'extra', text: extra }) : null
     ]);
+    popAttach(line, function (pinned) { return popCard(index, item, selfId, follow, pinned); });
     var wrap = h('div', { class: 'edge-item' }, item.pairs ? [line, pairTable(item.pairs)] : [line]);
     toggle.addEventListener('click', function () {
       if (!item.attrs.length) return;
@@ -144,6 +297,7 @@
     var o = opts || {};
     var follow = o.follow || function (to) { app.showDetail(to); };
     var index = app.index;
+    pop.hide();
     var d = G.nodeDetail(index, id);
     if (!d) {
       container.replaceChildren(h('div', { class: 'empty' }, [
@@ -215,11 +369,12 @@
 
     container.replaceChildren(h('div', { class: 'detail-body' }, [
       head, attrs, ghosts,
-      edgeSection('나가는 엣지', d.outgoing, follow),
-      edgeSection('들어오는 엣지', d.incoming, follow)
+      edgeSection('나가는 엣지', d.outgoing, follow, index, id),
+      edgeSection('들어오는 엣지', d.incoming, follow, index, id)
     ]));
     container.scrollTop = 0;
   }
 
   ui.renderDetail = renderDetail;
+  ui.edgePop = pop;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

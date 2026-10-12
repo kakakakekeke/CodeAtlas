@@ -32,12 +32,12 @@ function neighbors(window, id) {
  */
 function follow(window, scope, not) {
   const doc = window.document;
-  const links = doc.querySelectorAll(scope + ' .edge-row .link').filter((l) => !not.includes(l.getAttribute('title')));
-  const onward = (l) => neighbors(window, l.getAttribute('title')).some((n) => n !== l.getAttribute('title') && !not.includes(n));
+  const links = doc.querySelectorAll(scope + ' .edge-row .link').filter((l) => !not.includes(l.getAttribute('data-id')));
+  const onward = (l) => neighbors(window, l.getAttribute('data-id')).some((n) => n !== l.getAttribute('data-id') && !not.includes(n));
   const link = links.find(onward) || links[0];
   assert.ok(link, '따라갈 엣지가 없다: ' + shown(doc, scope));
   link.click();
-  return link.getAttribute('title');
+  return link.getAttribute('data-id');
 }
 
 /** 탐색의 결과 목록에서 그 노드의 줄을 누른다. */

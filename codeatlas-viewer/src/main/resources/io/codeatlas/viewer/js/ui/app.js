@@ -54,7 +54,7 @@
       drawerBody
     ]);
 
-    function closeDrawer() { drawer.classList.remove('open'); }
+    function closeDrawer() { ui.edgePop.hide(); drawer.classList.remove('open'); }
 
     function renderDrawer(id) {
       ui.renderDetail(drawerBody, app, id, { inDrawer: true, follow: function (to) { openInDrawer(to, false); } });
@@ -140,7 +140,8 @@
     host.replaceChildren(topbar, viewsBox);
     if (project.name) doc.title = project.name + ' · CodeAtlas';
 
-    doc.addEventListener('keydown', function (e) { if (e.key === 'Escape') closeDrawer(); });
+    // Esc: 고정한 엣지 풍선이 있으면 그것만 닫고, 없으면 서랍을 닫는다.
+    doc.addEventListener('keydown', function (e) { if (e.key === 'Escape' && !ui.edgePop.hide()) closeDrawer(); });
     root.addEventListener('hashchange', function () {
       var target = parseHash(root.location.hash);
       if (target) activate(target.view, target.params);

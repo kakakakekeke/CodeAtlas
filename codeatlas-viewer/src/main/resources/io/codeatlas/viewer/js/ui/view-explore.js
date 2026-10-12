@@ -1,4 +1,4 @@
-// 탐색 화면: 종류 필터, 이름 검색, 노드 상세(지나온 노드로 뒤로·앞으로).
+// 탐색 화면: 종류 필터, 이름 검색, 노드 상세(지나온 노드로 뒤로·앞으로). 결과 목록과 상세 사이의 나눔선.
 (function (root) {
   'use strict';
   var CA = root.CodeAtlas = root.CodeAtlas || {};
@@ -95,6 +95,8 @@
       var detailBody = h('div', { class: 'pane-body' }, [h('div', { class: 'empty', text: '목록에서 노드를 고르면 속성과 관계가 여기에 나온다.' })]);
       var nav = ui.createTrailNav(index, function (id) { select(id, 'trail'); });
       var detailPane = h('div', { class: 'pane detail' }, [h('div', { class: 'pane-head detail-nav' }, [nav.back, nav.forward]), detailBody]);
+      // 결과 목록과 상세 사이의 나눔선: 끌어서 두 칸의 너비를 바꾼다(F-016-R51). 최소 너비는 viewer.css의 .results, .detail과 같다.
+      var splitter = ui.createSplitter(resultsPane, detailPane, { minBefore: 280, minAfter: 320 });
 
       /**
        * 노드를 고른다. how는 어떻게 왔는지다: 'list'(결과 목록), 'follow'(상세 안의 링크), 'trail'(뒤로·앞으로 단추), 'address'(주소의 #).
@@ -117,7 +119,7 @@
 
       runSearch();
       return {
-        el: h('div', { class: 'view view-explore' }, [kindsPane, resultsPane, detailPane]),
+        el: h('div', { class: 'view view-explore' }, [kindsPane, resultsPane, splitter.el, detailPane]),
         show: function (params) {
           list.refresh();
           if (params && params.id && params.id !== selectedId) {
