@@ -196,7 +196,7 @@ test('F-013-AC30 (뷰어) ERD 범례: "추론 관계 (카디널리티 모름)" �
 test('F-013-AC30 (뷰어) 화면: ERD 요약에 카디널리티 모름인 추론 관계 수가 방향 미상과 따로 나오고, 범례에 그 항목이 양쪽 까마귀발 그림과 함께 있고, 안내에 표기가 적혀 있다', async () => {
   const { assemble } = require('./tools/assemble.js');
   const { boot, sleep } = require('./tools/boot.js');
-  const window = boot(assemble(JSON.stringify(directionOnlyBuilder().s.graph()), ''));
+  const window = await boot(assemble(JSON.stringify(directionOnlyBuilder().s.graph()), ''));
   const doc = window.document;
   window.CodeAtlas.app.navigate('erd', {});
   await sleep(350);

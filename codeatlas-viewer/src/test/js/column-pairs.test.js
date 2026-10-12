@@ -73,7 +73,7 @@ test('F-016-AC90 상세: 컬럼 쌍이 둘 이상인 JOINS·REFERENCES는 요약
 
 test('F-016-AC91 화면: 컬럼 쌍이 둘 이상인 엣지 줄 아래에 양쪽 테이블 이름을 머리로 한 쌍 표가 늘 보인다', async () => {
   const f = compositeKeys();
-  const window = boot(assemble(JSON.stringify(f.graph), ''));
+  const window = await boot(assemble(JSON.stringify(f.graph), ''));
   const doc = window.document;
   window.CodeAtlas.app.navigate('explore', { id: f.order });
   await sleep(20);

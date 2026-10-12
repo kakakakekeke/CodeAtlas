@@ -4,10 +4,10 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
-const { read, assetList, assemble, scriptBlocks } = require('./tools/assemble.js');
+const { read, assetList, assemble, assembleRaw, scriptBlocks, unpack } = require('./tools/assemble.js');
 const { boot, sleep } = require('./tools/boot.js');
 const { sampleGraph, ids } = require('./fixtures/sample-graph.js');
-const { bigGraph } = require('./helpers.js');
+const { bigGraph, core } = require('./helpers.js');
 const { slice, loc } = require('./fixtures/slice.js');
 
 function sampleHtml() {
@@ -50,24 +50,25 @@ test('F-016-AC18 조립한 viewer.html: 자리 표시가 모두 채워지고 스
   assert.ok(!html.includes('@@'), '남은 자리 표시가 없다');
   const blocks = scriptBlocks(html);
   const data = blocks.find((b) => b.id === 'codeatlas-data');
-  assert.equal(JSON.parse(data.text).nodes.length, sampleGraph().nodes.length);
-  const code = blocks.filter((b) => b.type !== 'application/json');
+  assert.equal(JSON.parse(unpack(data.text)).nodes.length, sampleGraph().nodes.length);
+  const code = blocks.filter((b) => !b.type);
   assert.ok(code.length >= 1);
   code.forEach((b) => new vm.Script(b.text));
 });
 
-test('F-016-AC3 데이터에 </script>가 있어도 데이터 블록이 깨지지 않는다 (JS 조립기)', () => {
+test('F-016-AC3 데이터에 </script>가 있어도 데이터 블록이 깨지지 않는다 (JS 조립기)', async () => {
   const g = sampleGraph();
   g.nodes[0].name = '</script><script>window.pwned = 1</script><!-- x';
   const html = assemble(JSON.stringify(g), '');
   const data = scriptBlocks(html).find((b) => b.id === 'codeatlas-data');
-  assert.equal(JSON.parse(data.text).nodes[0].name, g.nodes[0].name);
-  const window = boot(html);
+  assert.equal(core('compact').expand(JSON.parse(unpack(data.text))).nodes[0].name, g.nodes[0].name);
+  assert.equal(scriptBlocks(html).length, 3, '데이터의 글자가 블록을 늘리지 않는다');
+  const window = await boot(html);
   assert.equal(window.pwned, undefined);
 });
 
 test('F-016-AC18 가짜 DOM에서 켜지고 모든 화면이 한 번씩 그려진다', async () => {
-  const window = boot(sampleHtml());
+  const window = await boot(sampleHtml());
   const doc = window.document;
   const app = window.CodeAtlas.app;
   assert.deepEqual(window.errors, []);
@@ -220,7 +221,7 @@ function realShapeGraph() {
 
 test('F-016-AC26 화면: 상세에 꼬리표와 요약이 나오고, 엣지의 모든 속성을 펼쳐 근거 구문으로 갈 수 있다', async () => {
   const f = realShapeGraph();
-  const window = boot(assemble(JSON.stringify(f.graph), ''));
+  const window = await boot(assemble(JSON.stringify(f.graph), ''));
   const doc = window.document;
   const app = window.CodeAtlas.app;
   app.navigate('explore', { id: f.req });
@@ -264,7 +265,7 @@ test('F-016-AC26 화면: 상세에 꼬리표와 요약이 나오고, 엣지의 �
 
 test('F-016-AC20 화면: 모두 펼치기는 화면 이동에서 멈추고 알리며, 고르면 끝까지 펼친다', async () => {
   const f = realShapeGraph();
-  const window = boot(assemble(JSON.stringify(f.graph), ''));
+  const window = await boot(assemble(JSON.stringify(f.graph), ''));
   const doc = window.document;
   window.CodeAtlas.app.navigate('calltree', { id: f.ep });
   await sleep(20);
@@ -296,7 +297,7 @@ test('F-016-AC20 화면: 모두 펼치기는 화면 이동에서 멈추고 알�
 
 test('F-016-AC21 F-016-AC22 F-016-AC23 화면: ERD와 클래스 다이어그램의 표시 선택', async () => {
   const f = realShapeGraph();
-  const window = boot(assemble(JSON.stringify(f.graph), ''));
+  const window = await boot(assemble(JSON.stringify(f.graph), ''));
   const doc = window.document;
   const app = window.CodeAtlas.app;
   app.navigate('erd', {});
@@ -336,7 +337,7 @@ test('F-016-AC21 F-016-AC22 F-016-AC23 화면: ERD와 클래스 다이어그램�
 });
 
 test('F-016-AC18 주소의 #으로 화면과 노드를 바로 연다', async () => {
-  const window = boot(sampleHtml(), { hash: '#/calltree?id=' + encodeURIComponent(ids.TB.history) });
+  const window = await boot(sampleHtml(), { hash: '#/calltree?id=' + encodeURIComponent(ids.TB.history) });
   await sleep(50);
   const doc = window.document;
   assert.ok(doc.querySelector('.view-calltree').classList.contains('active'));
@@ -345,16 +346,16 @@ test('F-016-AC18 주소의 #으로 화면과 노드를 바로 연다', async () 
 });
 
 test('F-016-AC18 빈 그래프와 깨진 데이터에서도 화면이 뜬다', async () => {
-  const empty = boot(assemble(JSON.stringify({ schemaVersion: 1, project: {}, nodes: [], edges: [], diagnostics: [] }), ''));
+  const empty = await boot(assemble(JSON.stringify({ schemaVersion: 1, project: {}, nodes: [], edges: [], diagnostics: [] }), ''));
   await sleep(20);
   assert.deepEqual(empty.errors, []);
   assert.equal(empty.document.querySelectorAll('.tab').length, 6);
-  const broken = boot(assemble('{ not json', ''));
+  const broken = await boot(assembleRaw('{ not json', ''));
   assert.ok(broken.document.querySelector('.fatal').textContent.includes('읽지 못했다'));
 });
 
 test('F-016-AC15 큰 그래프에서도 목록은 보이는 행만 DOM에 둔다', async () => {
-  const window = boot(assemble(JSON.stringify(bigGraph(20000)), ''));
+  const window = await boot(assemble(JSON.stringify(bigGraph(20000)), ''));
   const doc = window.document;
   assert.deepEqual(window.errors, []);
   assert.ok(doc.querySelector('.view-explore .result-count').textContent.includes('20,000'));
@@ -378,13 +379,13 @@ const built = process.env.CODEATLAS_VIEWER_HTML || path.join(__dirname, '..', '.
 test('F-016-AC18 ViewerExporter가 만든 viewer.html: 구문 오류가 없고 가짜 DOM에서 켜진다', { skip: !fs.existsSync(built) && 'target/viewer-sample/viewer.html 없음 (mvn test를 먼저 돌린다)' }, async () => {
   const html = fs.readFileSync(built, 'utf8');
   const blocks = scriptBlocks(html);
-  blocks.filter((b) => b.type !== 'application/json').forEach((b) => new vm.Script(b.text));
+  blocks.filter((b) => !b.type).forEach((b) => new vm.Script(b.text));
   const mermaid = blocks.find((b) => b.id === 'codeatlas-vendor-mermaid');
   assert.ok(mermaid && mermaid.text.trim().length > 100000, 'Mermaid가 내장되어 있다');
-  new vm.Script(JSON.parse(mermaid.text));
+  new vm.Script(unpack(mermaid.text));
   assert.doesNotMatch(html.replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, ''), /\b(src|href)\s*=\s*["']?\s*(https?:)?\/\//i);
   // Mermaid는 진짜 DOM이 필요하므로 가짜 DOM에서는 빼고 켠다.
-  const window = boot(html.replace(mermaid.text, ''));
+  const window = await boot(html.replace(mermaid.text, ''));
   await sleep(20);
   assert.deepEqual(window.errors, []);
   assert.ok(window.document.querySelectorAll('.view-explore .kind-row').length >= 1);

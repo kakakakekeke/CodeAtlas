@@ -82,12 +82,9 @@ public final class GraphJson {
 
     /** 그래프를 JSON 문자열로 쓴다. writer는 닫지 않는다. */
     public static void write(GraphModel graph, Writer writer) throws IOException {
-        List<Node> nodes = new ArrayList<>(graph.nodes());
-        nodes.sort(Comparator.comparing(Node::id));
-        List<Edge> edges = new ArrayList<>(graph.edges());
-        edges.sort(EDGE_ORDER);
-        List<Diagnostic> diagnostics = new ArrayList<>(graph.diagnostics());
-        diagnostics.sort(DIAGNOSTIC_ORDER);
+        List<Node> nodes = orderedNodes(graph);
+        List<Edge> edges = orderedEdges(graph);
+        List<Diagnostic> diagnostics = orderedDiagnostics(graph);
 
         writer.write("{\n\"schemaVersion\": " + SCHEMA_VERSION + ",\n\"project\": ");
         writer.write(MAPPER.writeValueAsString(projectJson(graph.project())));
@@ -99,6 +96,27 @@ public final class GraphJson {
         writeLines(writer, diagnostics.stream().map(GraphJson::diagnosticJson).toList());
         writer.write("]\n}\n");
         writer.flush();
+    }
+
+    /** graph.json에 쓰는 순서(ID 순)의 노드. 같은 순서로 내보내는 출력기가 쓴다. */
+    public static List<Node> orderedNodes(GraphModel graph) {
+        List<Node> nodes = new ArrayList<>(graph.nodes());
+        nodes.sort(Comparator.comparing(Node::id));
+        return nodes;
+    }
+
+    /** graph.json에 쓰는 순서(from, to, kind, location 순)의 엣지. */
+    public static List<Edge> orderedEdges(GraphModel graph) {
+        List<Edge> edges = new ArrayList<>(graph.edges());
+        edges.sort(EDGE_ORDER);
+        return edges;
+    }
+
+    /** graph.json에 쓰는 순서(location, severity, code, message 순)의 진단. */
+    public static List<Diagnostic> orderedDiagnostics(GraphModel graph) {
+        List<Diagnostic> diagnostics = new ArrayList<>(graph.diagnostics());
+        diagnostics.sort(DIAGNOSTIC_ORDER);
+        return diagnostics;
     }
 
     /**
@@ -156,7 +174,8 @@ public final class GraphJson {
         }
     }
 
-    private static Map<String, Object> projectJson(ProjectInfo project) {
+    /** graph.json의 {@code project} 항목. 프로젝트 정보가 없으면 값이 모두 null이다. */
+    public static Map<String, Object> projectJson(ProjectInfo project) {
         Map<String, Object> json = new LinkedHashMap<>();
         json.put("name", project == null ? null : project.name());
         json.put("root", project == null ? null : project.root());

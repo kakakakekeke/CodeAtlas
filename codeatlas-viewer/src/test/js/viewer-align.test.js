@@ -28,7 +28,7 @@ function assertClean(window) {
 
 test('F-016-AC47 화면: 콜트리는 접근자·소스 없는 메서드의 호출 줄을 기본으로 접고(접은 수를 알린다) 토글로 편다', async () => {
   const f = accessors();
-  const window = open(f.j.graph());
+  const window = await open(f.j.graph());
   const doc = window.document;
   window.CodeAtlas.app.navigate('calltree', { id: f.run });
   await sleep(20);
@@ -61,7 +61,7 @@ test('F-016-AC41 F-016-AC43 F-016-AC46 화면: 콜트리 줄에 [?](수신자), 
   j.call(f.controller, late, 30);
   const early = j.method('com.r.Tool', 'zEarly');
   j.call(f.controller, early, 3);
-  const window = open(j.graph());
+  const window = await open(j.graph());
   const doc = window.document;
   const app = window.CodeAtlas.app;
   app.navigate('calltree', { id: f.controller });
@@ -90,7 +90,7 @@ test('F-016-AC41 F-016-AC43 F-016-AC46 화면: 콜트리 줄에 [?](수신자), 
 test('F-016-AC45 화면: 멀티모듈 엔드포인트의 핸들러 줄에 모듈이 적히고, resolvedPath가 있는 엔드포인트는 치환한 경로로 보인다', async () => {
   const f = modules();
   f.j.endpoint('ANY', '/${adminPath}/sys/user/list', f.admin, { resolvedPath: '/a/sys/user/list', placeholders: ['adminPath'] });
-  const window = open(f.j.graph());
+  const window = await open(f.j.graph());
   const doc = window.document;
   const app = window.CodeAtlas.app;
   app.navigate('calltree', { id: f.endpoint });
@@ -113,7 +113,7 @@ test('F-016-AC49 화면: 콜트리의 시작 노드를 묶음(엔드포인트, �
   j.type('com.g.EncodingFilter', { attrs: { stereotype: 'filter' } });
   j.method('com.g.EncodingFilter', 'doFilter');
   j.call(pre, f.serviceSave, 12, 'virtual', 'com.g.UserService');
-  const window = open(j.graph());
+  const window = await open(j.graph());
   const doc = window.document;
   window.CodeAtlas.app.navigate('calltree', {});
   await sleep(20);
@@ -142,7 +142,7 @@ test('F-016-AC49 화면: 콜트리의 시작 노드를 묶음(엔드포인트, �
 
 test('F-016-AC48 화면: 데이터 적재 구문은 콜트리와 CRUD에서 기본으로 빠지고, 토글로 넣는다. 뺀 수를 알린다', async () => {
   const f = dataLoads();
-  const window = open(f.j.graph());
+  const window = await open(f.j.graph());
   const doc = window.document;
   const app = window.CodeAtlas.app;
   app.navigate('calltree', { id: 'db:table:SYS_USER' });
@@ -167,7 +167,7 @@ test('F-016-AC48 화면: 데이터 적재 구문은 콜트리와 CRUD에서 기�
 
 test('F-016-AC55 화면: CRUD의 엔드포인트 기준은 고를 때 나눠서 계산하고 진행을 보인다. 끝나면 다시 계산하지 않는다', async () => {
   const f = genericDao();
-  const window = open(f.j.graph());
+  const window = await open(f.j.graph());
   const doc = window.document;
   const CA = window.CodeAtlas;
   // 한 번에 엔드포인트 하나씩만 계산하게 해서 진행 표시를 본다
@@ -210,7 +210,7 @@ function areaSchema() {
 }
 
 test('F-016-AC50 화면: ERD에서 영역(테이블 이름 접두사 묶음)을 골라 그린다. 다른 영역의 이웃 테이블은 이름만 나온다', async () => {
-  const window = open(areaSchema());
+  const window = await open(areaSchema());
   const doc = window.document;
   window.CodeAtlas.app.navigate('erd', {});
   await sleep(350);
@@ -240,7 +240,7 @@ test('F-016-AC50 화면: 테이블이 상한보다 많으면 전체 ERD는 상�
     const name = (i < 40 ? 'AA_' : 'BB_') + 'T' + String(i).padStart(3, '0');
     s.n('db:table:' + name, 'DB_TABLE', name, name, {});
   }
-  const window = open(s.graph());
+  const window = await open(s.graph());
   const doc = window.document;
   window.CodeAtlas.app.navigate('erd', {});
   await sleep(350);
@@ -268,7 +268,7 @@ test('F-016-AC50 화면: 상한 안이어도 Mermaid 소스가 45,000자(표준 
       s.e('db:table:' + name, 'CONTAINS', 'db:column:' + name + '.' + column);
     }
   }
-  const window = open(s.graph());
+  const window = await open(s.graph());
   const doc = window.document;
   window.CodeAtlas.app.navigate('erd', {});
   await sleep(350);
@@ -285,7 +285,7 @@ test('F-016-AC50 화면: 상한 안이어도 Mermaid 소스가 45,000자(표준 
 
 test('F-016-AC51 F-016-AC52 화면: 탐색은 분석하지 않은 벤더·압축 파일을 기본으로 숨기고, 상세에 새 꼬리표와 엣지 요약이 나온다', async () => {
   const f = shapes();
-  const window = open(f.graph);
+  const window = await open(f.graph);
   const doc = window.document;
   const app = window.CodeAtlas.app;
   await sleep(20);
@@ -321,7 +321,7 @@ test('F-016-AC51 F-016-AC52 화면: 탐색은 분석하지 않은 벤더·압축
 
 test('F-016-AC53 F-016-AC54 화면: 진단에 "DDL에 없는 테이블"과 "데이터 적재 스크립트" 보기가 있고, 코드 필터에 설명이 붙으며 위치 없는 진단은 "프로젝트 전체"로 적힌다', async () => {
   const f = reportShapes();
-  const window = open(f.graph);
+  const window = await open(f.graph);
   const doc = window.document;
   window.CodeAtlas.app.navigate('diagnostics', {});
   await sleep(50);

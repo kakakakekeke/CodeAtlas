@@ -7,12 +7,14 @@ import io.codeatlas.core.io.GraphJson;
 import io.codeatlas.core.model.GraphModel;
 import io.codeatlas.core.model.NodeKind;
 import io.codeatlas.core.model.Node;
+import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -21,6 +23,7 @@ import java.util.jar.JarEntry;
 import java.util.jar.JarFile;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.zip.GZIPInputStream;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -250,6 +253,15 @@ class CodeatlasJarIT {
         return found;
     }
 
+    /** viewer.html의 데이터 블록(gzip으로 압축하고 base64로 감싼 글자: F-016-R48)을 푼 글자. */
+    static String embeddedData(String html) throws IOException {
+        Matcher block = Pattern.compile("<script\\b[^>]*\\bid=\"codeatlas-data\"[^>]*>([^<]*)</script>").matcher(html);
+        assertThat(block.find()).as("viewer.html에 데이터 블록이 있다").isTrue();
+        try (GZIPInputStream in = new GZIPInputStream(new ByteArrayInputStream(Base64.getDecoder().decode(block.group(1).strip())))) {
+            return new String(in.readAllBytes(), StandardCharsets.UTF_8);
+        }
+    }
+
     @Test
     @DisplayName("F-001-AC28 외부 참조 검사는 script src와 link href의 외부 URL만 잡는다")
     void externalReferenceDetection() {
@@ -268,7 +280,8 @@ class CodeatlasJarIT {
         Path viewer = out.resolve("viewer.html");
         assertThat(viewer).exists();
         String html = Files.readString(viewer, StandardCharsets.UTF_8);
-        assertThat(html).containsIgnoringCase("<script").contains("file:src/A.java");
+        assertThat(html).containsIgnoringCase("<script");
+        assertThat(embeddedData(html)).as("내장한 그래프에 분석한 파일의 노드가 있다").contains("file:src/A.java");
         assertThat(externalReferences(html)).isEmpty();
         assertThat(GraphJson.read(out.resolve("graph.json")).diagnostics()).extracting(d -> d.code()).doesNotContain("EXPORTER_FAILED");
     }

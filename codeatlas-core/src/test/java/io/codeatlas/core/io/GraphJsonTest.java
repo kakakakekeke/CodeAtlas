@@ -126,6 +126,33 @@ class GraphJsonTest {
     }
 
     @Test
+    @DisplayName("F-001-AC15 graph.json에 쓰는 순서와 project 항목을 다른 출력기가 그대로 쓸 수 있다")
+    void exposesFileOrder() throws Exception {
+        GraphModel graph = build(true);
+        Path file = dir.resolve("order.json");
+        GraphJson.write(graph, file);
+        JsonNode json = new ObjectMapper().readTree(file.toFile());
+
+        List<String> nodeIds = new ArrayList<>();
+        json.get("nodes").forEach(n -> nodeIds.add(n.get("id").asText()));
+        assertThat(GraphJson.orderedNodes(graph)).extracting(Node::id).containsExactlyElementsOf(nodeIds);
+
+        List<String> edges = new ArrayList<>();
+        json.get("edges").forEach(e -> edges.add(e.get("from").asText() + "|" + e.get("to").asText() + "|" + e.get("kind").asText()
+                + "|" + e.get("location").path("file").asText("")));
+        assertThat(GraphJson.orderedEdges(graph))
+                .extracting(e -> e.from() + "|" + e.to() + "|" + e.kind() + "|" + (e.location() == null ? "" : e.location().file()))
+                .containsExactlyElementsOf(edges);
+
+        List<String> messages = new ArrayList<>();
+        json.get("diagnostics").forEach(d -> messages.add(d.get("message").asText()));
+        assertThat(GraphJson.orderedDiagnostics(graph)).extracting(Diagnostic::message).containsExactlyElementsOf(messages);
+
+        JsonNode project = new ObjectMapper().valueToTree(GraphJson.projectJson(graph.project()));
+        assertThat(project).isEqualTo(json.get("project"));
+    }
+
+    @Test
     @DisplayName("F-001-AC14 프로젝트 정보가 없는 빈 그래프도 왕복한다")
     void emptyGraph() throws Exception {
         Path file = dir.resolve("empty.json");

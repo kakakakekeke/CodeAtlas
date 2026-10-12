@@ -50,7 +50,7 @@ function layouts() {
 
 test('F-016-AC69 화면: 콜트리의 레이아웃 줄은 "레이아웃" 꼬리표가 붙은 한 줄이고, "레이아웃 펼치기"를 켜야 모두 펼치기가 그 너머로 간다. 위로는 "쓰는 화면 n개" 한 줄이다', async () => {
   const f = layouts();
-  const window = open(f.j.graph());
+  const window = await open(f.j.graph());
   const doc = window.document;
   const app = window.CodeAtlas.app;
   app.navigate('calltree', { id: f.pages[0] });
@@ -112,7 +112,7 @@ function routes() {
 
 test('F-016-AC69 화면: 화면 내 이동(클라이언트 라우트)은 탐색과 콜트리에서 기본으로 숨기고(숨긴 수를 알린다) 토글로 보인다. 그런 요청이 없는 그래프에는 토글이 없다', async () => {
   const f = routes();
-  const window = open(f.j.graph());
+  const window = await open(f.j.graph());
   const doc = window.document;
   const app = window.CodeAtlas.app;
   // 탐색: 기본으로 숨긴다
@@ -149,7 +149,7 @@ test('F-016-AC69 화면: 화면 내 이동(클라이언트 라우트)은 탐색�
   assertClean(window);
 
   // 클라이언트 라우트가 없는 그래프: 토글을 보이지 않는다
-  const plain = open(layouts().j.graph());
+  const plain = await open(layouts().j.graph());
   assert.equal(plain.document.querySelector('.view-calltree .hide-client-routes') == null
     || plain.document.querySelector('.view-calltree .hide-client-routes').style.display === 'none', true);
   plain.CodeAtlas.app.navigate('calltree', { id: 'jsp:page:WEB-INF/views/a.jsp' });
@@ -169,7 +169,7 @@ test('F-016-AC69 화면: 오버로드 후보 묶음 줄([ambiguous n])은 "후�
   j.s.e(caller, 'CALLS', one, { callType: 'static', ambiguous: true }, 'INFERRED', j.at('L.java', 90, 20));
   j.s.e(caller, 'CALLS', two, { callType: 'static', ambiguous: true }, 'INFERRED', j.at('L.java', 90, 20));
   j.call(caller, digest, 80);
-  const window = open(j.graph());
+  const window = await open(j.graph());
   const doc = window.document;
   window.CodeAtlas.app.navigate('calltree', { id: caller });
   await sleep(20);
@@ -221,7 +221,7 @@ test('F-016-AC69 화면: redirect·forward로 넘어가는 핸들러는 꼬리�
   j.s.e(detail, 'EXECUTES', j.statement('com.j.RoleDao', 'get', 'SELECT', 'TB_B'));
   j.call(save, list, 40, 'redirect', null, { path: '/role/list', viewName: 'redirect:/role/list' }, 'INFERRED');
   j.call(view, detail, 50, 'forward', null, { path: '/role/detail', viewName: 'forward:/role/detail' }, 'INFERRED');
-  const window = open(j.graph());
+  const window = await open(j.graph());
   const doc = window.document;
   const app = window.CodeAtlas.app;
   app.navigate('calltree', { id: saveEndpoint });
@@ -301,7 +301,7 @@ function mismatches() {
 
 test('F-016-AC68 화면: 진단·미해결에 "컬럼 불일치"(테이블, 컬럼, 참조하는 구문)와 "화면 요청"(구분별 건수와 연결률) 보기가 있다', async () => {
   const f = mismatches();
-  const window = open(f.graph);
+  const window = await open(f.graph);
   const doc = window.document;
   window.CodeAtlas.app.navigate('diagnostics', {});
   await sleep(50);
@@ -351,7 +351,7 @@ test('F-016-AC68 화면: 진단·미해결에 "컬럼 불일치"(테이블, 컬�
 
 test('F-016-AC70 화면: 테이블 상세에 "DDL에 없는데 SQL이 참조하는 컬럼"이 구문과 함께 따로 나오고, 관계 상세와 ERD 범례에 방향 미상의 까닭이 적힌다', async () => {
   const f = mismatches();
-  const window = open(f.graph);
+  const window = await open(f.graph);
   const doc = window.document;
   const app = window.CodeAtlas.app;
   app.navigate('explore', { id: f.dept });
@@ -396,7 +396,7 @@ test('F-016-AC66 화면: CRUD에서 추론 경로로만 닿은 칸은 ?와 함�
   j.call(handler, two, 30, 'virtual', null, { ambiguous: true }, 'INFERRED');
   j.s.e(sure, 'EXECUTES', j.statement('com.i.OrderMapper', 'selectSure', 'SELECT', 'T_SURE'));
   j.s.e(two, 'EXECUTES', j.statement('com.i.OrderMapper', 'selectGuess', 'SELECT', 'T_GUESS'));
-  const window = open(j.graph());
+  const window = await open(j.graph());
   const doc = window.document;
   window.CodeAtlas.app.navigate('crud', {});
   await sleep(100);

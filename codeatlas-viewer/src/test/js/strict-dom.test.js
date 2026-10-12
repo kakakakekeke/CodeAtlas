@@ -20,8 +20,8 @@ test('F-016-AC82 가짜 DOM의 classList는 실제 DOMTokenList처럼 빈 토큰
   assert.equal(el.className, 'a b');
 });
 
-test('F-016-AC82 클라이언트 라우트가 없는 그래프에서도 뷰어가 켜지고, 탐색의 그 토글은 숨김(none) 클래스가 따로 붙는다', () => {
-  const window = boot(assemble(JSON.stringify(javaGraph().graph()), ''));
+test('F-016-AC82 클라이언트 라우트가 없는 그래프에서도 뷰어가 켜지고, 탐색의 그 토글은 숨김(none) 클래스가 따로 붙는다', async () => {
+  const window = await boot(assemble(JSON.stringify(javaGraph().graph()), ''));
   const doc = window.document;
   assert.equal(doc.querySelector('.fatal'), null, '시작 오류 화면이 없어야 한다');
   assert.ok(doc.querySelector('.view-explore').classList.contains('active'), '탐색 화면이 켜진다');

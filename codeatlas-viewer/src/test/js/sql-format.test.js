@@ -182,8 +182,8 @@ test('F-016-AC88 잘린 구문, 짝이 맞지 않는 괄호·따옴표, 조각, 
   assert.equal(fmt(undefined), '');
 });
 
-test('F-016-AC89 SQL 구문 상세의 sql 값은 정리본이고 "원문" 단추로 그래프에 적힌 그대로와 오간다', () => {
-  const window = boot(assemble(JSON.stringify(sampleGraph()), ''));
+test('F-016-AC89 SQL 구문 상세의 sql 값은 정리본이고 "원문" 단추로 그래프에 적힌 그대로와 오간다', async () => {
+  const window = await boot(assemble(JSON.stringify(sampleGraph()), ''));
   const doc = window.document;
   const raw = sampleGraph().nodes.find((n) => n.id === ids.S.settle).attrs.sql;
   window.CodeAtlas.app.showDetail(ids.S.settle);

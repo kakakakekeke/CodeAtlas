@@ -196,7 +196,8 @@ function matchChain(el, parts, scope) {
 
 /**
  * viewer.html 본문을 흉내 낸 창을 만든다.
- * dataBlocks: { 요소 ID: 텍스트 } — <script type="application/json"> 블록들.
+ * dataBlocks: { 요소 ID: 텍스트 } — 내장 블록(<script type="text/plain">)들.
+ * opts.noDecompression: DecompressionStream이 없는 브라우저를 흉내 낸다.
  */
 function createWindow(dataBlocks, opts) {
   const o = opts || {};
@@ -224,7 +225,7 @@ function createWindow(dataBlocks, opts) {
   Object.keys(dataBlocks || {}).forEach((id) => {
     const el = document.body.appendChild(new FakeElement('script', document));
     el.id = id;
-    el.setAttribute('type', 'application/json');
+    el.setAttribute('type', 'text/plain');
     el.textContent = dataBlocks[id];
   });
 
@@ -248,6 +249,9 @@ function createWindow(dataBlocks, opts) {
     URL: { createObjectURL() { return 'blob:fake'; }, revokeObjectURL() {} },
     JSON, Math, Date, Map, Set, Promise, Array, Object, String, Number, Error, RegExp, Symbol, parseInt, parseFloat, isNaN, encodeURIComponent, decodeURIComponent,
     URLSearchParams,
+    // 내장 블록을 푸는 데 쓰는 것(core/embed.js). file:에서도 막히지 않는 API다.
+    atob, Uint8Array, TextDecoder,
+    DecompressionStream: o.noDecompression ? undefined : DecompressionStream,
     errors
   };
   window.window = window;

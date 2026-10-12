@@ -1,5 +1,7 @@
 # viewer.html에 끼워 넣을 자산. 적힌 순서대로 잇는다. (.css는 <style>, .js는 <script>)
 css/viewer.css
+js/core/embed.js
+js/core/compact.js
 js/core/graph.js
 js/core/search.js
 js/core/vlist.js

@@ -7,25 +7,34 @@
   var doc = root.document;
   var sequence = 0;
   var mermaidState = 'idle'; // idle | ready | missing | failed
+  var mermaidLoading = null;
 
-  /** HTML에 내장한 Mermaid를 처음 쓸 때 한 번 실행한다. 없으면 null. 네트워크에서 받아 오지 않는다. */
+  /**
+   * HTML에 압축해 내장한 Mermaid를 처음 쓸 때 한 번 풀어 실행한다. 네트워크에서 받아 오지 않는다.
+   * Promise로 mermaid를 돌려주고, 없거나 실행하지 못하면 null이다(까닭은 mermaidState에 있다).
+   */
   function loadMermaid() {
-    if (mermaidState === 'ready') return root.mermaid;
-    if (mermaidState === 'missing' || mermaidState === 'failed') return null;
+    if (!mermaidLoading) mermaidLoading = unpackMermaid();
+    return mermaidLoading;
+  }
+
+  function unpackMermaid() {
     var holder = doc.getElementById('codeatlas-vendor-mermaid');
-    var text = holder ? holder.textContent : '';
-    if (!text || !text.trim()) { mermaidState = 'missing'; return null; }
-    try {
+    var packed = holder ? holder.textContent : '';
+    if (!packed || !packed.trim()) { mermaidState = 'missing'; return Promise.resolve(null); }
+    return CA.embed.inflateText(packed).then(function (source) {
       var script = doc.createElement('script');
-      script.text = JSON.parse(text);
+      script.text = source;
       doc.head.appendChild(script);
       holder.textContent = '';
-    } catch (e) {
-      root.console.error('Mermaid를 실행하지 못했다: ' + e);
-    }
-    if (root.mermaid && typeof root.mermaid.render === 'function') { mermaidState = 'ready'; return root.mermaid; }
-    mermaidState = 'failed';
-    return null;
+      if (!root.mermaid || typeof root.mermaid.render !== 'function') throw new Error('번들이 mermaid를 내놓지 않았다');
+      mermaidState = 'ready';
+      return root.mermaid;
+    }).catch(function (e) {
+      root.console.error('Mermaid를 실행하지 못했다: ' + (e && e.message ? e.message : e));
+      mermaidState = 'failed';
+      return null;
+    });
   }
 
   function isDark() {
@@ -161,27 +170,29 @@
       stage.replaceChildren();
       size.w = size.h = 0;
       if (!source) return;
-      var mermaid = loadMermaid();
-      if (!mermaid) {
-        setMessage('');
-        showSource(true);
-        banner('이 파일에는 Mermaid가 들어 있지 않아 그림 대신 Mermaid 소스를 보여 준다.');
-        return;
-      }
       banner('');
       setMessage('그리는 중…');
       var id = 'ca-diagram-' + (++sequence);
-      var dark = isDark();
-      try {
-        mermaid.initialize({
-          startOnLoad: false, securityLevel: 'strict', theme: dark ? 'dark' : 'neutral',
-          maxTextSize: 5000000, maxEdges: 20000,
-          fontFamily: 'ui-sans-serif, -apple-system, "Segoe UI", "Malgun Gothic", sans-serif',
-          class: { useMaxWidth: false }, er: { useMaxWidth: false }
-        });
-      } catch (e) { /* 설정을 못 바꿔도 그리기는 시도한다 */ }
-      Promise.resolve().then(function () { return mermaid.render(id, source); }).then(function (result) {
-        if (token !== current.token) return;
+      loadMermaid().then(function (mermaid) {
+        if (token !== current.token) return null;
+        if (!mermaid) {
+          setMessage('');
+          showSource(true);
+          banner(mermaidState === 'missing' ? '이 파일에는 Mermaid가 들어 있지 않아 그림 대신 Mermaid 소스를 보여 준다.'
+            : '내장한 Mermaid를 실행하지 못해 그림 대신 Mermaid 소스를 보여 준다.', mermaidState !== 'missing');
+          return null;
+        }
+        try {
+          mermaid.initialize({
+            startOnLoad: false, securityLevel: 'strict', theme: isDark() ? 'dark' : 'neutral',
+            maxTextSize: 5000000, maxEdges: 20000,
+            fontFamily: 'ui-sans-serif, -apple-system, "Segoe UI", "Malgun Gothic", sans-serif',
+            class: { useMaxWidth: false }, er: { useMaxWidth: false }
+          });
+        } catch (e) { /* 설정을 못 바꿔도 그리기는 시도한다 */ }
+        return mermaid.render(id, source);
+      }).then(function (result) {
+        if (!result || token !== current.token) return;
         stage.innerHTML = result.svg;
         var svg = stage.querySelector('svg');
         if (svg) {

@@ -7,10 +7,9 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-const vm = require('node:vm');
-const { assemble, scriptBlocks } = require('./tools/assemble.js');
+const { assemble, scriptBlocks, unpack } = require('./tools/assemble.js');
 const { createWindow } = require('./tools/fake-dom.js');
-const { sleep } = require('./tools/boot.js');
+const { run, dataBlocks, sleep } = require('./tools/boot.js');
 const { sampleGraph } = require('./fixtures/sample-graph.js');
 
 const FILE_URL = 'file:///C:/Users/dev/out/viewer.html';
@@ -49,18 +48,15 @@ function fileWindow(data, hash) {
  * HTML의 스크립트를 file: 창에서 실행한다. 동적 import()는 실행 중에 덫으로 잡을 수 없어서(vm이 플래그 없이는 콜백을 부르지 않는다)
  * 실행하는 스크립트 블록의 글자에서 `import(` 호출을 찾아 덫 기록에 넣는다(주석과 문자열 안의 것은 뺀다).
  */
-function bootAsFile(html, hash) {
+async function bootAsFile(html, hash) {
   const blocks = scriptBlocks(html);
-  const data = {};
-  blocks.filter((b) => b.type === 'application/json').forEach((b) => { data[b.id] = b.text; });
-  const window = fileWindow(data, hash);
-  const context = vm.createContext(window);
-  blocks.filter((b) => b.type !== 'application/json').forEach((b, i) => {
-    vm.runInContext(b.text, context, { filename: 'viewer-script-' + i + '.js' });
+  const window = run(fileWindow(dataBlocks(html), hash), blocks);
+  blocks.filter((b) => !b.type).forEach((b) => {
     const code = b.text.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:\\])\/\/[^\n]*/g, '$1').replace(/'(?:[^'\\\n]|\\.)*'|"(?:[^"\\\n]|\\.)*"/g, '""');
     const found = /(^|[^.\w$])import\s*\(\s*([^)]*)\)/.exec(code);
     if (found) window.trapped.push('import(' + found[2].replace(/^""$/, '…') + ')');
   });
+  await window.CodeAtlas.ready;
   return window;
 }
 
@@ -113,7 +109,7 @@ async function tour(window) {
 }
 
 test('F-016-AC71 file://로 연 viewer.html: 막히는 API(fetch, XHR, 동적 import, Worker, 저장소, 쿠키, 주소 바꾸기)를 건드리지 않고 모든 화면이 켜진다', async () => {
-  const window = bootAsFile(assemble(JSON.stringify(sampleGraph()), ''));
+  const window = await bootAsFile(assemble(JSON.stringify(sampleGraph()), ''));
   assert.equal(window.location.protocol, 'file:');
   assert.deepEqual(window.errors, [], '시작할 때 오류가 없다');
   assert.equal(window.document.querySelectorAll('.tab').length, 6);
@@ -128,7 +124,7 @@ test('F-016-AC71 file://로 연 viewer.html: 막히는 API(fetch, XHR, 동적 im
 test('F-016-AC71 file://의 주소에 #이 붙어 있으면 그 화면과 노드를 바로 연다(해시만 읽는다)', async () => {
   const graph = sampleGraph();
   const table = graph.nodes.find((n) => n.kind === 'DB_TABLE');
-  const window = bootAsFile(assemble(JSON.stringify(graph), ''), '#/explore?id=' + encodeURIComponent(table.id));
+  const window = await bootAsFile(assemble(JSON.stringify(graph), ''), '#/explore?id=' + encodeURIComponent(table.id));
   await sleep(30);
   assert.deepEqual(window.trapped, []);
   assert.deepEqual(window.errors, []);
@@ -137,7 +133,7 @@ test('F-016-AC71 file://의 주소에 #이 붙어 있으면 그 화면과 노드
 
 test('F-016-AC71 덫이 실제로 걸리는지: 덫을 건드리는 스크립트를 넣으면 기록된다(이 테스트가 헛돌지 않는다는 확인)', async () => {
   const html = assemble(JSON.stringify(sampleGraph()), '').replace('</body>', '<script>try { window.localStorage.getItem("x"); } catch (e) {}\ntry { fetch("graph.json"); } catch (e) {}\nimport("./x.js").catch(function () {});</script></body>');
-  const window = bootAsFile(html);
+  const window = await bootAsFile(html);
   await sleep(20);
   assert.deepEqual(window.trapped, ['localStorage', 'fetch', 'import(…)']);
 });
@@ -147,12 +143,12 @@ const built = process.env.CODEATLAS_VIEWER_HTML || path.join(__dirname, '..', '.
 test('F-016-AC71 ViewerExporter가 만든 viewer.html도 file:// 환경에서 덫에 걸리지 않고 켜진다', { skip: !fs.existsSync(built) && 'target/viewer-sample/viewer.html 없음 (mvn test를 먼저 돌린다)' }, async () => {
   const html = fs.readFileSync(built, 'utf8');
   const mermaid = scriptBlocks(html).find((b) => b.id === 'codeatlas-vendor-mermaid');
-  const window = bootAsFile(html.replace(mermaid.text, ''));
+  const window = await bootAsFile(html.replace(mermaid.text, ''));
   assert.deepEqual(window.errors, []);
   await tour(window);
   assert.deepEqual(window.trapped, []);
   assert.deepEqual(window.errors, []);
   // 내장한 Mermaid 번들: file:에서 막히는 방식으로 자기 조각을 가져오지 않는다(한 파일짜리 번들인지). 실행은 진짜 DOM이 필요해 글자로만 본다.
-  const bundle = JSON.parse(mermaid.text);
+  const bundle = unpack(mermaid.text);
   assert.doesNotMatch(bundle, /\bimportScripts\s*\(|new\s+(Shared)?Worker\s*\(/, 'Mermaid 번들이 워커를 띄우지 않는다');
 });

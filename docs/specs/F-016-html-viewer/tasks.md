@@ -1,7 +1,7 @@
 ---
 type: tasks
 id: F-016
-updated: 2026-10-11
+updated: 2026-10-12
 ---
 
 # F-016 HTML 뷰어 작업 목록
@@ -94,6 +94,21 @@ JS 테스트: `node --test "codeatlas-viewer/src/test/js/*.test.js"` · Java 테
 
 ## 컬럼 쌍이 여럿인 조인·관계 (2026-10-12, 사용자 요청)
 - [x] F-016-AC90~AC92(`column-pairs.test.js` 3개) → 고치기 전의 뷰어로 실행해 3개 모두 실패 확인 → `graph.js`(`columnPairs`, 요약의 `컬럼 n쌍`, 엣지 항목의 `pairs`·`fullSummary`), `detail.js`(엣지 줄 아래의 쌍 표, 풍선말), `viewer.css`(`.edge-pairs`), `erd.js`(`pairText`: 쌍마다 이은 관계 라벨) → 통과 (F-016-R47)
+
+## 압축 내장 (2026-10-12, 사용자 보고: 큰 프로젝트의 viewer.html이 100MB에 달한다)
+- [x] F-016-AC93~AC95(`ViewerExporterTest`의 AC1·AC2·AC3·AC93, `embed.test.js` 8개) → 고치기 전의 코드로 실행해 실패 확인(Java 6개, JS는 `core/embed.js` 없음) → `ViewerHtml`(`writePacked`: `GZIPOutputStream` + `Base64`로 흘려 쓰기, Mermaid도 같은 길), `template.html`(블록을 `type="text/plain"`으로), `core/embed.js`(`inflateText`: `DecompressionStream`), `app.js`(푼 뒤에 켜기, `CodeAtlas.ready`, 푸는 중 안내), `ui/diagram.js`(Mermaid를 처음 그릴 때 풀기, 실행 실패 문구) → 통과 (F-016-R48)
+- [x] 테스트 도구: `tools/assemble.js`(`pack`·`unpack`), `tools/boot.js`(`boot`가 `CodeAtlas.ready`를 기다린다. `launch`는 기다리지 않는다. head에 붙인 script를 실행한다), `tools/fake-dom.js`(`atob`·`TextDecoder`·`DecompressionStream`), 화면 테스트의 `boot(…)` 호출을 `await`로
+- [x] 기대값을 바꾼 기존 테스트: 데이터·Mermaid 블록을 풀어서 읽는다(`ViewerExporterTest`, `viewer-html.test.js`, `file-protocol.test.js`, cli의 `CodeatlasJarIT` F-001-AC28)
+- [x] 실제 브라우저 확인: 이 저장소의 분석 결과(graph.json 69.5MB → `viewer.html` 6.7MB)를 `http://localhost`로 띄워 뷰어가 켜지고 ERD가 그려지는 것을 확인(콘솔 오류 없음)
+- [x] `mvn -q install` 통과, JS 293개(그중 28개는 실제 그래프와 표준 산출물이 있을 때만 돈다) 통과
+
+## 뷰어 내장 형식 (2026-10-12, 압축 내장의 후속)
+- [x] core: `GraphJsonTest`(F-001-AC15 `exposesFileOrder`) → 컴파일 실패 확인 → `GraphJson.orderedNodes`·`orderedEdges`·`orderedDiagnostics`·`projectJson` 공개(`write`가 같은 것을 쓴다) → 통과
+- [x] F-016-AC96(`ViewerExporterTest`: `writesCompactForm`, AC1·AC3·AC93의 테스트가 되돌린 그래프를 `graph.json`과 견준다) → 고치기 전의 코드로 실행해 6개 실패 확인 → `CompactGraphJson`(Jackson `JsonGenerator`로 흘려 쓰기), `ViewerExporter`, `pom.xml`(jackson-databind를 직접 의존으로) → 통과 (F-016-R49)
+- [x] F-016-AC97·AC98(`compact.test.js` 6개) → `core/compact.js`가 없어 실패 확인 → `core/compact.js`(`expand`), `assets.txt`, `app.js`(푼 JSON을 되돌려 색인) → 통과 (F-016-R49)
+- [x] 테스트 도구: `tools/compact.js`(`compactGraph`: Java와 같은 규칙. AC98이 Java의 출력과 견준다), `tools/assemble.js`(`assemble`은 줄인 형식을 넣고 `assembleRaw`는 받은 글자를 그대로 넣는다)
+- [x] 실제 브라우저 확인: 이 저장소의 분석 결과(graph.json 69.8MB → `viewer.html` 4.9MB)를 `http://localhost`로 띄워 뷰어가 켜지고 콜트리와 ERD가 그려지는 것을 확인(콘솔 오류 없음)
+- [x] `mvn -q install` 통과, JS 299개(그중 28개는 실제 그래프와 표준 산출물이 있을 때만 돈다) 통과
 
 ## 마무리
 - [x] 모든 수용 기준 통과 확인 (JS 193개 — 그중 26개는 실제 그래프와 표준 산출물(`codeatlas-cli/target/final-out/`)이 있을 때만 돈다, Java 7개)
