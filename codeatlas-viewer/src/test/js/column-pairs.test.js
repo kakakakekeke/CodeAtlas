@@ -1,5 +1,5 @@
 'use strict';
-// 컬럼 쌍이 여럿인 조인·관계를 읽기 쉽게 보이는지 본다(F-016-R46, 사용자 요청 2026-10-12).
+// 컬럼 쌍이 여럿인 조인·관계를 읽기 쉽게 보이는지 본다(F-016-R47, 사용자 요청 2026-10-12).
 // 전에는 JOINS가 `A.X = B.Y AND A.Z = B.W AND …`, REFERENCES가 `X, Z, … → Y, W, …`로 한 줄에 붙어 잘리거나 위치를 세어 맞춰야 했다.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
@@ -37,7 +37,7 @@ function compositeKeys() {
 
 const itemOf = (d, direction, kind, otherId) => d[direction].find((g) => g.kind === kind).items.find((i) => i.otherId === otherId);
 
-test('F-016-AC88 상세: 컬럼 쌍이 둘 이상인 JOINS·REFERENCES는 요약에 쌍의 수를 적고 쌍을 따로(pairs) 넘긴다. 한 쌍이면 전과 같다', () => {
+test('F-016-AC90 상세: 컬럼 쌍이 둘 이상인 JOINS·REFERENCES는 요약에 쌍의 수를 적고 쌍을 따로(pairs) 넘긴다. 한 쌍이면 전과 같다', () => {
   const f = compositeKeys();
   const ix = graph.buildIndex(f.graph);
   const order = graph.nodeDetail(ix, f.order);
@@ -71,7 +71,7 @@ test('F-016-AC88 상세: 컬럼 쌍이 둘 이상인 JOINS·REFERENCES는 요약
   assert.equal(single.fullSummary, single.summary);
 });
 
-test('F-016-AC89 화면: 컬럼 쌍이 둘 이상인 엣지 줄 아래에 양쪽 테이블 이름을 머리로 한 쌍 표가 늘 보인다', async () => {
+test('F-016-AC91 화면: 컬럼 쌍이 둘 이상인 엣지 줄 아래에 양쪽 테이블 이름을 머리로 한 쌍 표가 늘 보인다', async () => {
   const f = compositeKeys();
   const window = boot(assemble(JSON.stringify(f.graph), ''));
   const doc = window.document;
@@ -98,7 +98,7 @@ test('F-016-AC89 화면: 컬럼 쌍이 둘 이상인 엣지 줄 아래에 양쪽
   assert.deepEqual(window.errors, []);
 });
 
-test('F-016-AC90 ERD: 컬럼 이름이 양쪽에서 다른 복합 관계의 라벨은 쌍마다 이어 적는다(`A → X, B → Y`)', () => {
+test('F-016-AC92 ERD: 컬럼 이름이 양쪽에서 다른 복합 관계의 라벨은 쌍마다 이어 적는다(`A → X, B → Y`)', () => {
   const f = compositeKeys();
   const ix = graph.buildIndex(f.graph);
   const scope = erd.selectScope(ix, {});

@@ -38,11 +38,29 @@
     return out;
   }
 
+  /** sql 속성. 정리본을 보이고, 정리해서 달라졌으면 "원문" 단추로 그래프에 적힌 그대로와 오간다(F-016-R46). */
+  function sqlValue(attr, follow) {
+    if (attr.items.length !== 1 || attr.items[0].nodeId) return attrValue(attr, follow);
+    var raw = attr.items[0].text;
+    var pretty = CA.sqlFormat.format(raw);
+    var text = h('span', { class: 'sql-text', text: pretty });
+    if (pretty === raw) return [text];
+    var showRaw = false;
+    var toggle = h('button', { class: 'btn small sql-toggle', type: 'button', text: '원문', title: '그래프에 적힌 그대로 보기', on: { click: function (e) {
+      e.stopPropagation();
+      showRaw = !showRaw;
+      text.textContent = showRaw ? raw : pretty;
+      toggle.textContent = showRaw ? '정리' : '원문';
+      toggle.setAttribute('title', showRaw ? '줄을 바꿔 정리해서 보기' : '그래프에 적힌 그대로 보기');
+    } } });
+    return [toggle, text];
+  }
+
   function attrTable(attrs, follow) {
     var table = h('dl', { class: 'kv' });
     attrs.forEach(function (a) {
       table.appendChild(h('dt', { text: a.key }));
-      table.appendChild(h('dd', { class: a.key === 'sql' ? 'sql' : '' }, attrValue(a, follow)));
+      table.appendChild(h('dd', { class: a.key === 'sql' ? 'sql' : '' }, a.key === 'sql' ? sqlValue(a, follow) : attrValue(a, follow)));
     });
     return table;
   }
