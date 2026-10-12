@@ -255,7 +255,7 @@ test('F-016-AC74 상세: 분석의 중간 정보(JAVA_METHOD의 statementIdLiter
   assert.ok(d.attrs.some((a) => a.key === 'returnType'), '다른 속성은 그대로 보인다');
   assert.deepEqual(graph.nodeDetail(ix, f.page).internalAttrs.map((a) => a.key), ['formFields']);
   // 화면: 속성 표에는 없고, 접힌 "분석 중간 정보" 아래에만 있다
-  const window = boot(assemble(JSON.stringify(f.graph), ''));
+  const window = await boot(assemble(JSON.stringify(f.graph), ''));
   const doc = window.document;
   window.CodeAtlas.app.navigate('explore', { id: f.method });
   await sleep(20);

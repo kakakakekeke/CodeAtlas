@@ -106,7 +106,7 @@ test('F-016-AC83 자취: 새로 가면 앞으로 갈 칸을 버리고, 목록에
 });
 
 test('F-016-AC84 탐색: 상세 안의 엣지로 A → B → C로 간 뒤 "뒤로"가 B, A를 다시 보이고 "앞으로"가 되돌린다', async () => {
-  const window = sampleWindow();
+  const window = await sampleWindow();
   const doc = window.document;
   const scope = '.view-explore .detail';
   const back = doc.querySelector(scope + ' .nav-back');
@@ -150,8 +150,8 @@ test('F-016-AC84 탐색: 상세 안의 엣지로 A → B → C로 간 뒤 "뒤�
   assert.deepEqual(window.errors, []);
 });
 
-test('F-016-AC84 탐색: 속성 값의 노드 링크로 간 것도 "뒤로"로 돌아온다', () => {
-  const window = sampleWindow();
+test('F-016-AC84 탐색: 속성 값의 노드 링크로 간 것도 "뒤로"로 돌아온다', async () => {
+  const window = await sampleWindow();
   const doc = window.document;
   const scope = '.view-explore .detail';
   const index = window.CodeAtlas.app.index;
@@ -167,8 +167,8 @@ test('F-016-AC84 탐색: 속성 값의 노드 링크로 간 것도 "뒤로"로 �
   assert.equal(shown(doc, scope), start.id);
 });
 
-test('F-016-AC85 탐색: 목록에서 연달아 고른 노드는 자취에 쌓이지 않는다(마지막에 고른 것으로 돌아온다)', () => {
-  const window = sampleWindow();
+test('F-016-AC85 탐색: 목록에서 연달아 고른 노드는 자취에 쌓이지 않는다(마지막에 고른 것으로 돌아온다)', async () => {
+  const window = await sampleWindow();
   const doc = window.document;
   const scope = '.view-explore .detail';
   const back = doc.querySelector(scope + ' .nav-back');
@@ -191,8 +191,8 @@ test('F-016-AC85 탐색: 목록에서 연달아 고른 노드는 자취에 쌓�
   assert.equal(shown(doc, scope), b);
 });
 
-test('F-016-AC86 다른 화면의 상세 서랍에서도 엣지로 옮겨 간 노드에서 "뒤로"로 돌아온다', () => {
-  const window = sampleWindow();
+test('F-016-AC86 다른 화면의 상세 서랍에서도 엣지로 옮겨 간 노드에서 "뒤로"로 돌아온다', async () => {
+  const window = await sampleWindow();
   const doc = window.document;
   const app = window.CodeAtlas.app;
   app.navigate('diagnostics', {});
@@ -224,8 +224,8 @@ test('F-016-AC86 다른 화면의 상세 서랍에서도 엣지로 옮겨 간 �
   assert.deepEqual(window.errors, []);
 });
 
-test('F-016-AC87 주소: 엣지와 단추로 옮기면 주소에 새 항목이 쌓이고, 브라우저의 뒤로·앞으로 가기로 온 주소의 노드가 뜨며 자취가 맞춰진다', () => {
-  const window = sampleWindow();
+test('F-016-AC87 주소: 엣지와 단추로 옮기면 주소에 새 항목이 쌓이고, 브라우저의 뒤로·앞으로 가기로 온 주소의 노드가 뜨며 자취가 맞춰진다', async () => {
+  const window = await sampleWindow();
   const doc = window.document;
   const scope = '.view-explore .detail';
   const back = doc.querySelector(scope + ' .nav-back');
@@ -265,8 +265,8 @@ test('F-016-AC87 주소: 엣지와 단추로 옮기면 주소에 새 항목이 �
   assert.deepEqual(window.errors, []);
 });
 
-test('F-016-AC87 주소를 바꾸지 못하는 창(replaceState가 예외, location.hash를 못 씀)에서도 단추로 돌아온다', () => {
-  const window = sampleWindow();
+test('F-016-AC87 주소를 바꾸지 못하는 창(replaceState가 예외, location.hash를 못 씀)에서도 단추로 돌아온다', async () => {
+  const window = await sampleWindow();
   const doc = window.document;
   const scope = '.view-explore .detail';
   const deny = () => { const e = new Error('SecurityError'); e.name = 'SecurityError'; throw e; };

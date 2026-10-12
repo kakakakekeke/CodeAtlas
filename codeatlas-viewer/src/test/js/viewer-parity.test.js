@@ -97,7 +97,7 @@ const texts = (els) => els.map((e) => e.textContent);
 
 test('F-016-AC28 F-016-AC29 화면: CRUD는 네 기준을 고르고, 소문자(간접)와 (동적) 열, 범례, 동적 구문 목록을 보인다', async () => {
   const f = shop();
-  const window = boot(assemble(JSON.stringify(f.graph), ''));
+  const window = await boot(assemble(JSON.stringify(f.graph), ''));
   const doc = window.document;
   window.CodeAtlas.app.navigate('crud', {});
   await sleep(100);
@@ -146,7 +146,7 @@ test('F-016-AC28 F-016-AC29 화면: CRUD는 네 기준을 고르고, 소문자(�
 
 test('F-016-AC31 F-016-AC35 화면: 콜트리 줄에 [trigger?], 인터페이스 경유, super·redirect 표시가 붙는다', async () => {
   const f = shop();
-  const window = boot(assemble(JSON.stringify(f.graph), ''));
+  const window = await boot(assemble(JSON.stringify(f.graph), ''));
   const doc = window.document;
   const app = window.CodeAtlas.app;
   app.navigate('calltree', { id: f.ep });
@@ -174,7 +174,7 @@ test('F-016-AC31 F-016-AC35 화면: 콜트리 줄에 [trigger?], 인터페이스
 
 test('F-016-AC36 F-016-AC38 화면: 상세의 엣지 줄에 읽기 좋은 요약이 나오고 indexes는 한 줄에 하나씩, typeRefs·redirects는 눌러서 간다', async () => {
   const f = shop();
-  const window = boot(assemble(JSON.stringify(f.graph), ''));
+  const window = await boot(assemble(JSON.stringify(f.graph), ''));
   const doc = window.document;
   const app = window.CodeAtlas.app;
   app.navigate('explore', { id: f.order });
@@ -215,7 +215,7 @@ test('F-016-AC36 F-016-AC38 화면: 상세의 엣지 줄에 읽기 좋은 요약
 
 test('F-016-AC39 화면: 진단·미해결에 "Java 호출자 없는 구문"과 "동적 구문" 보기가 있고, 새 진단 코드가 필터에 나온다', async () => {
   const f = shop();
-  const window = boot(assemble(JSON.stringify(f.graph), ''));
+  const window = await boot(assemble(JSON.stringify(f.graph), ''));
   const doc = window.document;
   window.CodeAtlas.app.navigate('diagnostics', {});
   await sleep(50);

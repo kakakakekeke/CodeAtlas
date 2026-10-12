@@ -3,6 +3,7 @@
 //   node assemble.js <graph.json> <out.html> [mermaid.min.js]
 const fs = require('node:fs');
 const path = require('node:path');
+const zlib = require('node:zlib');
 
 const RESOURCE_ROOT = path.join(__dirname, '..', '..', '..', 'main', 'resources', 'io', 'codeatlas', 'viewer');
 
@@ -15,8 +16,14 @@ function assetList() {
   return read('assets.txt').split(/\r?\n/).map((l) => l.trim()).filter((l) => l && !l.startsWith('#'));
 }
 
-function escapeJsonForHtml(json) {
-  return json.replace(/</g, '\\u003c');
+/** 내장 블록의 글자: gzip으로 압축하고 base64로 감싼다(ViewerHtml.writePacked와 같다). */
+function pack(text) {
+  return zlib.gzipSync(Buffer.from(text, 'utf8')).toString('base64');
+}
+
+/** 내장 블록의 글자를 원래 글자로 되돌린다. */
+function unpack(block) {
+  return zlib.gunzipSync(Buffer.from(block, 'base64')).toString('utf8');
 }
 
 function assemble(graphJson, mermaidSource) {
@@ -27,8 +34,8 @@ function assemble(graphJson, mermaidSource) {
   const parts = {
     '/*@@CSS@@*/': css,
     '/*@@JS@@*/': js,
-    '@@DATA@@': escapeJsonForHtml(graphJson),
-    '@@MERMAID@@': mermaidSource ? escapeJsonForHtml(JSON.stringify(mermaidSource)) : ''
+    '@@DATA@@': pack(graphJson),
+    '@@MERMAID@@': mermaidSource ? pack(mermaidSource) : ''
   };
   // 자리 표시는 템플릿에서만 찾는다. 끼워 넣은 내용 안에 같은 글자가 있어도 건드리지 않는다.
   const found = Object.keys(parts).map((marker) => {
@@ -46,7 +53,7 @@ function assemble(graphJson, mermaidSource) {
   return html;
 }
 
-/** HTML에서 <script> 블록을 꺼낸다. [{ attrs, id, type, text }] */
+/** HTML에서 <script> 블록을 꺼낸다. [{ attrs, id, type, text }] type이 있는 블록은 실행하지 않는 내장 블록이다. */
 function scriptBlocks(html) {
   const out = [];
   const re = /<script\b([^>]*)>([\s\S]*?)<\/script>/gi;
@@ -59,7 +66,7 @@ function scriptBlocks(html) {
   return out;
 }
 
-module.exports = { RESOURCE_ROOT, read, assetList, assemble, scriptBlocks };
+module.exports = { RESOURCE_ROOT, read, assetList, assemble, scriptBlocks, pack, unpack };
 
 if (require.main === module) {
   const [graphPath, outPath, mermaidPath] = process.argv.slice(2);

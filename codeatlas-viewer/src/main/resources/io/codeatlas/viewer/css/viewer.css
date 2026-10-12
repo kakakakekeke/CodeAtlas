@@ -111,6 +111,7 @@ button, input, select { font: inherit; color: inherit; }
 .views { flex: 1; min-height: 0; position: relative; }
 .view { position: absolute; inset: 0; display: none; }
 .view.active { display: flex; }
+.loading { margin: 40px auto; max-width: 640px; padding: 16px 20px; color: var(--muted); }
 .fatal { margin: 40px auto; max-width: 640px; padding: 16px 20px; background: var(--error-soft); color: var(--error); border-radius: 6px; }
 
 /* ---------- 공통 부품 */

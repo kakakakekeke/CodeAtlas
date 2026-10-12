@@ -14,17 +14,20 @@ import io.codeatlas.core.model.NodeKind;
 import io.codeatlas.core.model.ProjectInfo;
 import io.codeatlas.core.model.SourceLocation;
 import io.codeatlas.core.spi.Exporter;
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.StringWriter;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
+import java.util.Base64;
 import java.util.List;
 import java.util.Map;
 import java.util.ServiceLoader;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.zip.GZIPInputStream;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -69,7 +72,7 @@ class ViewerExporterTest {
         return Files.readString(dir.resolve("viewer.html"), StandardCharsets.UTF_8);
     }
 
-    /** id가 같은 script 블록의 본문. 정규식이 첫 번째 종료 태그에서 끊으므로, 데이터가 문서를 깨면 JSON 해석이 실패한다. */
+    /** id가 같은 script 블록의 본문. 정규식이 첫 번째 종료 태그에서 끊으므로, 데이터가 문서를 깨면 블록을 풀지 못한다. */
     private static String scriptBody(String html, String id) {
         Matcher m = SCRIPT.matcher(html);
         while (m.find()) {
@@ -78,6 +81,19 @@ class ViewerExporterTest {
             }
         }
         throw new AssertionError("script 블록이 없음: " + id);
+    }
+
+    /** 내장 블록(gzip으로 압축하고 base64로 감싼 글자)을 원래 글자로 푼다. */
+    private static String unpack(String block) throws IOException {
+        assertThat(block).as("내장 블록에는 base64 글자만 있다").matches("[A-Za-z0-9+/]+=*");
+        try (GZIPInputStream in = new GZIPInputStream(new ByteArrayInputStream(Base64.getDecoder().decode(block)))) {
+            return new String(in.readAllBytes(), StandardCharsets.UTF_8);
+        }
+    }
+
+    /** viewer.html에 내장된 그래프. */
+    private static JsonNode embeddedGraph(String html) throws IOException {
+        return MAPPER.readTree(unpack(scriptBody(html, "codeatlas-data")));
     }
 
     private static JsonNode graphJson(GraphModel graph) throws IOException {
@@ -95,7 +111,7 @@ class ViewerExporterTest {
 
         assertThat(out.resolve("viewer.html")).isRegularFile();
         assertThat(html).startsWith("<!DOCTYPE html>").contains("<meta charset=\"utf-8\">");
-        JsonNode embedded = MAPPER.readTree(scriptBody(html, "codeatlas-data"));
+        JsonNode embedded = embeddedGraph(html);
         assertThat(embedded).isEqualTo(graphJson(graph));
         assertThat(embedded.path("schemaVersion").asInt()).isEqualTo(1);
         assertThat(embedded.path("project").path("name").asText()).isEqualTo("demo");
@@ -115,7 +131,7 @@ class ViewerExporterTest {
 
         String html = export(second, dir);
 
-        JsonNode embedded = MAPPER.readTree(scriptBody(html, "codeatlas-data"));
+        JsonNode embedded = embeddedGraph(html);
         assertThat(embedded.path("nodes")).hasSize(1);
         assertThat(embedded.path("nodes").get(0).path("id").asText()).isEqualTo("db:table:ONLY");
     }
@@ -152,15 +168,13 @@ class ViewerExporterTest {
     void embedsMermaid() throws Exception {
         String html = export(smallGraph(), out);
 
-        String body = scriptBody(html, "codeatlas-vendor-mermaid");
-        JsonNode source = MAPPER.readTree(body);
-        assertThat(source.isTextual()).isTrue();
-        assertThat(source.asText().length()).isGreaterThan(1_000_000);
-        assertThat(source.asText()).contains("globalThis[\"mermaid\"]").contains("erDiagram").contains("classDiagram");
+        String source = unpack(scriptBody(html, "codeatlas-vendor-mermaid"));
+        assertThat(source.length()).isGreaterThan(1_000_000);
+        assertThat(source).contains("globalThis[\"mermaid\"]").contains("erDiagram").contains("classDiagram");
         // 번들 원본과 글자 하나까지 같다
         try (var in = ViewerExporter.class.getResourceAsStream("vendor/mermaid.min.js")) {
             assertThat(in).as("빌드가 Mermaid를 클래스패스에 풀어 두었다").isNotNull();
-            assertThat(source.asText()).isEqualTo(new String(in.readAllBytes(), StandardCharsets.UTF_8));
+            assertThat(source).isEqualTo(new String(in.readAllBytes(), StandardCharsets.UTF_8));
         }
     }
 
@@ -175,7 +189,7 @@ class ViewerExporterTest {
 
         String html = export(graph, out);
 
-        JsonNode embedded = MAPPER.readTree(scriptBody(html, "codeatlas-data"));
+        JsonNode embedded = embeddedGraph(html);
         assertThat(embedded).isEqualTo(graphJson(graph));
         JsonNode node = null;
         for (JsonNode n : embedded.path("nodes")) {
@@ -190,7 +204,38 @@ class ViewerExporterTest {
         assertThat(countOccurrences(html.toLowerCase(), "</style")).isEqualTo(1);
         assertThat(html).doesNotContain("<script>alert(1)");
         // 데이터 안의 자리 표시 글자는 그대로 남고, Mermaid가 그 자리에 들어가지 않았다
-        assertThat(MAPPER.readTree(scriptBody(html, "codeatlas-vendor-mermaid")).isTextual()).isTrue();
+        assertThat(unpack(scriptBody(html, "codeatlas-vendor-mermaid"))).contains("erDiagram");
+    }
+
+    @Test
+    @DisplayName("F-016-AC93 데이터와 Mermaid를 gzip으로 압축해 넣어 viewer.html이 graph.json보다 훨씬 작다")
+    void embedsCompressedBlocks() throws Exception {
+        GraphModel graph = smallGraph();
+        String owner = "com.shop.order.service.impl.OrderSettlementServiceImpl";
+        graph.declare(Node.builder("java:type:" + owner, NodeKind.JAVA_TYPE).name("OrderSettlementServiceImpl").qualifiedName(owner).build());
+        for (int i = 0; i < 3000; i++) {
+            String method = "java:method:" + owner + "#settle" + i + "(java.lang.String,java.util.List)";
+            graph.declare(Node.builder(method, NodeKind.JAVA_METHOD).name("settle" + i).qualifiedName(owner + "#settle" + i + "(String,List)")
+                    .location(SourceLocation.of("src/main/java/com/shop/order/service/impl/OrderSettlementServiceImpl.java", 10 + i)).build());
+            graph.addEdge(Edge.of("java:type:" + owner, method, EdgeKind.CONTAINS));
+            if (i > 0) {
+                graph.addEdge(Edge.builder(method, "java:method:" + owner + "#settle" + (i - 1) + "(java.lang.String,java.util.List)", EdgeKind.CALLS)
+                        .location(SourceLocation.of("src/main/java/com/shop/order/service/impl/OrderSettlementServiceImpl.java", 11 + i)).build());
+            }
+        }
+        StringWriter json = new StringWriter();
+        GraphJson.write(graph, json);
+        int jsonBytes = json.toString().getBytes(StandardCharsets.UTF_8).length;
+        assertThat(jsonBytes).isGreaterThan(1_500_000);
+
+        String html = export(graph, out);
+
+        String data = scriptBody(html, "codeatlas-data");
+        assertThat(embeddedGraph(html).path("edges")).hasSize(graph.edgeCount());
+        assertThat(data.length()).as("데이터 블록이 graph.json(%d바이트)의 5분의 1보다 작다", jsonBytes).isLessThan(jsonBytes / 5);
+        String mermaid = scriptBody(html, "codeatlas-vendor-mermaid");
+        assertThat(mermaid.length()).as("Mermaid 블록이 번들 원본의 절반보다 작다").isLessThan(unpack(mermaid).getBytes(StandardCharsets.UTF_8).length / 2);
+        assertThat(Files.size(out.resolve("viewer.html"))).as("파일 전체가 graph.json과 Mermaid 번들을 그대로 넣은 것보다 작다").isLessThan(jsonBytes + 1_500_000L);
     }
 
     @Test
@@ -202,7 +247,7 @@ class ViewerExporterTest {
 
         String html = export(graph, dir);
 
-        JsonNode embedded = MAPPER.readTree(scriptBody(html, "codeatlas-data"));
+        JsonNode embedded = embeddedGraph(html);
         JsonNode original = MAPPER.readTree(Files.readString(fixture, StandardCharsets.UTF_8));
         assertThat(embedded.path("nodes")).hasSize(original.path("nodes").size());
         assertThat(embedded.path("edges")).hasSize(original.path("edges").size());

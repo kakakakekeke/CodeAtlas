@@ -1,4 +1,4 @@
-// 뷰어 시작점: 내장 데이터를 읽어 색인을 만들고 화면을 바꿔 가며 보여 준다.
+// 뷰어 시작점: 내장 데이터를 풀어 색인을 만들고 화면을 바꿔 가며 보여 준다.
 (function (root) {
   'use strict';
   var CA = root.CodeAtlas = root.CodeAtlas || {};
@@ -7,12 +7,13 @@
   var doc = root.document;
   var VIEW_ORDER = ['explore', 'calltree', 'classdiagram', 'erd', 'crud', 'diagnostics'];
 
+  /** 내장한 그래프를 푼다. 압축을 푸는 일이 비동기라서 Promise를 돌려준다. */
   function readGraph() {
     var holder = doc.getElementById('codeatlas-data');
-    if (!holder) throw new Error('데이터 블록(codeatlas-data)이 없다');
-    var graph = JSON.parse(holder.textContent);
+    if (!holder) return Promise.reject(new Error('데이터 블록(codeatlas-data)이 없다'));
+    var packed = holder.textContent;
     holder.textContent = '';
-    return graph;
+    return CA.embed.inflateText(packed).then(function (json) { return JSON.parse(json); });
   }
 
   function parseHash(hash) {
@@ -37,15 +38,8 @@
     return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) + ' ' + p(d.getHours()) + ':' + p(d.getMinutes());
   }
 
-  function start() {
+  function start(graph) {
     var host = doc.getElementById('app');
-    var graph;
-    try {
-      graph = readGraph();
-    } catch (e) {
-      host.replaceChildren(h('p', { class: 'fatal', text: '내장된 분석 결과를 읽지 못했다: ' + (e && e.message ? e.message : e) }));
-      return;
-    }
     var index = CA.graph.buildIndex(graph);
     var views = {};      // 이름 → 만든 화면. 처음 열 때 만든다.
     var tabs = {};
@@ -156,11 +150,22 @@
     activate(initial.view, initial.params);
   }
 
-  try {
-    start();
-  } catch (e) {
-    root.console.error('뷰어를 시작하지 못했다: ' + (e && e.stack ? e.stack : e));
+  function fail(prefix, e) {
     var host = doc.getElementById('app');
-    if (host) host.replaceChildren(h('p', { class: 'fatal', text: '뷰어를 시작하지 못했다: ' + (e && e.message ? e.message : e) }));
+    if (host) host.replaceChildren(h('p', { class: 'fatal', text: prefix + ': ' + (e && e.message ? e.message : e) }));
   }
+
+  var loading = doc.getElementById('app');
+  if (loading) loading.replaceChildren(h('p', { class: 'loading', text: '분석 결과를 푸는 중…' }));
+  /** 뷰어가 켜지면(켜지지 못했다고 알린 뒤에도) 끝나는 Promise. */
+  CA.ready = readGraph().then(function (graph) {
+    try {
+      start(graph);
+    } catch (e) {
+      root.console.error('뷰어를 시작하지 못했다: ' + (e && e.stack ? e.stack : e));
+      fail('뷰어를 시작하지 못했다', e);
+    }
+  }, function (e) {
+    fail('내장된 분석 결과를 읽지 못했다', e);
+  });
 })(typeof globalThis !== 'undefined' ? globalThis : this);
