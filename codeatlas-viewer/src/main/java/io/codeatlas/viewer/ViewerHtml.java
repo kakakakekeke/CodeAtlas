@@ -19,6 +19,9 @@ import java.util.zip.GZIPOutputStream;
  * ({@code <script type="text/plain">})에 넣는다(F-016-R48). 큰 문자열을 만들지 않고 흘려 쓴다. base64 글자에는 HTML이 해석할
  * 글자({@code <})가 없어서 데이터에 {@code </script>}나 {@code <!--}가 있어도 문서 구조에 닿지 않는다. 뷰어는 브라우저의
  * {@code DecompressionStream}으로 블록을 푼다({@code js/core/embed.js}).
+ *
+ * <p>Mermaid를 넣을 때는 그 저작권·라이선스 고지도 문서 머리의 주석으로 함께 넣는다(F-016-R52). 고지의 글은 빌드가 Mermaid
+ * webjar에서 꺼낸 {@code vendor/mermaid.LICENSE}를 그대로 쓴다.
  */
 final class ViewerHtml {
 
@@ -26,8 +29,11 @@ final class ViewerHtml {
     static final String JS_MARKER = "/*@@JS@@*/";
     static final String DATA_MARKER = "@@DATA@@";
     static final String MERMAID_MARKER = "@@MERMAID@@";
+    static final String NOTICE_MARKER = "<!--@@NOTICE@@-->";
 
     private static final String MERMAID_RESOURCE = "vendor/mermaid.min.js";
+    private static final String MERMAID_LICENSE_RESOURCE = "vendor/mermaid.LICENSE";
+    private static final Pattern COMMENT_END = Pattern.compile("--(!?)>");
     private static final Pattern SCRIPT_END = Pattern.compile("</(?=script)", Pattern.CASE_INSENSITIVE);
     private static final Pattern STYLE_END = Pattern.compile("</(?=style)", Pattern.CASE_INSENSITIVE);
 
@@ -49,7 +55,7 @@ final class ViewerHtml {
 
         // 자리 표시는 템플릿에서만 찾는다. 끼워 넣는 내용에 같은 글자가 있어도 건드리지 않는다.
         List<Slot> slots = new ArrayList<>();
-        for (String marker : List.of(CSS_MARKER, JS_MARKER, DATA_MARKER, MERMAID_MARKER)) {
+        for (String marker : List.of(NOTICE_MARKER, CSS_MARKER, JS_MARKER, DATA_MARKER, MERMAID_MARKER)) {
             int at = template.indexOf(marker);
             if (at < 0) {
                 throw new IOException("template.html에 자리 표시가 없음: " + marker);
@@ -62,6 +68,7 @@ final class ViewerHtml {
         for (Slot slot : slots) {
             out.write(template, pos, slot.at() - pos);
             switch (slot.marker()) {
+                case NOTICE_MARKER -> writeNotice(out);
                 case CSS_MARKER -> writeAssets(out, assets, ".css", STYLE_END);
                 case JS_MARKER -> writeAssets(out, assets, ".js", SCRIPT_END);
                 case DATA_MARKER -> writePacked(out, graphData);
@@ -92,6 +99,24 @@ final class ViewerHtml {
                 writePacked(out, in::transferTo);
             }
         }
+    }
+
+    /** 내장한 Mermaid의 저작권·라이선스 고지를 주석으로 쓴다. Mermaid를 넣지 않는 빌드에서는 쓰지 않는다. */
+    private static void writeNotice(Writer out) throws IOException {
+        if (ViewerHtml.class.getResource(MERMAID_RESOURCE) != null) {
+            out.write(noticeComment(readText(MERMAID_LICENSE_RESOURCE)));
+        }
+    }
+
+    /** 고지를 HTML 주석으로 만든다. 글 안의 주석 종료 글자({@code -->}, {@code --!>})는 사이를 띄워 주석이 일찍 닫히지 않게 한다. */
+    static String noticeComment(String mermaidLicense) {
+        String text = """
+
+                이 파일은 CodeAtlas가 만든 뷰어다. 다이어그램을 그리는 Mermaid(https://github.com/mermaid-js/mermaid)의 배포 번들이
+                id가 codeatlas-vendor-mermaid인 블록에 gzip과 base64로 들어 있다. Mermaid의 저작권과 라이선스 고지는 아래와 같다.
+
+                """ + mermaidLicense.strip() + "\n";
+        return "<!--" + COMMENT_END.matcher(text).replaceAll("--$1 >") + "-->";
     }
 
     /** 데이터를 gzip으로 압축하고 base64 글자로 쓴다. out은 닫지 않는다. */

@@ -293,6 +293,37 @@ class ViewerExporterTest {
     }
 
     @Test
+    @DisplayName("F-016-AC102 내장한 Mermaid의 저작권·라이선스 고지가 viewer.html 머리의 주석에 원문 그대로 들어 있다")
+    void carriesMermaidNotice() throws Exception {
+        String html = export(smallGraph(), out);
+
+        String license;
+        try (var in = ViewerExporter.class.getResourceAsStream("vendor/mermaid.LICENSE")) {
+            assertThat(in).as("빌드가 Mermaid의 LICENSE를 클래스패스에 풀어 두었다").isNotNull();
+            license = new String(in.readAllBytes(), StandardCharsets.UTF_8).strip();
+        }
+        assertThat(license).contains("Copyright (c)").contains("Permission is hereby granted");
+        int open = html.indexOf("<!--");
+        // 브라우저는 문자 인코딩 선언을 파일의 첫 1024바이트에서만 미리 찾는다. 고지가 그 앞에 오면 선언이 밀려난다.
+        int charset = html.indexOf("<meta charset=");
+        assertThat(html.substring(0, charset).getBytes(StandardCharsets.UTF_8).length).as("문자 인코딩 선언이 첫 1024바이트 안에 있다").isLessThan(900);
+        assertThat(open).as("고지 주석은 문서 머리에서 문자 인코딩 선언 뒤, 스타일 앞에 있다").isBetween(charset, html.indexOf("<style"));
+        String notice = html.substring(open, html.indexOf("-->", open));
+        assertThat(notice).contains("Mermaid").contains("codeatlas-vendor-mermaid").contains(license);
+        assertThat(html).doesNotContain("@@NOTICE@@");
+    }
+
+    @Test
+    @DisplayName("F-016-AC102 고지 글에 주석을 닫는 글자가 있어도 주석이 일찍 닫히지 않는다")
+    void noticeCannotCloseTheComment() {
+        String comment = ViewerHtml.noticeComment("a --> b --!> c ---> d");
+
+        assertThat(comment).startsWith("<!--").endsWith("-->");
+        String body = comment.substring("<!--".length(), comment.length() - "-->".length());
+        assertThat(body).doesNotContain("-->", "--!>").contains("a -- > b --! > c --- > d");
+    }
+
+    @Test
     @DisplayName("F-016-AC3 데이터에 </script>, <!--, U+2028, 자리 표시 글자가 있어도 깨지지 않고 원래 값이 나온다")
     void survivesHostileData() throws Exception {
         String nasty = "</script><script>alert(1)</script><!-- </SCRIPT > ]]> \u2028\u2029 \\u003c \"q\" @@MERMAID@@ /*@@JS@@*/ 한글";
