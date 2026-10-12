@@ -284,3 +284,9 @@ bin/codeatlas export out --out out2 --opt export.erd.columns=keys   # 분석 없
 - 구조: [docs/architecture.md](docs/architecture.md), 결정 기록: `docs/decisions/`
 - 검증용 샘플 프로젝트: [samples/sample-shop](samples/sample-shop/README.md)(Oracle·DB2), [samples/sample-pg](samples/sample-pg/README.md)(PostgreSQL)
 - 개발 규칙: [AGENTS.md](AGENTS.md)
+
+## 라이선스
+
+CodeAtlas는 [Apache License 2.0](LICENSE)을 따른다.
+
+실행 jar(`codeatlas.jar`)와 `viewer.html`에는 다른 오픈소스 소프트웨어가 묶인다. 목록과 고지는 [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md)에 있다. `viewer.html`을 다른 사람에게 줄 때는 파일 머리의 Mermaid 고지 주석을 지우지 않는다.

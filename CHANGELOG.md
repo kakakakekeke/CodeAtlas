@@ -9,6 +9,9 @@
 ## [Unreleased]
 
 ### 추가
+- F-001: CodeAtlas에 Apache License 2.0을 붙였다. (2026-10-12)
+  - 세부: 루트에 `LICENSE`와 `NOTICE`를 두었고, 실행 jar와 `viewer.html`에 묶이는 다른 소프트웨어의 라이선스와 고지를 `THIRD-PARTY-NOTICES.md`에 적었다.
+  - 영향: 분석 결과와 명령은 그대로다.
 - F-016: `viewer.html`에 내장한 Mermaid의 저작권·라이선스 고지를 파일 머리의 주석으로 함께 넣는다. (2026-10-12)
   - 영향: 화면과 기능은 그대로다. `viewer.html`의 `<head>` 안에 주석이 하나 생기고 파일이 1KB쯤 커진다.
   - 조치: 다른 사람에게 줄 `viewer.html`은 `codeatlas export <출력 폴더> --out <출력 폴더>`로 다시 만든다.

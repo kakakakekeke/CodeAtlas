@@ -1,0 +1,7 @@
+CodeAtlas
+Copyright 2026 kakakakekeke
+
+This product is licensed under the Apache License, Version 2.0. See the LICENSE file.
+
+The build output (codeatlas.jar and the viewer.html files it writes) bundles third-party
+software under other licenses. See THIRD-PARTY-NOTICES.md.
