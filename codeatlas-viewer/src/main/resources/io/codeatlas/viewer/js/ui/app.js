@@ -7,13 +7,13 @@
   var doc = root.document;
   var VIEW_ORDER = ['explore', 'calltree', 'classdiagram', 'erd', 'crud', 'diagnostics'];
 
-  /** 내장한 그래프를 푼다. 압축을 푸는 일이 비동기라서 Promise를 돌려준다. */
+  /** 내장한 그래프를 풀어(gzip → 뷰어 내장 형식 → graph.json 모양) 돌려준다. 압축을 푸는 일이 비동기라서 Promise다. */
   function readGraph() {
     var holder = doc.getElementById('codeatlas-data');
     if (!holder) return Promise.reject(new Error('데이터 블록(codeatlas-data)이 없다'));
     var packed = holder.textContent;
     holder.textContent = '';
-    return CA.embed.inflateText(packed).then(function (json) { return JSON.parse(json); });
+    return CA.embed.inflateText(packed).then(function (json) { return CA.compact.expand(JSON.parse(json)); });
   }
 
   function parseHash(hash) {

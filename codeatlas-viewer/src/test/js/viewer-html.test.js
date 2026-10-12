@@ -4,10 +4,10 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
-const { read, assetList, assemble, scriptBlocks, unpack } = require('./tools/assemble.js');
+const { read, assetList, assemble, assembleRaw, scriptBlocks, unpack } = require('./tools/assemble.js');
 const { boot, sleep } = require('./tools/boot.js');
 const { sampleGraph, ids } = require('./fixtures/sample-graph.js');
-const { bigGraph } = require('./helpers.js');
+const { bigGraph, core } = require('./helpers.js');
 const { slice, loc } = require('./fixtures/slice.js');
 
 function sampleHtml() {
@@ -61,7 +61,7 @@ test('F-016-AC3 데이터에 </script>가 있어도 데이터 블록이 깨지�
   g.nodes[0].name = '</script><script>window.pwned = 1</script><!-- x';
   const html = assemble(JSON.stringify(g), '');
   const data = scriptBlocks(html).find((b) => b.id === 'codeatlas-data');
-  assert.equal(JSON.parse(unpack(data.text)).nodes[0].name, g.nodes[0].name);
+  assert.equal(core('compact').expand(JSON.parse(unpack(data.text))).nodes[0].name, g.nodes[0].name);
   assert.equal(scriptBlocks(html).length, 3, '데이터의 글자가 블록을 늘리지 않는다');
   const window = await boot(html);
   assert.equal(window.pwned, undefined);
@@ -350,7 +350,7 @@ test('F-016-AC18 빈 그래프와 깨진 데이터에서도 화면이 뜬다', a
   await sleep(20);
   assert.deepEqual(empty.errors, []);
   assert.equal(empty.document.querySelectorAll('.tab').length, 6);
-  const broken = await boot(assemble('{ not json', ''));
+  const broken = await boot(assembleRaw('{ not json', ''));
   assert.ok(broken.document.querySelector('.fatal').textContent.includes('읽지 못했다'));
 });
 

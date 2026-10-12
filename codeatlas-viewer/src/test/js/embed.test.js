@@ -4,7 +4,7 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-const { assemble, scriptBlocks, pack, unpack } = require('./tools/assemble.js');
+const { assemble, assembleRaw, scriptBlocks, pack, unpack } = require('./tools/assemble.js');
 const { boot, launch, sleep } = require('./tools/boot.js');
 const { sampleGraph } = require('./fixtures/sample-graph.js');
 const { core } = require('./helpers.js');
@@ -56,7 +56,7 @@ test('F-016-AC94 화면: 깨진 데이터 블록(gzip이 아님, JSON이 아님)
   const data = scriptBlocks(html).find((b) => b.id === 'codeatlas-data');
   const notGzip = await boot(html.replace(data.text, Buffer.from('{"nodes":[]}').toString('base64')));
   assert.ok(notGzip.document.querySelector('.fatal').textContent.includes('읽지 못했다'));
-  const notJson = await boot(assemble('{ not json', ''));
+  const notJson = await boot(assembleRaw('{ not json', ''));
   assert.ok(notJson.document.querySelector('.fatal').textContent.includes('읽지 못했다'));
 });
 

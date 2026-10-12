@@ -102,6 +102,14 @@ JS 테스트: `node --test "codeatlas-viewer/src/test/js/*.test.js"` · Java 테
 - [x] 실제 브라우저 확인: 이 저장소의 분석 결과(graph.json 69.5MB → `viewer.html` 6.7MB)를 `http://localhost`로 띄워 뷰어가 켜지고 ERD가 그려지는 것을 확인(콘솔 오류 없음)
 - [x] `mvn -q install` 통과, JS 293개(그중 28개는 실제 그래프와 표준 산출물이 있을 때만 돈다) 통과
 
+## 뷰어 내장 형식 (2026-10-12, 압축 내장의 후속)
+- [x] core: `GraphJsonTest`(F-001-AC15 `exposesFileOrder`) → 컴파일 실패 확인 → `GraphJson.orderedNodes`·`orderedEdges`·`orderedDiagnostics`·`projectJson` 공개(`write`가 같은 것을 쓴다) → 통과
+- [x] F-016-AC96(`ViewerExporterTest`: `writesCompactForm`, AC1·AC3·AC93의 테스트가 되돌린 그래프를 `graph.json`과 견준다) → 고치기 전의 코드로 실행해 6개 실패 확인 → `CompactGraphJson`(Jackson `JsonGenerator`로 흘려 쓰기), `ViewerExporter`, `pom.xml`(jackson-databind를 직접 의존으로) → 통과 (F-016-R49)
+- [x] F-016-AC97·AC98(`compact.test.js` 6개) → `core/compact.js`가 없어 실패 확인 → `core/compact.js`(`expand`), `assets.txt`, `app.js`(푼 JSON을 되돌려 색인) → 통과 (F-016-R49)
+- [x] 테스트 도구: `tools/compact.js`(`compactGraph`: Java와 같은 규칙. AC98이 Java의 출력과 견준다), `tools/assemble.js`(`assemble`은 줄인 형식을 넣고 `assembleRaw`는 받은 글자를 그대로 넣는다)
+- [x] 실제 브라우저 확인: 이 저장소의 분석 결과(graph.json 69.8MB → `viewer.html` 4.9MB)를 `http://localhost`로 띄워 뷰어가 켜지고 콜트리와 ERD가 그려지는 것을 확인(콘솔 오류 없음)
+- [x] `mvn -q install` 통과, JS 299개(그중 28개는 실제 그래프와 표준 산출물이 있을 때만 돈다) 통과
+
 ## 마무리
 - [x] 모든 수용 기준 통과 확인 (JS 193개 — 그중 26개는 실제 그래프와 표준 산출물(`codeatlas-cli/target/final-out/`)이 있을 때만 돈다, Java 7개)
 - [x] spec.md의 status를 implemented로 변경

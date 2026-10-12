@@ -4,6 +4,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const zlib = require('node:zlib');
+const { compactGraph } = require('./compact.js');
 
 const RESOURCE_ROOT = path.join(__dirname, '..', '..', '..', 'main', 'resources', 'io', 'codeatlas', 'viewer');
 
@@ -26,7 +27,13 @@ function unpack(block) {
   return zlib.gunzipSync(Buffer.from(block, 'base64')).toString('utf8');
 }
 
+/** graph.json의 글자를 뷰어 내장 형식으로 줄여 넣는다. */
 function assemble(graphJson, mermaidSource) {
+  return assembleRaw(JSON.stringify(compactGraph(JSON.parse(graphJson))), mermaidSource);
+}
+
+/** 데이터 블록에 받은 글자를 그대로(압축만 해서) 넣는다. 깨진 데이터를 시험할 때 쓴다. */
+function assembleRaw(dataText, mermaidSource) {
   const assets = assetList();
   const css = assets.filter((a) => a.endsWith('.css')).map(read).join('\n');
   const js = assets.filter((a) => a.endsWith('.js')).map((a) => '// ---- ' + a + '\n' + read(a)).join('\n');
@@ -34,7 +41,7 @@ function assemble(graphJson, mermaidSource) {
   const parts = {
     '/*@@CSS@@*/': css,
     '/*@@JS@@*/': js,
-    '@@DATA@@': pack(graphJson),
+    '@@DATA@@': pack(dataText),
     '@@MERMAID@@': mermaidSource ? pack(mermaidSource) : ''
   };
   // 자리 표시는 템플릿에서만 찾는다. 끼워 넣은 내용 안에 같은 글자가 있어도 건드리지 않는다.
@@ -66,7 +73,7 @@ function scriptBlocks(html) {
   return out;
 }
 
-module.exports = { RESOURCE_ROOT, read, assetList, assemble, scriptBlocks, pack, unpack };
+module.exports = { RESOURCE_ROOT, read, assetList, assemble, assembleRaw, scriptBlocks, pack, unpack };
 
 if (require.main === module) {
   const [graphPath, outPath, mermaidPath] = process.argv.slice(2);
