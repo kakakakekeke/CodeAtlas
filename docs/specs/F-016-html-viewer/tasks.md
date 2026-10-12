@@ -89,6 +89,9 @@ JS 테스트: `node --test "codeatlas-viewer/src/test/js/*.test.js"` · Java 테
 - [x] 실제 브라우저 확인: jeesite 결과를 `http://localhost`로 띄워 탐색의 단추, 브라우저의 뒤로·앞으로 가기, 서랍의 단추를 확인(콘솔 오류 없음). `file://`은 확인에 쓴 브라우저 도구가 열지 못해 `file-protocol.test.js`(덫에 걸린 접근 없음)로 갈음
 - [x] JS 272개(그중 28개는 실제 그래프와 표준 산출물이 있을 때만 돈다) 통과, `mvn -q -pl codeatlas-viewer test` 통과
 
+## 컬럼 쌍이 여럿인 조인·관계 (2026-10-12, 사용자 요청)
+- [x] F-016-AC88~AC90(`column-pairs.test.js` 3개) → 고치기 전의 뷰어로 실행해 3개 모두 실패 확인 → `graph.js`(`columnPairs`, 요약의 `컬럼 n쌍`, 엣지 항목의 `pairs`·`fullSummary`), `detail.js`(엣지 줄 아래의 쌍 표, 풍선말), `viewer.css`(`.edge-pairs`), `erd.js`(`pairText`: 쌍마다 이은 관계 라벨) → 통과 (F-016-R46)
+
 ## 마무리
 - [x] 모든 수용 기준 통과 확인 (JS 193개 — 그중 26개는 실제 그래프와 표준 산출물(`codeatlas-cli/target/final-out/`)이 있을 때만 돈다, Java 7개)
 - [x] spec.md의 status를 implemented로 변경
