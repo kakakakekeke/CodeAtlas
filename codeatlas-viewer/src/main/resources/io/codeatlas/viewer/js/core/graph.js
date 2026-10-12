@@ -774,23 +774,68 @@
     return n ? n.name : idRemainder(id);
   }
 
+  function listOf(v) { return Array.isArray(v) ? v : v == null ? [] : [v]; }
+
+  function isInferredReference(e) {
+    var a = e.attrs || {};
+    return (a.source || (e.confidence === 'INFERRED' ? 'INFERRED' : 'DDL')) === 'INFERRED';
+  }
+
+  /** 한 줄에 풀어 적는 컬럼 쌍의 수 한도. 이보다 많으면 요약에는 `컬럼 n쌍`만 적고 쌍은 표(columnPairs)로 보인다. */
+  var INLINE_PAIRS = 1;
+
+  /**
+   * JOINS·REFERENCES의 컬럼 쌍을 표로 보일 꼴로. 쌍이 INLINE_PAIRS개 이하이거나 다른 종류면 null.
+   * { left, right: 테이블 이름(from, to), op: '=' 또는 '→', leftNote, rightNote: 그쪽 머리에 붙일 말(함수 적용), rows: [[왼쪽 컬럼, 오른쪽 컬럼]] }
+   * REFERENCES의 왼쪽은 자식(columns), 오른쪽은 부모(refColumns)이고, 방향을 모르는 추론 관계는 '='다. 참조 컬럼을 모르면(refColumns 없음) null.
+   */
+  function columnPairs(index, e) {
+    var a = e.attrs || {};
+    var leftColumns;
+    var rightColumns;
+    var op = '=';
+    var leftNote = '';
+    var rightNote = '';
+    if (e.kind === 'JOINS') {
+      leftColumns = listOf(a.leftColumns);
+      rightColumns = listOf(a.rightColumns);
+      if (a.leftWrapped === true) leftNote = '함수 적용';
+      if (a.rightWrapped === true) rightNote = '함수 적용';
+    } else if (e.kind === 'REFERENCES') {
+      leftColumns = listOf(a.columns);
+      rightColumns = listOf(a.refColumns);
+      if (!rightColumns.length) return null;
+      if (!(isInferredReference(e) && a.directionKnown === false)) op = '→';
+    } else {
+      return null;
+    }
+    var count = Math.max(leftColumns.length, rightColumns.length);
+    if (count <= INLINE_PAIRS) return null;
+    var rows = [];
+    for (var i = 0; i < count; i++) rows.push([String(leftColumns[i] != null ? leftColumns[i] : '?'), String(rightColumns[i] != null ? rightColumns[i] : '?')]);
+    return { left: shortTable(index, e.from), right: shortTable(index, e.to), op: op, leftNote: leftNote, rightNote: rightNote, rows: rows };
+  }
+
   /**
    * 엣지의 속성을 사람이 읽는 한 줄로 요약한다. 요약할 것이 없으면 ''.
    *  REFERENCES: `ORDER_STATUS → CODE (GROUP_CD='ORDER_STATUS') · N:1 · 추론 1건`
    *  JOINS: `TB_CODE.CODE = TB_ORDER.ORDER_STATUS · TB_CODE 고정 GROUP_CD='ORDER_STATUS'`
    *  CALLS: 미해결 java-call의 인자 수, props로 받은 함수 호출(viaProp), redirect·forward의 경로와 출처
+   * JOINS·REFERENCES의 컬럼 쌍이 여럿이면(columnPairs) 쌍 대신 `컬럼 3쌍`이라 적는다. inlinePairs가 true면 쌍을 늘 풀어 적는다(풍선말용).
    */
-  function edgeSummary(index, e) {
+  function edgeSummary(index, e, inlinePairs) {
     var a = e.attrs || {};
-    var list = function (v) { return Array.isArray(v) ? v : v == null ? [] : [v]; };
+    var list = listOf;
     var parts = [];
+    var tabled = inlinePairs === true ? null : columnPairs(index, e);
+    var pairCount = tabled ? '컬럼 ' + tabled.rows.length + '쌍' : null;
     if (e.kind === 'REFERENCES') {
-      var inferred = (a.source || (e.confidence === 'INFERRED' ? 'INFERRED' : 'DDL')) === 'INFERRED';
+      var inferred = isInferredReference(e);
       var unknownDirection = inferred && a.directionKnown === false;
       var columns = list(a.columns).join(', ');
       var refColumns = list(a.refColumns).join(', ');
       var fixed = fixedText(a.fixedColumns, a.fixedValues);
-      var head = columns + (refColumns ? (unknownDirection ? ' = ' : ' → ') + refColumns : '');
+      var head = pairCount || columns + (refColumns ? (unknownDirection ? ' = ' : ' → ') + refColumns : '');
       parts.push(head + (fixed ? ' (' + fixed + ')' : ''));
       // 방향을 모르는 까닭: 선언된 FK와 반대(declaredOpposite), 유일하지 않은 키(pseudoKey), 그 밖에는 키 정보 없음.
       if (unknownDirection) parts.push('방향 미상: ' + directionReason(a));
@@ -820,7 +865,7 @@
       // 형 변환·정리 함수(TO_CHAR, TRIM 등)로 감싼 컬럼끼리의 등치: 어느 쪽 컬럼을 감쌌는지 적는다.
       var wrappedSide = a.leftWrapped === true && a.rightWrapped === true ? '양쪽' : a.leftWrapped === true ? left + ' 쪽' : a.rightWrapped === true ? right + ' 쪽' : '';
       var wrapped = a.wrapped === true || wrappedSide ? ' (함수 적용' + (wrappedSide ? ': ' + wrappedSide : '') + ')' : '';
-      parts.push(pairs.join(' AND ') + wrapped);
+      parts.push((pairCount || pairs.join(' AND ')) + wrapped);
       var leftFixed = fixedText(a.leftFixedColumns, a.leftFixedValues);
       var rightFixed = fixedText(a.rightFixedColumns, a.rightFixedValues);
       if (leftFixed) parts.push(left + ' 고정 ' + leftFixed);
@@ -907,6 +952,8 @@
       var otherId = e[otherEnd];
       var g = groups.get(e.kind);
       if (!g) groups.set(e.kind, g = { kind: e.kind, items: [] });
+      var summary = edgeSummary(index, e);
+      var pairs = columnPairs(index, e);
       g.items.push({
         edge: e,
         otherId: otherId,
@@ -914,7 +961,10 @@
         label: index.label(otherId),
         confidence: e.confidence || 'RESOLVED',
         location: formatLocation(e.location),
-        summary: edgeSummary(index, e),
+        summary: summary,
+        // 쌍이 여럿인 JOINS·REFERENCES: 쌍은 표로 보이고, 쌍을 모두 풀어 적은 요약은 풍선말로 쓴다.
+        pairs: pairs,
+        fullSummary: pairs ? edgeSummary(index, e, true) : summary,
         attrs: attrList(e.attrs, index)
       });
     });
@@ -969,6 +1019,7 @@
     fixedText: fixedText,
     danglingCategory: danglingCategory,
     edgeSummary: edgeSummary,
+    columnPairs: columnPairs,
     directionReason: directionReason,
     undeclaredColumnsOf: undeclaredColumnsOf,
     requestLabel: requestLabel, requestMethod: requestMethod, SELF_SUBMIT: SELF_SUBMIT, SELF_SUBMIT_CANDIDATES: SELF_SUBMIT_CANDIDATES,

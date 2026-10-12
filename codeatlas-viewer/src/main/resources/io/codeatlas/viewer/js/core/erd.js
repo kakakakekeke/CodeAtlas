@@ -1119,16 +1119,25 @@
   var fixedText = G.fixedText;
 
   /**
+   * 자식 컬럼과 부모 컬럼을 잇는 글자. 한 쌍이면 `A → X`, 여럿이면 쌍마다 이어 `A → X, B → Y`로 적는다
+   * (`A, B → X, Y`는 위치를 세어 맞춰야 한다). op는 ' → ' 또는 ' = '.
+   */
+  function pairText(columns, refColumns, op) {
+    if (columns.length !== refColumns.length || columns.length < 2) return columns.join(', ') + op + refColumns.join(', ');
+    return columns.map(function (c, i) { return c + op + refColumns[i]; }).join(', ');
+  }
+
+  /**
    * 관계 라벨. 표준 산출물(erd.mmd)과 같은 표기다: DDL 관계는 제약 이름(없으면 컬럼), 추론 관계는 `컬럼 (추론 n건)`,
    * 방향을 모르면 `컬럼 (추론 n건, 방향 미상)`, 방향만 알고 카디널리티를 모르면 `컬럼 (추론 n건, 방향은 DDL, 카디널리티 모름)`.
-   * 뷰어는 여기에 더해, 컬럼 이름이 양쪽에서 다르면 상대 쪽 컬럼을,
+   * 뷰어는 여기에 더해, 컬럼 이름이 양쪽에서 다르면 상대 쪽 컬럼을(복합 키면 쌍마다 `A → X, B → Y`),
    * 복합 키의 일부를 상수로 고정한 관계(공통코드 테이블)면 고정 컬럼을 적는다: `ORDER_STATUS → CODE (GROUP_CD='ORDER_STATUS', 추론 1건)`.
    */
   function relationLabel(r) {
     if (r.source === 'INFERRED' && r.fromUpgrade) {
       // 현재 정의에 없는 upgrade 외래 키: 추론 n건 대신 `(upgrade 스크립트, 현재 정의에 없음)`. 이름은 제약 이름(없으면 컬럼).
       var name = r.constraint ? r.constraint
-        : r.columns.join(', ') + (r.columns.length && r.refColumns.length && !sameList(r.columns, r.refColumns) ? (r.directionKnown ? ' → ' : ' = ') + r.refColumns.join(', ') : '');
+        : r.columns.length && r.refColumns.length && !sameList(r.columns, r.refColumns) ? pairText(r.columns, r.refColumns, r.directionKnown ? ' → ' : ' = ') : r.columns.join(', ');
       var why = FROM_UPGRADE + ', ' + NOT_IN_CURRENT + (!r.directionKnown ? ', 방향 미상' + (r.directionNote ? ': ' + r.directionNote : '')
         : r.cardinalityUnknown ? ', ' + cardinalityUnknownNote(r.directionFrom) : '');
       return (name ? name + ' ' : '') + '(' + why + ')';
@@ -1137,9 +1146,8 @@
       var text = '';
       var fixed = fixedText(r.fixedColumns, r.fixedValues);
       if (r.columns.length) {
-        text = r.columns.join(', ');
         // 방향을 모르면 화살표 대신 등호로. 고정 컬럼이 있으면 부모 쪽 키가 보이게 늘 적는다.
-        if (r.refColumns.length && (fixed || !sameList(r.columns, r.refColumns))) text += (r.directionKnown ? ' → ' : ' = ') + r.refColumns.join(', ');
+        text = r.refColumns.length && (fixed || !sameList(r.columns, r.refColumns)) ? pairText(r.columns, r.refColumns, r.directionKnown ? ' → ' : ' = ') : r.columns.join(', ');
       }
       var notes = [];
       if (fixed) notes.push(fixed);
@@ -1150,7 +1158,7 @@
     }
     var upgrade = r.fromUpgrade ? ' (' + FROM_UPGRADE + ')' : '';
     if (r.constraint) return r.constraint + upgrade;
-    if (r.columns.length) return r.columns.join(', ') + (r.refColumns.length && !sameList(r.columns, r.refColumns) ? ' → ' + r.refColumns.join(', ') : '') + upgrade;
+    if (r.columns.length) return (r.refColumns.length && !sameList(r.columns, r.refColumns) ? pairText(r.columns, r.refColumns, ' → ') : r.columns.join(', ')) + upgrade;
     return 'FK' + upgrade;
   }
 

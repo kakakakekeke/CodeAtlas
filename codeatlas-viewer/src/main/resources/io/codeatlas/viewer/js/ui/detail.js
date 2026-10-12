@@ -94,6 +94,19 @@
     return section;
   }
 
+  /**
+   * 컬럼 쌍이 여럿인 JOINS·REFERENCES의 쌍 표. 첫 줄은 양쪽 테이블 이름이고, 그 아래로 쌍마다 한 줄씩 `왼쪽 컬럼  =  오른쪽 컬럼`을 맞춰 적는다.
+   * 한 줄에 `A.X = B.Y AND A.Z = B.W AND …`로 늘어놓으면 잘려 보이지 않고, `X, Z → Y, W`는 위치를 세어 맞춰야 해서 따로 보인다.
+   */
+  function pairTable(p) {
+    var head = function (name, note) { return name + (note ? ' (' + note + ')' : ''); };
+    var rows = [h('div', { class: 'pair head' }, [h('span', { text: head(p.left, p.leftNote) }), h('span', { text: '' }), h('span', { text: head(p.right, p.rightNote) })])];
+    p.rows.forEach(function (r) {
+      rows.push(h('div', { class: 'pair' }, [h('span', { text: r[0] }), h('span', { class: 'op', text: p.op }), h('span', { text: r[1] })]));
+    });
+    return h('div', { class: 'edge-pairs' }, rows);
+  }
+
   /** 엣지 한 줄. 속성이 있으면 ▸를 눌러 모든 속성과 위치를 펼친다(추론 관계의 근거 구문, 주입 후보 등). */
   function edgeRow(item, follow) {
     var extra = edgeExtra(item);
@@ -104,10 +117,10 @@
       ui.confBadge(item.confidence, true),
       item.other ? ui.kindBadge(item.other.kind) : h('span', { class: 'tag warn', text: '노드 없음', title: '그래프에 이 ID의 노드가 없다' }),
       h('button', { class: 'link', type: 'button', text: item.label, title: item.otherId, on: { click: function () { follow(item.otherId); } } }),
-      item.summary ? h('span', { class: 'edge-summary', text: item.summary, title: item.summary }) : null,
+      item.summary ? h('span', { class: 'edge-summary', text: item.summary, title: item.fullSummary || item.summary }) : null,
       extra ? h('span', { class: 'extra', text: extra, title: extra }) : null
     ]);
-    var wrap = h('div', { class: 'edge-item' }, [line]);
+    var wrap = h('div', { class: 'edge-item' }, item.pairs ? [line, pairTable(item.pairs)] : [line]);
     toggle.addEventListener('click', function () {
       if (!item.attrs.length) return;
       if (details) { details.remove(); details = null; }

@@ -92,6 +92,9 @@ JS 테스트: `node --test "codeatlas-viewer/src/test/js/*.test.js"` · Java 테
 ## 상세의 SQL 정리 (2026-10-12, 사용자 요청)
 - [x] F-016-AC88·AC89(`sql-format.test.js` 10개) → 고치기 전의 뷰어로 실행해 실패 확인(`core/sqlformat.js` 없음) → `core/sqlformat.js`(낱말 단위 정리기: 절 줄바꿈, 쉼표·AND·OR 들여쓰기, 하위 쿼리 들여쓰기, 괄호·CASE 안은 한 줄, 문자열·주석·자리표시·달러 인용 보존), `assets.txt`, `detail.js`(`sql` 값의 정리본과 "원문"·"정리" 단추), `viewer.css` → 통과 (F-016-R46)
 
+## 컬럼 쌍이 여럿인 조인·관계 (2026-10-12, 사용자 요청)
+- [x] F-016-AC90~AC92(`column-pairs.test.js` 3개) → 고치기 전의 뷰어로 실행해 3개 모두 실패 확인 → `graph.js`(`columnPairs`, 요약의 `컬럼 n쌍`, 엣지 항목의 `pairs`·`fullSummary`), `detail.js`(엣지 줄 아래의 쌍 표, 풍선말), `viewer.css`(`.edge-pairs`), `erd.js`(`pairText`: 쌍마다 이은 관계 라벨) → 통과 (F-016-R47)
+
 ## 마무리
 - [x] 모든 수용 기준 통과 확인 (JS 193개 — 그중 26개는 실제 그래프와 표준 산출물(`codeatlas-cli/target/final-out/`)이 있을 때만 돈다, Java 7개)
 - [x] spec.md의 status를 implemented로 변경
