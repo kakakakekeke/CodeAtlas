@@ -220,6 +220,16 @@ class GraphJsonTest {
     }
 
     @Test
+    @DisplayName("F-001-AC43 Windows에서 쓴 경로도 구분자를 /로 저장해 운영체제와 무관하게 같은 파일이 나온다")
+    void optionsPathSeparatorIsPortable() {
+        assertThat(GraphJson.portablePath("lib\\a.jar", "\\")).isEqualTo("lib/a.jar");
+        assertThat(GraphJson.portablePath("..\\shared\\classes", "\\")).isEqualTo("../shared/classes");
+        assertThat(GraphJson.portablePath("C:\\db\\schema.sql", "\\")).isEqualTo("C:/db/schema.sql");
+        // 구분자가 /인 파일 시스템에서 \는 이름의 일부이므로 그대로 둔다
+        assertThat(GraphJson.portablePath("db/odd\\name.sql", "/")).isEqualTo("db/odd\\name.sql");
+    }
+
+    @Test
     @DisplayName("F-001-AC43 옵션을 주지 않은 그래프와 options 항목이 없는 예전 graph.json은 빈 옵션으로 읽는다")
     void optionsDefaultWhenAbsent() throws Exception {
         assertThat(new ProjectInfo("demo", "/work/demo", null).options()).isEqualTo(AnalysisOptions.defaults());
