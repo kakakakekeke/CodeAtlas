@@ -39,8 +39,8 @@ import java.util.TreeMap;
  * <li>attrs: 키 순</li>
  * </ul>
  *
- * <p>{@code project.options}에는 분석할 때 준 옵션({@link AnalysisOptions})을 담는다. 경로는 입력 그대로의 문자열이고
- * {@code extra}는 키 순이다. 이 항목이 없는 파일(예전에 쓴 것)은 빈 옵션으로 읽는다.
+ * <p>{@code project.options}에는 분석할 때 준 옵션({@link AnalysisOptions})을 담는다. 경로는 입력 그대로의 문자열이되 구분자는
+ * {@code /}로 쓰고, {@code extra}는 키 순이다. 이 항목이 없는 파일(예전에 쓴 것)은 빈 옵션으로 읽는다.
  */
 public final class GraphJson {
 
@@ -169,11 +169,20 @@ public final class GraphJson {
         Map<String, Object> json = new LinkedHashMap<>();
         json.put("dialect", options.dialect().name());
         json.put("encoding", options.encoding() == null ? null : options.encoding().name());
-        json.put("classpath", options.classpath().stream().map(Path::toString).toList());
-        json.put("ddlPaths", options.ddlPaths().stream().map(Path::toString).toList());
+        json.put("classpath", options.classpath().stream().map(GraphJson::portablePath).toList());
+        json.put("ddlPaths", options.ddlPaths().stream().map(GraphJson::portablePath).toList());
         json.put("excludes", options.excludes());
         json.put("extra", new TreeMap<>(options.extra()));
         return json;
+    }
+
+    private static String portablePath(Path path) {
+        return portablePath(path.toString(), path.getFileSystem().getSeparator());
+    }
+
+    /** 이 파일 시스템의 구분자를 /로 바꾼다. 구분자가 /인 곳에서 \는 이름의 일부이므로 그대로 둔다. */
+    static String portablePath(String path, String separator) {
+        return path.replace(separator, "/");
     }
 
     private static Map<String, Object> nodeJson(Node node) {

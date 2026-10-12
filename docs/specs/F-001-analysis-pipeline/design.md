@@ -842,7 +842,7 @@ UTF-8로 엄격하게 디코딩해 보고 실패하면 MS949로 읽는다. `--en
 - 정렬: 노드는 `id`, 엣지는 `from`, `to`, `kind` 이름, `location` 순, 진단은 `location`, `severity`, `code`, `message` 순(위치 없는 것이 먼저), `attrs`는 키 순.
 - `location`이 없으면 `null`, `attrs`가 없으면 `{}`를 쓴다. 필드를 생략하지 않는다.
 - `project.root`는 분석한 절대 경로(`/` 구분), `analyzedAt`은 초 단위 UTC 시각이다. `analyzedAt`과 `root`만 빼면 같은 입력에서 같은 파일이 나온다.
-- `project.options`는 분석할 때 준 `AnalysisOptions`다(`schemaVersion`은 그대로 1). `dialect`는 `Dialect` 이름, `encoding`은 지정한 인코딩의 이름(지정이 없으면 `null`), `classpath`·`ddlPaths`는 준 순서대로 **입력 그대로의 경로 문자열**(절대 경로로 바꾸지 않는다), `excludes`는 준 순서대로, `extra`는 키 순이다. 프로젝트 정보가 없는 그래프는 `options`를 `null`로 쓴다.
+- `project.options`는 분석할 때 준 `AnalysisOptions`다(`schemaVersion`은 그대로 1). `dialect`는 `Dialect` 이름, `encoding`은 지정한 인코딩의 이름(지정이 없으면 `null`), `classpath`·`ddlPaths`는 준 순서대로 **입력 그대로의 경로 문자열**(절대 경로로 바꾸지 않는다. 구분자는 운영체제와 무관하게 `/`로 쓴다), `excludes`는 준 순서대로, `extra`는 키 순이다. 프로젝트 정보가 없는 그래프는 `options`를 `null`로 쓴다.
 - `read`는 `options` 항목이 없는 파일(이 항목이 생기기 전에 쓴 것)과 항목 안에서 빠진 값을 `AnalysisOptions.defaults()`의 값으로 읽는다. 읽는 JVM이 모르는 인코딩 이름은 지정이 없는 것(`null`)으로 읽는다. 모르는 `dialect` 값은 다른 enum 값과 같이 `IOException`이다.
 - `read`는 `schemaVersion`이 1이 아니거나 내용을 해석하지 못하면 `IOException`을 던진다. 읽은 그래프는 병합 규칙을 다시 적용하지 않고 저장된 그대로다.
 
