@@ -47,14 +47,10 @@ test('F-016-AC90 상세: 컬럼 쌍이 둘 이상인 JOINS·REFERENCES는 요약
     left: 'TB_ORDER', right: 'TB_ORDER_ITEM', op: '=', leftNote: '', rightNote: '',
     rows: [['SITE_CD', 'SITE_CD'], ['ORDER_NO', 'ORD_NO'], ['LANG_CD', 'LANG']]
   });
-  assert.equal(join.fullSummary,
-    "TB_ORDER.SITE_CD = TB_ORDER_ITEM.SITE_CD AND TB_ORDER.ORDER_NO = TB_ORDER_ITEM.ORD_NO AND TB_ORDER.LANG_CD = TB_ORDER_ITEM.LANG · TB_ORDER_ITEM 고정 USE_YN='Y'",
-    '쌍을 모두 풀어 적은 요약(풍선말)');
   // 추론 관계: 방향을 알면 →, 모르면 =
   const ref = itemOf(order, 'incoming', 'REFERENCES', f.item);
   assert.equal(ref.summary, '컬럼 2쌍 · N:1 · 추론 2건');
   assert.deepEqual(ref.pairs, { left: 'TB_ORDER_ITEM', right: 'TB_ORDER', op: '→', leftNote: '', rightNote: '', rows: [['SITE_CD', 'SITE_CD'], ['ORD_NO', 'ORDER_NO']] });
-  assert.equal(ref.fullSummary, 'SITE_CD, ORD_NO → SITE_CD, ORDER_NO · N:1 · 추론 2건');
   const unknown = itemOf(graph.nodeDetail(ix, f.opt), 'outgoing', 'REFERENCES', f.item);
   assert.equal(unknown.summary, '컬럼 3쌍 · 방향 미상: 키 정보 없음 · 추론 1건');
   assert.equal(unknown.pairs.op, '=');
@@ -68,7 +64,6 @@ test('F-016-AC90 상세: 컬럼 쌍이 둘 이상인 JOINS·REFERENCES는 요약
   const single = itemOf(log, 'outgoing', 'JOINS', f.one);
   assert.equal(single.summary, 'TB_LOG.ID = TB_ONE.LOG_ID (함수 적용: TB_LOG 쪽)');
   assert.equal(single.pairs, null);
-  assert.equal(single.fullSummary, single.summary);
 });
 
 test('F-016-AC91 화면: 컬럼 쌍이 둘 이상인 엣지 줄 아래에 양쪽 테이블 이름을 머리로 한 쌍 표가 늘 보인다', async () => {
@@ -80,8 +75,8 @@ test('F-016-AC91 화면: 컬럼 쌍이 둘 이상인 엣지 줄 아래에 양쪽
   const items = doc.querySelectorAll('.view-explore .edge-item');
   const join = items.find((i) => i.querySelector('.edge-row').textContent.includes('컬럼 3쌍'));
   assert.ok(join, '쌍 수를 적은 JOINS 줄');
-  assert.equal(join.querySelector('.edge-summary').getAttribute('title'),
-    "TB_ORDER.SITE_CD = TB_ORDER_ITEM.SITE_CD AND TB_ORDER.ORDER_NO = TB_ORDER_ITEM.ORD_NO AND TB_ORDER.LANG_CD = TB_ORDER_ITEM.LANG · TB_ORDER_ITEM 고정 USE_YN='Y'");
+  // 쌍을 한 줄에 풀어 적은 풍선말(title)은 없다: 줄의 풍선이 요약의 조각과 쌍 표를 보인다(F-016-R50, edge-pop.test.js)
+  assert.equal(join.querySelector('.edge-summary').getAttribute('title'), null);
   const table = join.querySelector('.edge-pairs');
   assert.ok(table, '쌍 표는 펼치지 않아도 보인다');
   const cells = (row) => row.querySelectorAll('span').map((c) => c.textContent);

@@ -110,6 +110,15 @@ JS 테스트: `node --test "codeatlas-viewer/src/test/js/*.test.js"` · Java 테
 - [x] 실제 브라우저 확인: 이 저장소의 분석 결과(graph.json 69.8MB → `viewer.html` 4.9MB)를 `http://localhost`로 띄워 뷰어가 켜지고 콜트리와 ERD가 그려지는 것을 확인(콘솔 오류 없음)
 - [x] `mvn -q install` 통과, JS 299개(그중 28개는 실제 그래프와 표준 산출물이 있을 때만 돈다) 통과
 
+## 엣지 풍선과 탐색 화면의 나눔선 (2026-10-12, 사용자 보고·요청)
+- [x] 재현: 전자정부 공통컴포넌트의 `COMTHDBMNTRNGLOGINFO` 상세(칸 너비 643px)에서 `JOINS` 요약은 758px 가운데 112px, 위치는 603px 가운데 281px만 보이는 것을 확인(같은 테이블로 가는 여섯 줄, 같은 매퍼 파일의 `READS`·`WRITES` 줄이 같아 보인다)
+- [x] 첫 시도(줄을 두 줄로 늘려 요약과 `/파일:줄`을 다 보임)는 사용자 검토에서 되돌렸다: 폴더는 여전히 잘리고 상세가 길어진다. 풍선으로 다시 한다
+- [x] F-016-AC99·AC100(`edge-pop.test.js` 4개) → 고치기 전의 뷰어로 실행해 모두 실패 확인 → `detail.js`(풍선 `ui.edgePop`: `popCard`·`popPlace`·`popAttach`, 줄의 `title` 제거와 `data-id`), `app.js`(Esc는 고정한 풍선부터, 화면을 바꾸거나 서랍을 닫으면 풍선도 닫음), `viewer.css`(`.edge-pop`) → 통과 (F-016-R50)
+- [x] 풍선말용이던 `fullSummary`와 `edgeSummary`의 `inlinePairs`를 `graph.js`에서 빼고 `column-pairs.test.js`(AC90·AC91)와 `trail.test.js`(링크의 ID를 `data-id`로 읽음)를 맞춤
+- [x] F-016-AC101(`edge-pop.test.js` 1개) → 실패 확인 → `widgets.js`(`createSplitter`), `view-explore.js`, `viewer.css`(`.splitter`, `.view.resizing`) → 통과 (F-016-R51)
+- [x] 실제 브라우저 확인: 풍선(마우스 올리기, 눌러 고정, Esc), 좁은 창의 서랍(줄 아래에 뜸), 나눔선 끌기(상세 641px → 897px), 라이트·다크, 콘솔 오류 없음
+- [x] `mvn -q install` 통과, JS 304개(그중 28개는 실제 그래프와 표준 산출물이 있을 때만 돈다) 통과
+
 ## 마무리
 - [x] 모든 수용 기준 통과 확인 (JS 193개 — 그중 26개는 실제 그래프와 표준 산출물(`codeatlas-cli/target/final-out/`)이 있을 때만 돈다, Java 7개)
 - [x] spec.md의 status를 implemented로 변경

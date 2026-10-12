@@ -821,13 +821,13 @@
    *  REFERENCES: `ORDER_STATUS → CODE (GROUP_CD='ORDER_STATUS') · N:1 · 추론 1건`
    *  JOINS: `TB_CODE.CODE = TB_ORDER.ORDER_STATUS · TB_CODE 고정 GROUP_CD='ORDER_STATUS'`
    *  CALLS: 미해결 java-call의 인자 수, props로 받은 함수 호출(viaProp), redirect·forward의 경로와 출처
-   * JOINS·REFERENCES의 컬럼 쌍이 여럿이면(columnPairs) 쌍 대신 `컬럼 3쌍`이라 적는다. inlinePairs가 true면 쌍을 늘 풀어 적는다(풍선말용).
+   * JOINS·REFERENCES의 컬럼 쌍이 여럿이면(columnPairs) 쌍 대신 `컬럼 3쌍`이라 적는다.
    */
-  function edgeSummary(index, e, inlinePairs) {
+  function edgeSummary(index, e) {
     var a = e.attrs || {};
     var list = listOf;
     var parts = [];
-    var tabled = inlinePairs === true ? null : columnPairs(index, e);
+    var tabled = columnPairs(index, e);
     var pairCount = tabled ? '컬럼 ' + tabled.rows.length + '쌍' : null;
     if (e.kind === 'REFERENCES') {
       var inferred = isInferredReference(e);
@@ -962,9 +962,8 @@
         confidence: e.confidence || 'RESOLVED',
         location: formatLocation(e.location),
         summary: summary,
-        // 쌍이 여럿인 JOINS·REFERENCES: 쌍은 표로 보이고, 쌍을 모두 풀어 적은 요약은 풍선말로 쓴다.
+        // 쌍이 여럿인 JOINS·REFERENCES: 요약에는 쌍의 수만 적고 쌍은 표로 보인다.
         pairs: pairs,
-        fullSummary: pairs ? edgeSummary(index, e, true) : summary,
         attrs: attrList(e.attrs, index)
       });
     });

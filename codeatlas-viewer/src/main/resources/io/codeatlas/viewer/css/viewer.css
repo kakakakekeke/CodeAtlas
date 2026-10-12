@@ -217,6 +217,10 @@ button, input, select { font: inherit; color: inherit; }
 .kind-row .n { margin-left: auto; padding-left: 6px; color: var(--text-3); font-size: 11px; font-variant-numeric: tabular-nums; }
 .results { flex: 1 1 38%; min-width: 280px; }
 .detail { flex: 1 1 42%; min-width: 320px; }
+/* 결과 목록과 상세 사이의 나눔선. 끌어서 두 칸의 너비를 바꾼다. 너비는 widgets.js의 SPLITTER_WIDTH와 같다. */
+.splitter { flex: none; width: 5px; cursor: col-resize; background: var(--surface); border-left: 1px solid var(--border); touch-action: none; outline: none; }
+.splitter:hover, .splitter:focus-visible, .splitter.dragging { background: var(--accent-soft); border-left-color: var(--accent); }
+.view.resizing { user-select: none; cursor: col-resize; }
 
 /* ---------- 노드 상세 */
 .detail-nav { min-height: 0; padding: 4px 10px; gap: 6px; }
@@ -247,7 +251,7 @@ button, input, select { font: inherit; color: inherit; }
 .edge-attrs .kv { padding-bottom: 4px; }
 .edge-attrs .edge-loc { padding: 0 12px 4px; font-family: var(--mono); font-size: 11.5px; color: var(--text-2); word-break: break-all; }
 .kv dd .link { font-family: var(--mono); font-size: 12px; word-break: break-all; }
-.edge-row:hover { background: var(--hover); }
+.edge-row:hover, .edge-row.pop-on { background: var(--hover); }
 .edge-row .link { font-family: var(--mono); font-size: 12px; word-break: break-all; }
 .edge-row .edge-summary { color: var(--text-2); font-size: 12px; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .kv dd .multi .item { display: block; }
@@ -261,6 +265,31 @@ button, input, select { font: inherit; color: inherit; }
 .edge-pairs .pair.head > span { color: var(--text-3); font-size: 11px; }
 .edge-pairs .op { color: var(--text-3); text-align: center; }
 .edge-more { padding: 4px 20px 8px; }
+
+/* ---------- 엣지 풍선: 엣지 줄에 마우스를 올리거나 줄을 누르면 뜨는 카드. 줄에서 잘린 요약·위치와 모든 속성을 항목별로 보인다. */
+.edge-pop {
+  position: fixed; z-index: 50; min-width: 320px; overflow: auto;
+  background: var(--surface); border: 1px solid var(--border-strong); border-radius: 6px; box-shadow: var(--shadow);
+}
+.edge-pop.pinned { border-color: var(--accent); }
+.edge-pop-head { position: sticky; top: 0; display: flex; align-items: center; gap: 8px; padding: 7px 12px; background: var(--surface-2); border-bottom: 1px solid var(--border); }
+.edge-pop-kind { font-family: var(--mono); font-size: 12px; font-weight: 700; }
+.edge-pop-hint { color: var(--text-3); font-size: 11px; }
+.edge-pop .kv { grid-template-columns: max-content 1fr; gap: 6px 14px; margin: 0; padding: 10px 12px; }
+.edge-pop .kv dd { overflow-wrap: anywhere; }
+.edge-pop-main dd.node .end { display: flex; align-items: baseline; gap: 6px; }
+.edge-pop-main dd.node .link { font-family: var(--mono); font-size: 12px; word-break: break-all; }
+.edge-pop-main dd.node .self { font-weight: 600; word-break: break-all; }
+.edge-pop-main dd.node .muted { font-family: var(--font); font-size: 11px; white-space: nowrap; }
+.edge-pop-main dd.node .id { margin-top: 1px; color: var(--text-3); font-size: 11px; word-break: break-all; }
+.edge-pop-main dd.summary { font-family: var(--font); }
+.edge-pop-main dd.summary .part + .part { margin-top: 2px; }
+.edge-pop-main dd.summary .edge-pairs { margin: 6px 0 0; }
+.edge-pop-main dd.loc { word-break: break-all; }
+.edge-pop-attrs { border-top: 1px solid var(--border); }
+.edge-pop-title { padding: 7px 12px 0; font-size: 11px; font-weight: 700; color: var(--text-2); letter-spacing: 0.03em; }
+.edge-pop-title .n { font-weight: 400; color: var(--text-3); margin-left: 4px; }
+.edge-pop-attrs .kv { padding-top: 6px; }
 
 .drawer {
   position: absolute; top: 0; right: 0; bottom: 0; width: min(480px, 92vw); z-index: 20;

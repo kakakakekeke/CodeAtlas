@@ -181,7 +181,70 @@
     return { trail: trail, back: back, forward: forward, update: update };
   }
 
+  /** 나눔선의 두께(px). viewer.css의 .splitter 너비와 같다. */
+  var SPLITTER_WIDTH = 5;
+
+  /**
+   * 나란한 두 칸 사이의 세로 나눔선. 끌거나 ←·→ 키로 after(오른쪽 칸)의 너비를 정하고 before가 나머지를 쓴다. 두 번 누르면 처음 배치(CSS)로 돌아간다.
+   * 너비는 화면이 떠 있는 동안만 남는다(저장소를 쓰지 않는다: F-016-R39).
+   * opts.minBefore, opts.minAfter: 두 칸이 줄어들 수 있는 가장 좁은 너비(px). opts.step: 키 한 번에 움직이는 거리(px).
+   */
+  function createSplitter(before, after, opts) {
+    var o = opts || {};
+    var minBefore = o.minBefore || 240;
+    var minAfter = o.minAfter || 240;
+    var step = o.step || 24;
+    var width = null;      // after의 너비(px). null이면 처음 배치
+    var grab = null;       // 끄는 중: 잡은 곳에서 after의 왼쪽 끝까지의 거리. 끌고 있지 않으면 null
+    var el = h('div', { class: 'splitter', title: '끌어서 너비 조절 (←·→ 키로도 된다. 두 번 누르면 처음 너비로)',
+      attrs: { role: 'separator', tabindex: '0', 'aria-orientation': 'vertical', 'aria-label': '칸 너비 조절' } });
+
+    function apply(w) {
+      if (w == null) {
+        width = null;
+        after.style.removeProperty('flex');
+        return;
+      }
+      var max = el.parentNode.getBoundingClientRect().right - before.getBoundingClientRect().left - minBefore - SPLITTER_WIDTH;
+      width = Math.round(Math.max(minAfter, Math.min(w, max)));
+      after.style.setProperty('flex', '0 0 ' + width + 'px');
+    }
+    function stop(e) {
+      if (grab == null) return;
+      grab = null;
+      el.classList.remove('dragging');
+      el.parentNode.classList.remove('resizing');
+      if (el.releasePointerCapture && e && e.pointerId != null) { try { el.releasePointerCapture(e.pointerId); } catch (err) { /* 이미 놓였다 */ } }
+    }
+    el.addEventListener('pointerdown', function (e) {
+      if (e.button != null && e.button !== 0) return;
+      grab = after.getBoundingClientRect().left - e.clientX;
+      el.classList.add('dragging');
+      el.parentNode.classList.add('resizing');   // 끄는 동안 글자가 골라지지 않게
+      // 포인터를 붙잡아, 빨리 끌어 나눔선을 벗어나도 따라오게 한다
+      if (el.setPointerCapture && e.pointerId != null) { try { el.setPointerCapture(e.pointerId); } catch (err) { /* 붙잡지 못해도 나눔선 위에서는 끌린다 */ } }
+      e.preventDefault();
+    });
+    el.addEventListener('pointermove', function (e) {
+      if (grab == null) return;
+      apply(el.parentNode.getBoundingClientRect().right - (e.clientX + grab));
+    });
+    el.addEventListener('pointerup', stop);
+    el.addEventListener('pointercancel', stop);
+    el.addEventListener('keydown', function (e) {
+      if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+      var now = width != null ? width : after.getBoundingClientRect().width;
+      apply(now + (e.key === 'ArrowLeft' ? step : -step));
+      e.preventDefault();
+    });
+    el.addEventListener('dblclick', function () { apply(null); });
+    // 창이 좁아지면 정해 둔 너비를 다시 맞춘다(왼쪽 칸이 최소 너비 아래로 눌리지 않게)
+    root.addEventListener('resize', function () { if (width != null && el.parentNode) apply(width); });
+    return { el: el };
+  }
+
   ui.ROW_HEIGHT = ROW_HEIGHT;
+  ui.createSplitter = createSplitter;
   ui.createTrailNav = createTrailNav;
   ui.createVirtualList = createVirtualList;
   ui.nodeRow = nodeRow;
