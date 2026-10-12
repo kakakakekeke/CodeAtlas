@@ -47,6 +47,17 @@ class CodeatlasJarIT {
     private record Result(int exit, String output) {
     }
 
+    /**
+     * 실행 jar를 돌리는 명령. exec는 출력을 UTF-8로 읽으므로 자식 JVM의 표준 출력·오류도 UTF-8로 맞춘다.
+     * 맞추지 않으면 기본값이 플랫폼 인코딩(한국어 Windows는 MS949, POSIX 로캘은 ASCII)이라 한글이 깨진다.
+     */
+    private List<String> javaJar(String... args) {
+        List<String> command = new ArrayList<>(List.of(Path.of(System.getProperty("java.home"), "bin", "java").toString(),
+                "-Dstdout.encoding=UTF-8", "-Dstderr.encoding=UTF-8", "-jar", jar.toString()));
+        command.addAll(List.of(args));
+        return command;
+    }
+
     private Result exec(List<String> command) throws Exception {
         return exec(null, command);
     }
@@ -59,6 +70,8 @@ class CodeatlasJarIT {
     /** environment의 변수를 더해(같은 이름은 덮어써) 실행한다. */
     private Result exec(Path workingDir, Map<String, String> environment, List<String> command) throws Exception {
         ProcessBuilder builder = new ProcessBuilder(command).redirectErrorStream(true);
+        // 이 변수가 있으면 JVM이 "Picked up ..." 줄을 출력 앞에 붙여 출력 검사가 실행 환경에 따라 달라진다
+        builder.environment().keySet().removeAll(List.of("JAVA_TOOL_OPTIONS", "JDK_JAVA_OPTIONS", "_JAVA_OPTIONS"));
         builder.environment().putAll(environment);
         if (workingDir != null) {
             builder.directory(workingDir.toFile());
@@ -73,9 +86,7 @@ class CodeatlasJarIT {
     @DisplayName("F-001-AC18 java -jar codeatlas.jar analyze가 다른 classpath 없이 실행되어 graph.json을 만든다")
     void runsAsSingleJar() throws Exception {
         assertThat(jar).exists();
-        String java = Path.of(System.getProperty("java.home"), "bin", "java").toString();
-
-        Result result = exec(List.of(java, "-jar", jar.toString(), "analyze", project.toString(), "--out", out.toString()));
+        Result result = exec(javaJar("analyze", project.toString(), "--out", out.toString()));
 
         assertThat(result.exit()).as(result.output()).isZero();
         assertThat(result.output()).contains("CodeAtlas 분석 결과").containsPattern("JAVA\\s+1\\b");
@@ -199,9 +210,7 @@ class CodeatlasJarIT {
         Files.writeString(project.resolve("web/Badge.tsx"),
                 "export function Badge(props: { label: string }) {\n  return <span>{props.label}</span>;\n}\n");
         Files.writeString(project.resolve("web/util.ts"), "export function double(x: number): number {\n  return x * 2;\n}\n");
-        String java = Path.of(System.getProperty("java.home"), "bin", "java").toString();
-
-        Result result = exec(List.of(java, "-jar", jar.toString(), "analyze", project.toString(), "--out", out.toString()));
+        Result result = exec(javaJar("analyze", project.toString(), "--out", out.toString()));
 
         assertThat(result.exit()).as(result.output()).isZero();
         GraphModel graph = GraphJson.read(out.resolve("graph.json"));
@@ -253,9 +262,7 @@ class CodeatlasJarIT {
     @Test
     @DisplayName("F-001-AC28 실행 jar로 analyze하면 출력 폴더에 viewer.html이 생기고 외부 URL을 가리키는 script, link 태그가 없다")
     void writesSelfContainedViewer() throws Exception {
-        String java = Path.of(System.getProperty("java.home"), "bin", "java").toString();
-
-        Result result = exec(List.of(java, "-jar", jar.toString(), "analyze", project.toString(), "--out", out.toString()));
+        Result result = exec(javaJar("analyze", project.toString(), "--out", out.toString()));
 
         assertThat(result.exit()).as(result.output()).isZero();
         Path viewer = out.resolve("viewer.html");
@@ -270,9 +277,7 @@ class CodeatlasJarIT {
 
     /** 실행 jar로 하위 명령을 돌린다. 표준 출력과 표준 오류를 합쳐 돌려준다. */
     private Result cli(Path workingDir, String... args) throws Exception {
-        List<String> command = new ArrayList<>(List.of(Path.of(System.getProperty("java.home"), "bin", "java").toString(), "-jar", jar.toString()));
-        command.addAll(List.of(args));
-        return exec(workingDir, command);
+        return exec(workingDir, javaJar(args));
     }
 
     /** 테스트용 주문 그래프를 graph.json으로 저장한 출력 폴더. */
