@@ -39,6 +39,8 @@ function assembleRaw(dataText, mermaidSource) {
   const js = assets.filter((a) => a.endsWith('.js')).map((a) => '// ---- ' + a + '\n' + read(a)).join('\n');
   const template = read('template.html');
   const parts = {
+    // Mermaid의 고지 주석은 ViewerExporter(Java)만 넣는다. 고지의 글(mermaid.LICENSE)은 Maven 빌드가 webjar에서 꺼낸다.
+    '<!--@@NOTICE@@-->': '',
     '/*@@CSS@@*/': css,
     '/*@@JS@@*/': js,
     '@@DATA@@': pack(dataText),

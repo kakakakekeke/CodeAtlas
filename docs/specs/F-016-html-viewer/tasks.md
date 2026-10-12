@@ -119,6 +119,12 @@ JS 테스트: `node --test "codeatlas-viewer/src/test/js/*.test.js"` · Java 테
 - [x] 실제 브라우저 확인: 풍선(마우스 올리기, 눌러 고정, Esc), 좁은 창의 서랍(줄 아래에 뜸), 나눔선 끌기(상세 641px → 897px), 라이트·다크, 콘솔 오류 없음
 - [x] `mvn -q install` 통과, JS 304개(그중 28개는 실제 그래프와 표준 산출물이 있을 때만 돈다) 통과
 
+## Mermaid 고지 (2026-10-12, 사용자 요청)
+- [x] F-016-AC102(`ViewerExporterTest.carriesMermaidNotice`) → 실패 확인(클래스패스에 `vendor/mermaid.LICENSE`가 없음) → `codeatlas-viewer/pom.xml`(webjar의 `LICENSE`를 `mermaid.LICENSE`로 꺼냄), `template.html`(`<!--@@NOTICE@@-->`), `ViewerHtml`(`writeNotice`, `noticeComment`), `tools/assemble.js`(자리 표시를 비움) → 통과 (F-016-R52)
+- [x] F-016-AC102(`noticeCannotCloseTheComment`): 고지 글의 주석 종료 글자를 띄움
+- [x] 생성된 `target/viewer-sample/viewer.html`의 머리에서 주석과 MIT 전문을 눈으로 확인
+- [x] `mvn -q install` 통과, JS 304개(그중 28개는 실제 그래프와 표준 산출물이 있을 때만 돈다) 통과
+
 ## 마무리
 - [x] 모든 수용 기준 통과 확인 (JS 193개 — 그중 26개는 실제 그래프와 표준 산출물(`codeatlas-cli/target/final-out/`)이 있을 때만 돈다, Java 7개)
 - [x] spec.md의 status를 implemented로 변경

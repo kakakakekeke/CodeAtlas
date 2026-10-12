@@ -57,7 +57,9 @@
            (클래스패스 io/codeatlas/viewer/vendor/mermaid.min.js). target/classes에 바로 풀지 않는 것은
            컴파일러의 증분 빌드나 IDE가 그 폴더를 비워도 다음 빌드에서 다시 복사되게 하기 위해서다.
            ViewerExporter가 이 파일을 viewer.html에 인라인하므로 뷰어는 실행 중에 네트워크를 쓰지 않는다.
-           의존으로 선언하지 않고 unpack만 해서 webjar의 전이 의존(d3 등)을 끌어오지 않는다. -->
+           의존으로 선언하지 않고 unpack만 해서 webjar의 전이 의존(d3 등)을 끌어오지 않는다.
+           webjar의 LICENSE도 함께 꺼내 mermaid.LICENSE로 둔다. ViewerExporter가 viewer.html 머리의 고지 주석에
+           원문 그대로 넣는다(F-016-R52). -->
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-dependency-plugin</artifactId>
@@ -76,10 +78,14 @@
                   <artifactId>mermaid</artifactId>
                   <version>${mermaid.version}</version>
                   <type>jar</type>
-                  <includes>META-INF/resources/webjars/mermaid/${mermaid.version}/dist/mermaid.min.js</includes>
+                  <includes>META-INF/resources/webjars/mermaid/${mermaid.version}/dist/mermaid.min.js,META-INF/resources/webjars/mermaid/${mermaid.version}/LICENSE</includes>
                   <outputDirectory>${project.build.directory}/generated-resources/vendor/io/codeatlas/viewer/vendor</outputDirectory>
                   <fileMappers>
                     <org.codehaus.plexus.components.io.filemappers.FlattenFileMapper/>
+                    <org.codehaus.plexus.components.io.filemappers.RegExpFileMapper>
+                      <pattern>^LICENSE$</pattern>
+                      <replacement>mermaid.LICENSE</replacement>
+                    </org.codehaus.plexus.components.io.filemappers.RegExpFileMapper>
                   </fileMappers>
                 </artifactItem>
               </artifactItems>
